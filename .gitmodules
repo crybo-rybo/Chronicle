@@ -1,0 +1,4 @@
+[submodule "extern/zoo-keeper"]
+	path = extern/zoo-keeper
+	url = https://github.com/crybo-rybo/zoo-keeper.git
+	branch = main

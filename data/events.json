@@ -1,0 +1,15 @@
+{
+  "events": {
+    "market_commotion": {
+      "conditions": {
+        "time_period": "afternoon",
+        "player_location": "market_square"
+      },
+      "action": {
+        "type": "narrate",
+        "text": "A commotion breaks out near the merchant stalls. Guards are questioning traders about the missing cargo."
+      },
+      "once": true
+    }
+  }
+}

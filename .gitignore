@@ -1,0 +1,17 @@
+build/
+cmake-build-*/
+.cache/
+compile_commands.json
+*.gguf
+saves/
+.DS_Store
+*.swp
+*.swo
+.vscode/
+.idea/
+
+# Local secrets (machine-specific paths, credentials)
+.secret/
+
+# Session-generated design/spec artifacts
+docs/superpowers/
