@@ -5,8 +5,16 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# Zoo-Keeper submodule
-add_subdirectory(extern/zoo-keeper)
+# Zoo-Keeper via FetchContent
+include(FetchContent)
+set(ZOO_FETCH_LLAMA ON CACHE BOOL "" FORCE)
+FetchContent_Declare(
+    zoo-keeper
+    GIT_REPOSITORY https://github.com/crybo-rybo/zoo-keeper.git
+    GIT_TAG main
+    GIT_SHALLOW TRUE
+)
+FetchContent_MakeAvailable(zoo-keeper)
 
 # Main executable
 add_subdirectory(src)

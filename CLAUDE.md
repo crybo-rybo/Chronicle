@@ -25,7 +25,7 @@ A portfolio piece demonstrating systems-level C++ design, applied LLM integratio
 
 - **Language**: C++23
 - **Build**: CMake 3.25+
-- **LLM Integration**: Zoo-Keeper (git submodule under `extern/zoo-keeper`)
+- **LLM Integration**: Zoo-Keeper (via CMake FetchContent)
 - **JSON**: nlohmann/json (bundled via Zoo-Keeper)
 - **Testing**: Google Test (FetchContent)
 - **CI**: GitHub Actions (Linux + macOS)

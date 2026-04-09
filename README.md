@@ -6,12 +6,10 @@ An LLM-driven text adventure game written in C++23. Chronicle uses local languag
 
 - CMake 3.25+
 - C++23-capable compiler (GCC 13+, Clang 17+, or Apple Clang via Xcode 15+)
-- Git (for submodules)
-
 ## Building
 
 ```bash
-git clone --recurse-submodules https://github.com/crybo-rybo/chronicle.git
+git clone https://github.com/crybo-rybo/chronicle.git
 cd chronicle
 cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --parallel
