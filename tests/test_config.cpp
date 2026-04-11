@@ -1,6 +1,6 @@
 #include "entities/config.hpp"
 #include <filesystem>
-#include <fstream>
+#include <fstream>  // IWYU pragma: keep — std::ofstream used in LoadMalformedJsonThrows
 #include <gtest/gtest.h>
 #include <stdexcept>
 
