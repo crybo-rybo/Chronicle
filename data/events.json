@@ -1,15 +1,20 @@
 {
   "events": {
     "market_commotion": {
-      "conditions": {
-        "time_period": "afternoon",
-        "player_location": "market_square"
-      },
-      "action": {
-        "type": "narrate",
-        "text": "A commotion breaks out near the merchant stalls. Guards are questioning traders about the missing cargo."
-      },
-      "once": true
+      "conditions": [
+        {"type": "clock_is", "args": ["afternoon"]},
+        {"type": "player_at", "args": ["market_square"]}
+      ],
+      "actions": [
+        {
+          "type": "narrate",
+          "params": {
+            "text": "A commotion breaks out near the merchant stalls. Guards are questioning traders about the missing cargo."
+          }
+        }
+      ],
+      "once": true,
+      "fired": false
     }
   }
 }
