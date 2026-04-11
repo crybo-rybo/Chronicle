@@ -1,4 +1,5 @@
 #include "entities/clock.hpp"
+#include <cctype>
 #include <stdexcept>
 
 namespace chronicle {
@@ -60,6 +61,7 @@ void Clock::advance_turn(int turns_per_period) {
 }
 
 bool Clock::is_final_period(int total_periods) const {
+    // NOTE: Relies on TimePeriod members having sequential values Morning=0..Night=3 per declaration order.
     int elapsed = (day - 1) * 4 + static_cast<int>(period);
     return elapsed >= total_periods;
 }
@@ -67,13 +69,13 @@ bool Clock::is_final_period(int total_periods) const {
 std::string Clock::to_display_string() const {
     // Capitalise first letter of period
     std::string p = time_period_to_string(period);
-    p[0] = static_cast<char>(p[0] - 32); // 'a'->'A' etc.
+    p[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(p[0]))); // 'a'->'A' etc.
     return p + ", Day " + std::to_string(day);
 }
 
 std::string Clock::to_prompt_string() const {
     std::string p = time_period_to_string(period);
-    p[0] = static_cast<char>(p[0] - 32);
+    p[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(p[0])));
     return p + " of Day " + std::to_string(day);
 }
 

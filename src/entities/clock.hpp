@@ -20,6 +20,7 @@ struct Clock {
     int total_turns = 0;
 
     /// Increment by one turn. Advances period when turns_this_period reaches turns_per_period.
+    /// @pre turns_per_period > 0
     void advance_turn(int turns_per_period);
 
     /// Returns true once the total elapsed periods >= total_periods.
