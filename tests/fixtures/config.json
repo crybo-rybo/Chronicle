@@ -1,0 +1,15 @@
+{
+  "model_path": "/test/model.gguf",
+  "context_size": 2048,
+  "n_gpu_layers": 0,
+  "temperature": 0.5,
+  "max_response_tokens": 256,
+  "turns_per_period": 3,
+  "total_periods": 8,
+  "max_memory_tokens": 400,
+  "max_world_tokens": 200,
+  "max_history_tokens": 300,
+  "save_directory": "/tmp/chronicle_saves",
+  "use_tui": false,
+  "use_color": true
+}

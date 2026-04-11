@@ -3,19 +3,19 @@
   "locations": {
     "tavern": {
       "name": "The Broken Wheel Tavern",
-      "description": "A dimly lit tavern with creaking floorboards and the smell of stale ale. A cracked wagon wheel hangs above the bar as a sign.",
-      "exits": {
-        "north": "market_square"
-      },
-      "items": ["crumpled_note"]
+      "base_description": "A dimly lit tavern with creaking floorboards and the smell of stale ale. A cracked wagon wheel hangs above the bar as a sign.",
+      "exits": { "north": "market_square" },
+      "items": ["crumpled_note"],
+      "npcs": [],
+      "locked_exits": []
     },
     "market_square": {
       "name": "Market Square",
-      "description": "A wide cobblestone square surrounded by merchant stalls and trade offices. The air buzzes with haggling voices.",
-      "exits": {
-        "south": "tavern"
-      },
-      "items": []
+      "base_description": "A wide cobblestone square surrounded by merchant stalls and trade offices. The air buzzes with haggling voices.",
+      "exits": { "south": "tavern" },
+      "items": [],
+      "npcs": [],
+      "locked_exits": []
     }
   },
   "items": {
@@ -23,24 +23,34 @@
       "name": "Crumpled Note",
       "description": "A hastily written note on stained parchment.",
       "takeable": true,
-      "readable": true,
-      "read_text": "Don't trust the innkeeper.",
-      "key_item": false
+      "key_item": false,
+      "hidden": false,
+      "unlock_target": "",
+      "properties": {
+        "readable": "true",
+        "read_text": "Don't trust the innkeeper."
+      }
     },
     "tavern_key": {
       "name": "Tavern Key",
       "description": "A heavy iron key with a broken wheel emblem on the bow.",
       "takeable": true,
-      "readable": false,
-      "key_item": true
+      "key_item": true,
+      "hidden": false,
+      "unlock_target": "",
+      "properties": {}
     },
     "cargo_manifest": {
       "name": "Cargo Manifest",
       "description": "A detailed list of goods, quantities, and destinations. Several entries are crossed out.",
       "takeable": true,
-      "readable": true,
-      "read_text": "Shipment 47: 12 bolts silk, 3 casks Elvari wine, 1 sealed chest (CONTENTS UNKNOWN). Status: MISSING.",
-      "key_item": true
+      "key_item": true,
+      "hidden": false,
+      "unlock_target": "",
+      "properties": {
+        "readable": "true",
+        "read_text": "Shipment 47: 12 bolts silk, 3 casks Elvari wine, 1 sealed chest (CONTENTS UNKNOWN). Status: MISSING."
+      }
     }
   }
 }
