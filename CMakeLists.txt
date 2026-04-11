@@ -11,7 +11,7 @@ set(ZOO_FETCH_LLAMA ON CACHE BOOL "" FORCE)
 FetchContent_Declare(
     zoo-keeper
     GIT_REPOSITORY https://github.com/crybo-rybo/zoo-keeper.git
-    GIT_TAG main
+    GIT_TAG v1.1.1
     GIT_SHALLOW TRUE
 )
 FetchContent_MakeAvailable(zoo-keeper)
