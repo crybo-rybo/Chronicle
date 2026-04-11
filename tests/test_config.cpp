@@ -1,5 +1,6 @@
 #include "entities/config.hpp"
 #include <filesystem>
+#include <fstream>
 #include <gtest/gtest.h>
 #include <stdexcept>
 
@@ -14,7 +15,7 @@ TEST(ConfigTest, LoadFromFixture) {
     EXPECT_EQ(cfg.model_path, "/test/model.gguf");
     EXPECT_EQ(cfg.context_size, 2048);
     EXPECT_EQ(cfg.n_gpu_layers, 0);
-    EXPECT_FLOAT_EQ(cfg.temperature, 0.5f);
+    EXPECT_DOUBLE_EQ(cfg.temperature, 0.5);
     EXPECT_EQ(cfg.max_response_tokens, 256);
     EXPECT_EQ(cfg.turns_per_period, 3);
     EXPECT_EQ(cfg.total_periods, 8);
@@ -33,7 +34,8 @@ TEST(ConfigTest, LoadFromFixture) {
 TEST(ConfigTest, SaveReloadRoundtrip) {
     Config original = Config::load(FIXTURES_DIR "/config.json");
 
-    std::filesystem::path tmp = std::filesystem::temp_directory_path() / "chronicle_test_config.json";
+    std::filesystem::path tmp =
+        std::filesystem::temp_directory_path() / "chronicle_test_config.json";
     original.save(tmp);
 
     Config reloaded = Config::load(tmp);
@@ -41,7 +43,7 @@ TEST(ConfigTest, SaveReloadRoundtrip) {
     EXPECT_EQ(reloaded.model_path, original.model_path);
     EXPECT_EQ(reloaded.context_size, original.context_size);
     EXPECT_EQ(reloaded.n_gpu_layers, original.n_gpu_layers);
-    EXPECT_FLOAT_EQ(reloaded.temperature, original.temperature);
+    EXPECT_DOUBLE_EQ(reloaded.temperature, original.temperature);
     EXPECT_EQ(reloaded.max_response_tokens, original.max_response_tokens);
     EXPECT_EQ(reloaded.turns_per_period, original.turns_per_period);
     EXPECT_EQ(reloaded.total_periods, original.total_periods);
@@ -72,7 +74,7 @@ TEST(ConfigTest, DefaultConstruction) {
     EXPECT_TRUE(cfg.model_path.empty());
     EXPECT_EQ(cfg.context_size, 4096);
     EXPECT_EQ(cfg.n_gpu_layers, -1);
-    EXPECT_FLOAT_EQ(cfg.temperature, 0.7f);
+    EXPECT_DOUBLE_EQ(cfg.temperature, 0.7);
     EXPECT_EQ(cfg.max_response_tokens, 512);
     EXPECT_EQ(cfg.turns_per_period, 5);
     EXPECT_EQ(cfg.total_periods, 12);
@@ -82,6 +84,20 @@ TEST(ConfigTest, DefaultConstruction) {
     EXPECT_TRUE(cfg.save_directory.empty());
     EXPECT_FALSE(cfg.use_tui);
     EXPECT_TRUE(cfg.use_color);
+}
+
+// ---------------------------------------------------------------------------
+// Malformed JSON throws std::runtime_error
+// ---------------------------------------------------------------------------
+
+TEST(ConfigTest, LoadMalformedJsonThrows) {
+    auto tmp = std::filesystem::temp_directory_path() / "chronicle_test_malformed.json";
+    {
+        std::ofstream f(tmp);
+        f << "{bad json";
+    }
+    EXPECT_THROW(Config::load(tmp), std::runtime_error);
+    std::filesystem::remove(tmp);
 }
 
 } // namespace chronicle

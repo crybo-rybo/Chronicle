@@ -2,7 +2,7 @@
 
 namespace chronicle {
 
-void to_json(nlohmann::json& j, const Item& item) {
+void to_json(nlohmann::json &j, const Item &item) {
     j = nlohmann::json{
         {"id", item.id},
         {"name", item.name},
@@ -15,15 +15,17 @@ void to_json(nlohmann::json& j, const Item& item) {
     };
 }
 
-void from_json(const nlohmann::json& j, Item& item) {
-    item.id           = j.value("id", std::string{});
-    item.name         = j.value("name", std::string{});
-    item.description  = j.value("description", std::string{});
-    item.takeable     = j.value("takeable", true);
-    item.key_item     = j.value("key_item", false);
-    item.hidden       = j.value("hidden", false);
+void from_json(const nlohmann::json &j, Item &item) {
+    item.id =
+        j.at("id")
+            .get<std::string>(); // set from map key during initial load; present in save/load JSON
+    item.name = j.at("name").get<std::string>();
+    item.description = j.value("description", std::string{});
+    item.takeable = j.value("takeable", true);
+    item.key_item = j.value("key_item", false);
+    item.hidden = j.value("hidden", false);
     item.unlock_target = j.value("unlock_target", std::string{});
-    item.properties   = j.value("properties", std::map<std::string, std::string>{});
+    item.properties = j.value("properties", std::map<std::string, std::string>{});
 }
 
 } // namespace chronicle

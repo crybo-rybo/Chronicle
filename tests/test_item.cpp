@@ -25,14 +25,14 @@ TEST(ItemTest, DefaultConstruction) {
 
 TEST(ItemTest, JsonRoundtrip) {
     Item original;
-    original.id            = "iron_key";
-    original.name          = "Iron Key";
-    original.description   = "A heavy iron key.";
-    original.takeable      = false;
-    original.key_item      = true;
-    original.hidden        = true;
+    original.id = "iron_key";
+    original.name = "Iron Key";
+    original.description = "A heavy iron key.";
+    original.takeable = false;
+    original.key_item = true;
+    original.hidden = true;
     original.unlock_target = "north_door";
-    original.properties    = {{"material", "iron"}, {"weight", "heavy"}};
+    original.properties = {{"material", "iron"}, {"weight", "heavy"}};
 
     nlohmann::json j;
     to_json(j, original);
@@ -56,7 +56,7 @@ TEST(ItemTest, JsonRoundtrip) {
 
 TEST(ItemTest, PropertiesMapRoundtrip) {
     Item item;
-    item.id   = "crumpled_note";
+    item.id = "crumpled_note";
     item.name = "Crumpled Note";
     item.properties = {
         {"readable", "true"},
@@ -80,7 +80,7 @@ TEST(ItemTest, PropertiesMapRoundtrip) {
 
 TEST(ItemTest, IdWrittenToJson) {
     Item item;
-    item.id   = "some_item";
+    item.id = "some_item";
     item.name = "Some Item";
 
     nlohmann::json j;
@@ -91,17 +91,34 @@ TEST(ItemTest, IdWrittenToJson) {
 }
 
 // ---------------------------------------------------------------------------
-// from_json uses defaults when fields are absent
+// from_json: id and name are required; missing either throws
 // ---------------------------------------------------------------------------
 
-TEST(ItemTest, FromJsonDefaults) {
+TEST(ItemTest, FromJsonMissingIdThrows) {
     nlohmann::json j = nlohmann::json::object();
+    Item item;
+    EXPECT_THROW(from_json(j, item), nlohmann::json::exception);
+}
+
+TEST(ItemTest, FromJsonMissingNameThrows) {
+    nlohmann::json j = {{"id", "some_item"}};
+    Item item;
+    EXPECT_THROW(from_json(j, item), nlohmann::json::exception);
+}
+
+// ---------------------------------------------------------------------------
+// from_json: optional fields default correctly when absent
+// ---------------------------------------------------------------------------
+
+TEST(ItemTest, FromJsonOptionalDefaults) {
+    // Provide required fields; omit all optional ones.
+    nlohmann::json j = {{"id", "bare_item"}, {"name", "Bare Item"}};
 
     Item item;
     from_json(j, item);
 
-    EXPECT_TRUE(item.id.empty());
-    EXPECT_TRUE(item.name.empty());
+    EXPECT_EQ(item.id, "bare_item");
+    EXPECT_EQ(item.name, "Bare Item");
     EXPECT_TRUE(item.description.empty());
     EXPECT_TRUE(item.takeable);
     EXPECT_FALSE(item.key_item);

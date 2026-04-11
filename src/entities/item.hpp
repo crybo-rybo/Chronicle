@@ -1,7 +1,7 @@
 #pragma once
 #include <map>
-#include <string>
 #include <nlohmann/json.hpp>
+#include <string>
 
 namespace chronicle {
 
@@ -9,17 +9,20 @@ namespace chronicle {
 /// by item ID in player/npc/location containers. Items never move from the registry —
 /// only their ownership location changes.
 struct Item {
-    std::string id;           ///< Unique identifier (set from JSON map key on load)
+    /// Unique identifier. Set from the JSON map key during initial world load.
+    /// Also serialized in to_json/from_json for save/load roundtrips.
+    /// The world loader is the canonical source of truth for this value.
+    std::string id;
     std::string name;
     std::string description;
     bool takeable = true;
-    bool key_item = false;    ///< Cannot be dropped or traded if true
-    bool hidden = false;      ///< Not shown in room description by default
+    bool key_item = false;     ///< Cannot be dropped or traded if true
+    bool hidden = false;       ///< Not shown in room description by default
     std::string unlock_target; ///< Location exit this item unlocks, if any (empty = none)
     std::map<std::string, std::string> properties; ///< Extensible key/value metadata
 };
 
-void to_json(nlohmann::json& j, const Item& item);
-void from_json(const nlohmann::json& j, Item& item);
+void to_json(nlohmann::json &j, const Item &item);
+void from_json(const nlohmann::json &j, Item &item);
 
 } // namespace chronicle
