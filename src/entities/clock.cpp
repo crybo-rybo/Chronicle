@@ -1,5 +1,4 @@
 #include "entities/clock.hpp"
-#include <cctype>
 #include <stdexcept>
 
 namespace chronicle {
