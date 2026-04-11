@@ -1,6 +1,5 @@
 #include "entities/config.hpp"
 #include <filesystem>
-#include <fstream>  // IWYU pragma: keep — std::ofstream used in LoadMalformedJsonThrows
 #include <gtest/gtest.h>
 #include <stdexcept>
 
@@ -92,9 +91,10 @@ TEST(ConfigTest, DefaultConstruction) {
 
 TEST(ConfigTest, LoadMalformedJsonThrows) {
     auto tmp = std::filesystem::temp_directory_path() / "chronicle_test_malformed.json";
-    {
-        std::ofstream f(tmp);
-        f << "{bad json";
+    std::FILE* f = std::fopen(tmp.string().c_str(), "w");
+    if (f) {
+        std::fputs("{bad json", f);
+        std::fclose(f);
     }
     EXPECT_THROW(Config::load(tmp), std::runtime_error);
     std::filesystem::remove(tmp);
