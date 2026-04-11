@@ -1,4 +1,5 @@
 # Entity structs + serialization — linked by both chronicle and chronicle_tests
+# NOTE: Adding or removing .cpp files requires re-running CMake (cmake -B build), not just a rebuild
 file(GLOB_RECURSE ENTITY_SOURCES entities/*.cpp)
 add_library(chronicle_entities STATIC ${ENTITY_SOURCES})
 target_include_directories(chronicle_entities PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
