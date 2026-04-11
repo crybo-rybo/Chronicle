@@ -15,3 +15,6 @@ saves/
 
 # Session-generated design/spec artifacts
 docs/superpowers/
+
+# Git worktrees
+.worktrees/
