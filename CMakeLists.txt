@@ -24,5 +24,11 @@ if(CHRONICLE_BUILD_TESTS)
     add_subdirectory(tests)
 endif()
 
+# Development tools (smoke tests, benchmarks)
+option(CHRONICLE_BUILD_TOOLS "Build development tools" OFF)
+if(CHRONICLE_BUILD_TOOLS)
+    add_subdirectory(tools)
+endif()
+
 # TUI renderer (stretch goal, not implemented in Sprint 0)
 option(CHRONICLE_TUI "Build with FTXUI TUI renderer" OFF)
