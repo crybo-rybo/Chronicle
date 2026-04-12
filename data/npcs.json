@@ -1,22 +1,26 @@
 {
   "npcs": {
     "marcus": {
-      "name": "Marcus",
-      "role": "Innkeeper",
-      "location": "tavern",
-      "personality": "A tired, guarded man in his fifties who runs the Broken Wheel Tavern. He speaks carefully, avoiding eye contact when lying.",
-      "backstory": "Marcus witnessed the theft of a merchant's cargo but said nothing. He helped the thief escape through the tavern's back entrance in exchange for a share of the stolen goods.",
-      "secret": "He helped the thief escape in exchange for coin.",
-      "goals": [
-        "Protect his daughter Elena",
-        "Avoid implicating himself",
-        "Keep the tavern running"
-      ],
-      "knowledge": ["fact_stolen_cargo", "fact_thief_identity"],
-      "trust_reveal_threshold": 65,
-      "mood": "neutral",
-      "trust": 0,
-      "inventory": ["tavern_key", "cargo_manifest"]
+      "identity": {
+        "id": "marcus",
+        "name": "Marcus",
+        "role": "Innkeeper",
+        "personality_summary": "A tired, guarded man in his fifties who runs the Broken Wheel Tavern. He speaks carefully, avoiding eye contact when lying.",
+        "backstory": "Marcus witnessed the theft of a merchant's cargo but said nothing. He helped the thief escape through the tavern's back entrance in exchange for a share of the stolen goods.",
+        "secret": "He helped the thief escape in exchange for coin.",
+        "goals": ["Protect his daughter Elena", "Avoid implicating himself", "Keep the tavern running"],
+        "knowledge": ["fact_stolen_cargo", "fact_thief_identity"],
+        "trust_reveal_threshold": 65
+      },
+      "state": {
+        "current_location": "tavern",
+        "mood": "neutral",
+        "trust_toward_player": 0,
+        "inventory": ["tavern_key", "cargo_manifest"],
+        "memories": [],
+        "has_met_player": false,
+        "secret_revealed": false
+      }
     }
   }
 }
