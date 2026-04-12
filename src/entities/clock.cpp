@@ -60,7 +60,8 @@ void Clock::advance_turn(int turns_per_period) {
 }
 
 bool Clock::is_final_period(int total_periods) const {
-    // NOTE: Relies on TimePeriod members having sequential values Morning=0..Night=3 per declaration order.
+    static_assert(static_cast<int>(TimePeriod::Morning) == 0);
+    static_assert(static_cast<int>(TimePeriod::Night) == 3);
     int elapsed = (day - 1) * 4 + static_cast<int>(period);
     return elapsed >= total_periods;
 }
