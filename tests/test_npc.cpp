@@ -164,4 +164,65 @@ TEST(NpcTest, NpcMemoryInState) {
     EXPECT_EQ(restored.state.memories[1].related_item, "stolen_crate");
 }
 
+// ---------------------------------------------------------------------------
+// NPC convenience: trust_level() delegates to state
+// ---------------------------------------------------------------------------
+
+TEST(NpcTest, TrustLevelDelegatesToState) {
+    Npc npc;
+    npc.state.trust_toward_player = 42;
+    EXPECT_EQ(npc.trust_level(), 42);
+}
+
+// ---------------------------------------------------------------------------
+// NPC convenience: is_hostile() checks mood
+// ---------------------------------------------------------------------------
+
+TEST(NpcTest, IsHostileWhenMoodHostile) {
+    Npc npc;
+    npc.state.mood = "hostile";
+    EXPECT_TRUE(npc.is_hostile());
+}
+
+TEST(NpcTest, IsNotHostileWhenMoodNeutral) {
+    Npc npc;
+    npc.state.mood = "neutral";
+    EXPECT_FALSE(npc.is_hostile());
+}
+
+// ---------------------------------------------------------------------------
+// NpcState convenience: has_item()
+// ---------------------------------------------------------------------------
+
+TEST(NpcTest, StateHasItemTrue) {
+    NpcState state;
+    state.inventory = {"sword", "shield"};
+    EXPECT_TRUE(state.has_item("sword"));
+}
+
+TEST(NpcTest, StateHasItemFalse) {
+    NpcState state;
+    state.inventory = {"sword"};
+    EXPECT_FALSE(state.has_item("shield"));
+}
+
+// ---------------------------------------------------------------------------
+// NpcState convenience: add_memory()
+// ---------------------------------------------------------------------------
+
+TEST(NpcTest, AddMemoryAppendsToMemories) {
+    NpcState state;
+    MemoryEntry entry;
+    entry.timestamp = "Morning, Day 1";
+    entry.type = "conversation";
+    entry.summary = "Met the player.";
+    entry.importance = 5;
+
+    state.add_memory(std::move(entry));
+
+    ASSERT_EQ(state.memories.size(), 1u);
+    EXPECT_EQ(state.memories[0].summary, "Met the player.");
+    EXPECT_EQ(state.memories[0].importance, 5);
+}
+
 } // namespace chronicle

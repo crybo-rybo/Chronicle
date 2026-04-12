@@ -1,4 +1,5 @@
 #include "entities/world.hpp"
+#include <algorithm>
 #include <gtest/gtest.h>
 
 namespace chronicle {
@@ -156,6 +157,43 @@ TEST(WorldTest, JsonRoundtrip) {
 
     // Verify total_turns_elapsed
     EXPECT_EQ(restored.total_turns_elapsed, 10);
+}
+
+// ---------------------------------------------------------------------------
+// Item ownership invariant: no item appears in multiple locations
+// ---------------------------------------------------------------------------
+
+TEST(WorldTest, ItemOwnershipInvariant) {
+    // Build a World where items are tracked in location vectors
+    World world;
+
+    Location room_a;
+    room_a.id = "room_a";
+    room_a.name = "Room A";
+    room_a.items = {"key", "sword"};
+
+    Location room_b;
+    room_b.id = "room_b";
+    room_b.name = "Room B";
+    room_b.items = {"shield"};
+
+    world.locations["room_a"] = room_a;
+    world.locations["room_b"] = room_b;
+    world.player.inventory = {"potion"};
+
+    // Collect all item references
+    std::vector<std::string> all_item_refs;
+    for (const auto& [id, loc] : world.locations) {
+        all_item_refs.insert(all_item_refs.end(), loc.items.begin(), loc.items.end());
+    }
+    all_item_refs.insert(all_item_refs.end(),
+                         world.player.inventory.begin(),
+                         world.player.inventory.end());
+
+    // Verify no duplicates
+    std::sort(all_item_refs.begin(), all_item_refs.end());
+    auto dup = std::adjacent_find(all_item_refs.begin(), all_item_refs.end());
+    EXPECT_EQ(dup, all_item_refs.end()) << "Duplicate item found: " << *dup;
 }
 
 } // namespace chronicle

@@ -30,6 +30,9 @@ struct NpcState {
     std::vector<MemoryEntry> memories;
     bool has_met_player = false;
     bool secret_revealed = false;
+
+    bool has_item(const std::string& item_id) const;
+    void add_memory(MemoryEntry entry);
 };
 
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(NpcState, current_location, mood,
@@ -39,6 +42,11 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(NpcState, current_location, mood
 struct Npc {
     NpcIdentity identity;
     NpcState state;
+
+    /// Returns trust_toward_player from state.
+    int trust_level() const;
+    /// Returns true if state.mood == "hostile".
+    bool is_hostile() const;
 };
 
 void to_json(nlohmann::json& j, const Npc& npc);
