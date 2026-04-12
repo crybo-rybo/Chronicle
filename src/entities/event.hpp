@@ -7,7 +7,6 @@
 namespace chronicle {
 
 /// Types of conditions that can be evaluated against World state.
-/// NOTE: Relies on sequential integer values — do not reorder or assign explicit values.
 enum class ConditionType {
     ClockIs,         ///< clock.period matches a named TimePeriod
     PlayerAt,        ///< player.current_location == arg

@@ -77,7 +77,7 @@ void to_json(nlohmann::json &j, const EventTrigger &t) {
 }
 
 void from_json(const nlohmann::json &j, EventTrigger &t) {
-    t.id = j.value("id", std::string{}); // set from map key by loader; absent from data files
+    t.id = j.at("id").get<std::string>();
     t.conditions = j.value("conditions", std::vector<Condition>{});
     t.actions = j.value("actions", std::vector<EventAction>{});
     t.once = j.value("once", true);
