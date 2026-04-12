@@ -1,5 +1,6 @@
 #include "engine/command_parser.hpp"
 #include <algorithm>
+#include <ranges>
 #include <unordered_set>
 
 namespace chronicle {
@@ -76,7 +77,7 @@ std::string trim(const std::string &s) {
 
 std::string to_lower(const std::string &s) {
     std::string result = s;
-    std::transform(result.begin(), result.end(), result.begin(), ::tolower);
+    std::ranges::transform(result, result.begin(), ::tolower);
     return result;
 }
 
@@ -165,6 +166,7 @@ ParsedCommand CommandParser::parse(const std::string &raw_input, GamePhase phase
         };
         if (!hard_commands.contains(first_lower)) {
             result.verb = CommandVerb::Dialogue;
+            result.primary_arg = trimmed;
             return result;
         }
     }

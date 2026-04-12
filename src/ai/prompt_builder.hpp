@@ -12,6 +12,7 @@ public:
         int max_memory_tokens = 800;
         int max_world_tokens = 400;
         int max_history_tokens = 600;
+        double chars_per_token = 4.0;
     };
 
     explicit PromptBuilder(Budget budget);
@@ -27,7 +28,6 @@ private:
     Budget budget_;
     std::vector<MemoryEntry> select_memories(const std::vector<MemoryEntry> &all,
                                              int token_budget) const;
-    static constexpr double kCharsPerToken = 4.0;
 };
 
 } // namespace chronicle

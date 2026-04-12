@@ -23,6 +23,8 @@ public:
 
     AgentInterface* operator->() { return agent_; }
     AgentInterface& operator*() { return *agent_; }
+    const AgentInterface* operator->() const { return agent_; }
+    const AgentInterface& operator*() const { return *agent_; }
     const std::string& npc_id() const { return npc_id_; }
 
 private:

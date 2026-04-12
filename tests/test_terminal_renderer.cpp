@@ -220,3 +220,54 @@ TEST(TerminalRendererTest, RenderNpcIntroContainsName) {
     renderer.render_npc_intro("Marcus", "neutral");
     EXPECT_NE(out.str().find("Marcus"), std::string::npos);
 }
+
+TEST(TerminalRendererTest, AssignNpcColorsDeterministicOrder) {
+    // Two renderers given the same NPC IDs in different order
+    // should produce the same color assignments.
+    std::ostringstream out1, out2;
+    std::istringstream in1, in2;
+    chronicle::TerminalRenderer r1(out1, in1, true);
+    chronicle::TerminalRenderer r2(out2, in2, true);
+
+    r1.assign_npc_colors({"zara", "marcus", "elara"});
+    r2.assign_npc_colors({"marcus", "elara", "zara"});
+
+    // Render NPC intros in the same order and compare output
+    for (const auto &name : {"elara", "marcus", "zara"}) {
+        r1.render_npc_intro(name, "neutral");
+        r2.render_npc_intro(name, "neutral");
+    }
+    EXPECT_EQ(out1.str(), out2.str());
+}
+
+TEST(TerminalRendererTest, AssignNpcColorsPreservesLazyFallback) {
+    // Pre-assign some NPCs, then encounter a new one via lazy path.
+    std::ostringstream out;
+    std::istringstream in;
+    chronicle::TerminalRenderer renderer(out, in, true);
+
+    renderer.assign_npc_colors({"marcus", "elara"});
+
+    // "zara" was not pre-assigned, but should still get a color via lazy path
+    renderer.render_npc_intro("zara", "calm");
+    EXPECT_NE(out.str().find("zara"), std::string::npos);
+}
+
+TEST(TerminalRendererTest, AssignNpcColorsSkipsDuplicates) {
+    // Calling assign_npc_colors with a name already in the map should not
+    // change its index.
+    std::ostringstream out1, out2;
+    std::istringstream in1, in2;
+    chronicle::TerminalRenderer r1(out1, in1, true);
+    chronicle::TerminalRenderer r2(out2, in2, true);
+
+    r1.assign_npc_colors({"marcus"});
+    // Trigger lazy for marcus on r1 via intro, then assign again
+    r1.render_npc_intro("marcus", "neutral");
+
+    r2.assign_npc_colors({"marcus"});
+    r2.assign_npc_colors({"marcus"}); // duplicate call
+    r2.render_npc_intro("marcus", "neutral");
+
+    EXPECT_EQ(out1.str(), out2.str());
+}

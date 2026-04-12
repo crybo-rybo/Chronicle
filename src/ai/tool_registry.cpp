@@ -1,6 +1,5 @@
 #include "ai/tool_registry.hpp"
 #include <algorithm>
-#include <set>
 #include <sstream>
 
 namespace chronicle {
@@ -17,7 +16,7 @@ bool ToolRegistry::npc_exists(const std::string &npc_id) const {
 
 bool ToolRegistry::npc_has_item(const std::string &npc_id, const std::string &item_id) const {
     const auto &inv = world_.npcs.at(npc_id).state.inventory;
-    return std::find(inv.begin(), inv.end(), item_id) != inv.end();
+    return std::ranges::contains(inv, item_id);
 }
 
 bool ToolRegistry::player_has_item(const std::string &item_id) const {
@@ -41,9 +40,7 @@ bool ToolRegistry::flag_exists(const std::string &flag_id) const {
 }
 
 bool ToolRegistry::is_valid_mood(const std::string &mood) const {
-    static const std::set<std::string> valid_moods = {"neutral",  "suspicious", "friendly",
-                                                      "hostile",  "fearful",    "grieving"};
-    return valid_moods.contains(mood);
+    return kValidMoods.contains(mood);
 }
 
 // ---------------------------------------------------------------------------
@@ -141,7 +138,7 @@ ToolRegistry::validate_reveal_knowledge(const std::string &npc_id,
         return "Error: NPC '" + npc_id + "' does not exist.";
 
     const auto &knowledge = world_.npcs.at(npc_id).identity.knowledge;
-    if (std::find(knowledge.begin(), knowledge.end(), fact_id) == knowledge.end())
+    if (!std::ranges::contains(knowledge, fact_id))
         return "Error: NPC '" + npc_id + "' does not know fact '" + fact_id + "'.";
 
     return MutationRequest{

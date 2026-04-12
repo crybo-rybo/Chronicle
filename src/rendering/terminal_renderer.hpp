@@ -1,10 +1,12 @@
 #pragma once
 #include "rendering/renderer.hpp"
+#include <algorithm>
 #include <array>
 #include <iostream>
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <vector>
 
 namespace chronicle {
 
@@ -28,6 +30,11 @@ class TerminalRenderer : public Renderer {
     void render_resolution(std::string_view ending_narration) override;
     std::string get_player_input(std::string_view prompt) override;
     void clear_input_line() override;
+
+    /// Pre-assign palette colors to known NPCs deterministically.
+    /// NPC IDs are sorted, then assigned palette colors in order.
+    /// Lazy assignment via npc_color() still works for NPCs not in this list.
+    void assign_npc_colors(const std::vector<std::string> &npc_ids);
 
   private:
     std::ostream &out_;

@@ -3,9 +3,8 @@
 #include <chrono>
 #include <ctime>
 #include <fstream>
-#include <iomanip>
+#include <ranges>
 #include <regex>
-#include <sstream>
 #include <stdexcept>
 
 namespace chronicle {
@@ -26,12 +25,13 @@ void SaveSystem::save(const World &world, int slot) {
         location_name = it->second.name;
     }
 
-    // Build timestamp
-    auto now = std::chrono::system_clock::now();
-    auto time_t = std::chrono::system_clock::to_time_t(now);
-    std::ostringstream oss;
-    oss << std::put_time(std::localtime(&time_t), "%Y-%m-%dT%H:%M:%S");
-    std::string timestamp = oss.str();
+    // Build timestamp (localtime_r is thread-safe, unlike std::localtime)
+    auto now_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+    std::tm buf{};
+    localtime_r(&now_time, &buf);
+    char time_str[20];
+    std::strftime(time_str, sizeof(time_str), "%Y-%m-%dT%H:%M:%S", &buf);
+    std::string timestamp(time_str);
 
     // Build full JSON
     nlohmann::json j;
@@ -127,8 +127,8 @@ std::vector<SaveSlotInfo> SaveSystem::list_slots() const {
         }
     }
 
-    std::sort(slots.begin(), slots.end(),
-              [](const SaveSlotInfo &a, const SaveSlotInfo &b) { return a.slot < b.slot; });
+    std::ranges::sort(slots,
+                      [](const SaveSlotInfo &a, const SaveSlotInfo &b) { return a.slot < b.slot; });
 
     return slots;
 }

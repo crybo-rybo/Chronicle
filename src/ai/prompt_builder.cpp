@@ -120,7 +120,7 @@ std::string PromptBuilder::build_user_turn(const std::string &player_input,
 }
 
 int PromptBuilder::estimate_tokens(const std::string &text) const {
-    return static_cast<int>(std::ceil(text.size() / kCharsPerToken));
+    return static_cast<int>(std::ceil(text.size() / budget_.chars_per_token));
 }
 
 std::vector<MemoryEntry> PromptBuilder::select_memories(const std::vector<MemoryEntry> &all,
@@ -129,12 +129,13 @@ std::vector<MemoryEntry> PromptBuilder::select_memories(const std::vector<Memory
         return {};
     }
 
-    // Copy and stable-sort by importance descending
+    // Importance-first selection: stable_sort preserves insertion order (chronological)
+    // as a recency tiebreaker when importance values are equal, satisfying the
+    // "importance-first, recency-fill" budgeting strategy.
     auto sorted = all;
-    std::stable_sort(sorted.begin(), sorted.end(),
-                     [](const MemoryEntry &a, const MemoryEntry &b) {
-                         return a.importance > b.importance;
-                     });
+    std::ranges::stable_sort(sorted, [](const MemoryEntry &a, const MemoryEntry &b) {
+        return a.importance > b.importance;
+    });
 
     std::vector<MemoryEntry> selected;
     int tokens_used = 0;

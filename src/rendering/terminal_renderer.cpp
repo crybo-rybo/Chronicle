@@ -5,6 +5,18 @@ namespace chronicle {
 TerminalRenderer::TerminalRenderer(std::ostream &out, std::istream &in, bool use_color)
     : out_(out), in_(in), use_color_(use_color) {}
 
+void TerminalRenderer::assign_npc_colors(const std::vector<std::string> &npc_ids) {
+    // Sort a copy so color assignment is deterministic regardless of input order
+    auto sorted = npc_ids;
+    std::sort(sorted.begin(), sorted.end());
+
+    for (const auto &id : sorted) {
+        if (npc_color_indices_.find(id) == npc_color_indices_.end()) {
+            npc_color_indices_[id] = next_color_index_++;
+        }
+    }
+}
+
 std::string_view TerminalRenderer::npc_color(const std::string &npc_name) {
     auto it = npc_color_indices_.find(npc_name);
     if (it == npc_color_indices_.end()) {
