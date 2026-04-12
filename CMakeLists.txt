@@ -5,6 +5,13 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# Compiler warning flags for Chronicle-owned targets (not vendored dependencies)
+option(CHRONICLE_WERROR "Treat compiler warnings as errors" OFF)
+set(CHRONICLE_WARNING_FLAGS -Wall -Wextra -Wpedantic)
+if(CHRONICLE_WERROR)
+    list(APPEND CHRONICLE_WARNING_FLAGS -Werror)
+endif()
+
 # Zoo-Keeper via FetchContent
 include(FetchContent)
 FetchContent_Declare(
@@ -22,6 +29,12 @@ option(CHRONICLE_BUILD_TESTS "Build tests" ON)
 if(CHRONICLE_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
+endif()
+
+# Development tools (smoke tests, benchmarks)
+option(CHRONICLE_BUILD_TOOLS "Build development tools" OFF)
+if(CHRONICLE_BUILD_TOOLS)
+    add_subdirectory(tools)
 endif()
 
 # TUI renderer (stretch goal, not implemented in Sprint 0)

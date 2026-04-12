@@ -21,7 +21,7 @@ jobs:
           submodules: recursive
 
       - name: Configure
-        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCHRONICLE_WERROR=ON
 
       - name: Build
         run: cmake --build build --parallel

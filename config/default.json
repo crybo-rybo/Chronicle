@@ -1,0 +1,30 @@
+{
+  "model_path": "",
+  "context_size": 4096,
+  "n_gpu_layers": -1,
+  "temperature": 0.7,
+  "max_response_tokens": 512,
+  "turns_per_period": 5,
+  "total_periods": 12,
+  "max_memory_tokens": 800,
+  "max_world_tokens": 400,
+  "max_history_tokens": 600,
+  "save_directory": "",
+  "use_tui": false,
+  "use_color": true,
+  "verb_aliases": {
+    "go": ["go", "walk", "move", "north", "south", "east", "west", "up", "down", "n", "s", "e", "w", "u", "d"],
+    "look": ["look", "l"],
+    "examine": ["examine", "x", "inspect"],
+    "take": ["take", "get", "grab", "pick"],
+    "drop": ["drop"],
+    "use": ["use"],
+    "give": ["give"],
+    "talk": ["talk", "speak", "chat"],
+    "inventory": ["inventory", "i", "inv"],
+    "save": ["save"],
+    "load": ["load"],
+    "quit": ["quit", "exit", "q"],
+    "help": ["help", "?"]
+  }
+}
