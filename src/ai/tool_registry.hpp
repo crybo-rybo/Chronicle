@@ -7,6 +7,10 @@
 #include <variant>
 #include <vector>
 
+namespace zoo {
+class Agent;
+} // namespace zoo
+
 namespace chronicle {
 
 struct MutationRequest {
@@ -75,6 +79,9 @@ public:
 
     /// Clears all pending mutations.
     void clear_pending();
+
+    /// Registers the available tools on the given zoo::Agent instance.
+    void register_tools(zoo::Agent& agent, const std::string& npc_id);
 
 private:
     const World &world_;
