@@ -19,6 +19,23 @@ class MutationsTest : public ::testing::Test {
         world.player.current_location = "tavern";
         world.player.inventory = {"sword"};
 
+        Item apple;
+        apple.id = "apple";
+        apple.name = "Apple";
+        world.items["apple"] = apple;
+
+        Item coin;
+        coin.id = "coin";
+        coin.name = "Coin";
+        world.items["coin"] = coin;
+
+        Item sword;
+        sword.id = "sword";
+        sword.name = "Sword";
+        world.items["sword"] = sword;
+
+        world.flags["door_open"] = false;
+
         Location tavern;
         tavern.id = "tavern";
         tavern.npcs = {"marcus"};
@@ -32,7 +49,7 @@ class MutationsTest : public ::testing::Test {
 
 TEST_F(MutationsTest, ApplyGiveItemToPlayer) {
     MutationRequest req{MutationRequest::Type::GiveItemToPlayer, "marcus", {{"item_id", "apple"}}};
-    apply_mutation(world, req);
+    EXPECT_TRUE(apply_mutation(world, req));
 
     EXPECT_TRUE(std::ranges::find(world.player.inventory, "apple") != world.player.inventory.end());
     EXPECT_TRUE(std::ranges::find(world.npcs["marcus"].state.inventory, "apple") == world.npcs["marcus"].state.inventory.end());
@@ -40,7 +57,7 @@ TEST_F(MutationsTest, ApplyGiveItemToPlayer) {
 
 TEST_F(MutationsTest, ApplyTakeItemFromPlayer) {
     MutationRequest req{MutationRequest::Type::TakeItemFromPlayer, "marcus", {{"item_id", "sword"}}};
-    apply_mutation(world, req);
+    EXPECT_TRUE(apply_mutation(world, req));
 
     EXPECT_TRUE(std::ranges::find(world.npcs["marcus"].state.inventory, "sword") != world.npcs["marcus"].state.inventory.end());
     EXPECT_TRUE(std::ranges::find(world.player.inventory, "sword") == world.player.inventory.end());
@@ -48,24 +65,24 @@ TEST_F(MutationsTest, ApplyTakeItemFromPlayer) {
 
 TEST_F(MutationsTest, ApplyUpdateNpcMood) {
     MutationRequest req{MutationRequest::Type::UpdateNpcMood, "marcus", {{"mood", "happy"}}};
-    apply_mutation(world, req);
+    EXPECT_TRUE(apply_mutation(world, req));
     EXPECT_EQ(world.npcs["marcus"].state.mood, "happy");
 }
 
 TEST_F(MutationsTest, ApplyUpdateNpcTrust) {
     MutationRequest req{MutationRequest::Type::UpdateNpcTrust, "marcus", {{"delta", "10"}}};
-    apply_mutation(world, req);
+    EXPECT_TRUE(apply_mutation(world, req));
     EXPECT_EQ(world.npcs["marcus"].state.trust_toward_player, 10);
     
     // Test clamping
     MutationRequest req2{MutationRequest::Type::UpdateNpcTrust, "marcus", {{"delta", "100"}}};
-    apply_mutation(world, req2);
+    EXPECT_TRUE(apply_mutation(world, req2));
     EXPECT_EQ(world.npcs["marcus"].state.trust_toward_player, 100);
 }
 
 TEST_F(MutationsTest, ApplyMoveNpc) {
     MutationRequest req{MutationRequest::Type::MoveNpc, "marcus", {{"location_id", "market"}}};
-    apply_mutation(world, req);
+    EXPECT_TRUE(apply_mutation(world, req));
 
     EXPECT_EQ(world.npcs["marcus"].state.current_location, "market");
     
@@ -78,14 +95,14 @@ TEST_F(MutationsTest, ApplyMoveNpc) {
 
 TEST_F(MutationsTest, ApplyRevealKnowledge) {
     MutationRequest req{MutationRequest::Type::RevealKnowledge, "marcus", {{"fact_id", "secret1"}}};
-    apply_mutation(world, req);
+    EXPECT_TRUE(apply_mutation(world, req));
 
     EXPECT_TRUE(std::ranges::find(world.player.known_facts, "secret1") != world.player.known_facts.end());
 }
 
 TEST_F(MutationsTest, ApplyAddMemory) {
     MutationRequest req{MutationRequest::Type::AddMemory, "marcus", {{"summary", "Player was nice"}, {"importance", "5"}}};
-    apply_mutation(world, req);
+    EXPECT_TRUE(apply_mutation(world, req));
 
     ASSERT_EQ(world.npcs["marcus"].state.memories.size(), 1);
     EXPECT_EQ(world.npcs["marcus"].state.memories[0].summary, "Player was nice");
@@ -94,7 +111,33 @@ TEST_F(MutationsTest, ApplyAddMemory) {
 
 TEST_F(MutationsTest, ApplySetFlag) {
     MutationRequest req{MutationRequest::Type::SetFlag, "marcus", {{"flag_id", "door_open"}, {"value", "true"}}};
-    apply_mutation(world, req);
+    EXPECT_TRUE(apply_mutation(world, req));
 
     EXPECT_TRUE(world.flags["door_open"]);
+}
+
+TEST_F(MutationsTest, MalformedMutationsReturnFalseWithoutThrowing) {
+    std::vector<MutationRequest> bad_requests = {
+        {MutationRequest::Type::GiveItemToPlayer, "marcus", {}},
+        {MutationRequest::Type::TakeItemFromPlayer, "missing_npc", {{"item_id", "sword"}}},
+        {MutationRequest::Type::UpdateNpcMood, "marcus", {}},
+        {MutationRequest::Type::UpdateNpcTrust, "marcus", {{"delta", "not-an-int"}}},
+        {MutationRequest::Type::MoveNpc, "marcus", {{"location_id", "missing_location"}}},
+        {MutationRequest::Type::RevealKnowledge, "marcus", {}},
+        {MutationRequest::Type::AddMemory, "marcus", {{"summary", "missing importance"}}},
+        {MutationRequest::Type::SetFlag, "marcus", {}},
+    };
+
+    for (const auto &req : bad_requests) {
+        EXPECT_NO_THROW({ EXPECT_FALSE(apply_mutation(world, req)); });
+    }
+}
+
+TEST_F(MutationsTest, AlreadyAppliedItemMutationsReturnFalseWithoutDuplicatingItems) {
+    MutationRequest give{MutationRequest::Type::GiveItemToPlayer, "marcus", {{"item_id", "apple"}}};
+    EXPECT_TRUE(apply_mutation(world, give));
+    EXPECT_FALSE(apply_mutation(world, give));
+
+    EXPECT_EQ(std::ranges::count(world.player.inventory, "apple"), 1);
+    EXPECT_EQ(std::ranges::count(world.npcs["marcus"].state.inventory, "apple"), 0);
 }

@@ -52,7 +52,7 @@ TEST(ResponseHandlerTest, OnTokenPushesToQueue) {
     EXPECT_EQ(queue.try_pop(), "world");
 }
 
-TEST(ResponseHandlerTest, NarrateMutations) {
+TEST(ResponseHandlerTest, NarrateMutationsUsesTemplatesForVisibleAndSilentMutations) {
     MockRenderer renderer;
     TokenQueue queue;
     World world;
@@ -62,16 +62,34 @@ TEST(ResponseHandlerTest, NarrateMutations) {
     sword.name = "Iron Sword";
     world.items["sword"] = sword;
 
-    ResponseHandler handler(renderer, queue, world);
+    std::unordered_map<std::string, std::string> templates = {
+        {"give_item_to_player", "{npc} passes over {item}."},
+        {"take_item_from_player", "{npc} accepts {item}."},
+        {"update_npc_mood", "{npc} now seems {mood}."},
+        {"move_npc", "{npc} leaves for now."},
+        {"reveal_knowledge", ""},
+        {"update_npc_trust", ""},
+        {"add_memory", ""},
+        {"set_flag", ""},
+    };
+
+    ResponseHandler handler(renderer, queue, world, templates);
 
     std::vector<MutationRequest> mutations;
     mutations.push_back({MutationRequest::Type::GiveItemToPlayer, "marcus", {{"item_id", "sword"}}});
+    mutations.push_back({MutationRequest::Type::TakeItemFromPlayer, "marcus", {{"item_id", "sword"}}});
     mutations.push_back({MutationRequest::Type::UpdateNpcMood, "marcus", {{"mood", "angry"}}});
-    mutations.push_back({MutationRequest::Type::SetFlag, "marcus", {{"flag_id", "test"}}}); // silent
+    mutations.push_back({MutationRequest::Type::MoveNpc, "marcus", {{"location_id", "market"}}});
+    mutations.push_back({MutationRequest::Type::RevealKnowledge, "marcus", {{"fact_id", "test"}}});
+    mutations.push_back({MutationRequest::Type::UpdateNpcTrust, "marcus", {{"delta", "5"}}});
+    mutations.push_back({MutationRequest::Type::AddMemory, "marcus", {{"summary", "test"}}});
+    mutations.push_back({MutationRequest::Type::SetFlag, "marcus", {{"flag_id", "test"}}});
 
     handler.narrate_mutations(mutations, "Marcus");
 
-    ASSERT_EQ(renderer.actions.size(), 2);
-    EXPECT_EQ(renderer.actions[0], "Marcus hands you the Iron Sword.");
-    EXPECT_EQ(renderer.actions[1], "Marcus's expression shifts — they seem angry now.");
+    ASSERT_EQ(renderer.actions.size(), 4);
+    EXPECT_EQ(renderer.actions[0], "Marcus passes over Iron Sword.");
+    EXPECT_EQ(renderer.actions[1], "Marcus accepts Iron Sword.");
+    EXPECT_EQ(renderer.actions[2], "Marcus now seems angry.");
+    EXPECT_EQ(renderer.actions[3], "Marcus leaves for now.");
 }

@@ -341,6 +341,19 @@ TEST_F(ToolRegistryTest, SayDoesNotEnqueue) {
     EXPECT_TRUE(reg.pending_mutations().empty());
 }
 
+TEST_F(ToolRegistryTest, DrainDialogueReturnsCapturedSayTextAndClearsLog) {
+    ToolRegistry reg(world);
+    reg.register_say("marcus", "Hello, traveler.");
+    reg.register_say("marcus", "Stay a while.");
+
+    auto dialogue = reg.drain_dialogue_log();
+
+    ASSERT_EQ(dialogue.size(), 2u);
+    EXPECT_EQ(dialogue[0].first, "marcus");
+    EXPECT_EQ(dialogue[0].second, "Hello, traveler.");
+    EXPECT_TRUE(reg.drain_dialogue_log().empty());
+}
+
 TEST_F(ToolRegistryTest, RegisterMultipleToolTypes) {
     ToolRegistry reg(world);
     reg.register_give_item("marcus", "cargo_manifest");

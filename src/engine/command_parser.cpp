@@ -1,4 +1,5 @@
 #include "engine/command_parser.hpp"
+#include "engine/text_utils.hpp"
 #include <algorithm>
 #include <cctype>
 #include <fstream>
@@ -14,21 +15,6 @@ namespace chronicle {
 // ---------------------------------------------------------------------------
 
 namespace {
-
-std::string trim(const std::string &s) {
-    auto start = s.find_first_not_of(" \t\n\r");
-    if (start == std::string::npos)
-        return "";
-    auto end = s.find_last_not_of(" \t\n\r");
-    return s.substr(start, end - start + 1);
-}
-
-std::string to_lower(const std::string &s) {
-    std::string result = s;
-    std::ranges::transform(result, result.begin(),
-                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    return result;
-}
 
 std::unordered_map<std::string, CommandVerb> canonical_verbs() {
     return {
@@ -120,7 +106,7 @@ load_verb_table(const std::filesystem::path &config_path) {
     auto canonical = canonical_verbs();
     auto result = fallback_verb_table();
     for (const auto &[verb_name, aliases] : aliases_it->items()) {
-        auto verb_it = canonical.find(to_lower(verb_name));
+        auto verb_it = canonical.find(text::to_lower_copy(verb_name));
         if (verb_it == canonical.end()) {
             throw std::runtime_error("CommandParser: unknown canonical verb '" + verb_name + "'");
         }
@@ -135,7 +121,7 @@ load_verb_table(const std::filesystem::path &config_path) {
                 throw std::runtime_error("CommandParser: aliases for '" + verb_name +
                                          "' must be strings");
             }
-            auto key = to_lower(trim(alias.get<std::string>()));
+            auto key = text::to_lower_copy(text::trim_copy(alias.get<std::string>()));
             if (!key.empty()) {
                 result[key] = verb_it->second;
             }
@@ -187,15 +173,15 @@ ParsedCommand CommandParser::parse_use_syntax(const std::string &args_after_verb
     result.verb = CommandVerb::Use;
     result.raw_input = raw;
 
-    std::string args = trim(args_after_verb);
+    std::string args = text::trim_copy(args_after_verb);
 
     // Look for " on " or " with " separators
     for (const auto &sep : {" on ", " with "}) {
-        std::string lower_args = to_lower(args);
+        std::string lower_args = text::to_lower_copy(args);
         auto pos = lower_args.find(sep);
         if (pos != std::string::npos) {
-            result.primary_arg = trim(args.substr(0, pos));
-            result.secondary_arg = trim(args.substr(pos + std::string(sep).size()));
+            result.primary_arg = text::trim_copy(args.substr(0, pos));
+            result.secondary_arg = text::trim_copy(args.substr(pos + std::string(sep).size()));
             return result;
         }
     }
@@ -212,7 +198,7 @@ ParsedCommand CommandParser::parse(const std::string &raw_input, GamePhase phase
     ParsedCommand result;
     result.raw_input = raw_input;
 
-    std::string trimmed = trim(raw_input);
+    std::string trimmed = text::trim_copy(raw_input);
     if (trimmed.empty()) {
         result.verb = CommandVerb::Unknown;
         return result;
@@ -226,10 +212,10 @@ ParsedCommand CommandParser::parse(const std::string &raw_input, GamePhase phase
         first_word = trimmed;
     } else {
         first_word = trimmed.substr(0, space_pos);
-        remainder = trim(trimmed.substr(space_pos + 1));
+        remainder = text::trim_copy(trimmed.substr(space_pos + 1));
     }
 
-    std::string first_lower = to_lower(first_word);
+    std::string first_lower = text::to_lower_copy(first_word);
     auto verb_it = verb_table_.find(first_lower);
 
     // InConversation phase: only hard commands break out of dialogue
@@ -278,7 +264,7 @@ ParsedCommand CommandParser::parse(const std::string &raw_input, GamePhase phase
 
     // Normalize direction arguments to lowercase world IDs
     if (verb == CommandVerb::Go && !result.primary_arg.empty()) {
-        result.primary_arg = to_lower(result.primary_arg);
+        result.primary_arg = text::to_lower_copy(result.primary_arg);
     }
 
     return result;

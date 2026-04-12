@@ -4,6 +4,19 @@
 
 namespace chronicle {
 
+std::unordered_map<std::string, std::string> default_mutation_narration_templates() {
+    return {
+        {"give_item_to_player", "{npc} hands you the {item}."},
+        {"take_item_from_player", "{npc} takes the {item}."},
+        {"update_npc_mood", "{npc}'s expression shifts - they seem {mood} now."},
+        {"move_npc", "{npc} excuses themselves and leaves."},
+        {"reveal_knowledge", ""},
+        {"update_npc_trust", ""},
+        {"add_memory", ""},
+        {"set_flag", ""},
+    };
+}
+
 Config Config::load(const std::filesystem::path &path) {
     std::ifstream f(path);
     if (!f.is_open())

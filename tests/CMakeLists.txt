@@ -8,7 +8,7 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(googletest)
 
 # Gather all test_*.cpp files automatically
-file(GLOB TEST_SOURCES test_*.cpp)
+file(GLOB TEST_SOURCES test_*.cpp integration/test_*.cpp)
 add_executable(chronicle_tests ${TEST_SOURCES})
 target_compile_options(chronicle_tests PRIVATE ${CHRONICLE_WARNING_FLAGS})
 if(TARGET chronicle_game)
@@ -25,6 +25,7 @@ file(COPY fixtures/ DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/fixtures)
 # Define FIXTURES_DIR macro so tests can reference fixtures at a known path
 target_compile_definitions(chronicle_tests PRIVATE
     FIXTURES_DIR="${CMAKE_CURRENT_BINARY_DIR}/fixtures"
+    CHRONICLE_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
 )
 
 include(GoogleTest)

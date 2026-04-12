@@ -1,10 +1,48 @@
 #include "ai/response_handler.hpp"
+#include "entities/config.hpp"
 #include <sstream>
 
 namespace chronicle {
 
-ResponseHandler::ResponseHandler(Renderer &renderer, TokenQueue &token_queue, const World &world)
-    : renderer_(renderer), token_queue_(token_queue), world_(world) {}
+namespace {
+
+std::string replace_all(std::string input, std::string_view needle, std::string_view value) {
+    std::size_t pos = 0;
+    while ((pos = input.find(needle, pos)) != std::string::npos) {
+        input.replace(pos, needle.size(), value);
+        pos += value.size();
+    }
+    return input;
+}
+
+std::string template_key(MutationRequest::Type type) {
+    switch (type) {
+    case MutationRequest::Type::GiveItemToPlayer:
+        return "give_item_to_player";
+    case MutationRequest::Type::TakeItemFromPlayer:
+        return "take_item_from_player";
+    case MutationRequest::Type::UpdateNpcMood:
+        return "update_npc_mood";
+    case MutationRequest::Type::UpdateNpcTrust:
+        return "update_npc_trust";
+    case MutationRequest::Type::MoveNpc:
+        return "move_npc";
+    case MutationRequest::Type::RevealKnowledge:
+        return "reveal_knowledge";
+    case MutationRequest::Type::AddMemory:
+        return "add_memory";
+    case MutationRequest::Type::SetFlag:
+        return "set_flag";
+    }
+    return "";
+}
+
+} // namespace
+
+ResponseHandler::ResponseHandler(Renderer &renderer, TokenQueue &token_queue, const World &world,
+                                 std::unordered_map<std::string, std::string> templates)
+    : renderer_(renderer), token_queue_(token_queue), world_(world),
+      templates_(templates.empty() ? default_mutation_narration_templates() : std::move(templates)) {}
 
 void ResponseHandler::on_token(std::string_view token) {
     token_queue_.push(std::string(token));
@@ -12,52 +50,37 @@ void ResponseHandler::on_token(std::string_view token) {
 
 std::string ResponseHandler::describe_mutation(const MutationRequest &m,
                                                const std::string &npc_name) const {
-    switch (m.type) {
-    case MutationRequest::Type::GiveItemToPlayer: {
-        auto it = m.params.find("item_id");
-        if (it != m.params.end()) {
-            std::string item_name = it->second;
-            auto world_it = world_.items.find(it->second);
-            if (world_it != world_.items.end()) {
-                item_name = world_it->second.name;
-            }
-            return npc_name + " hands you the " + item_name + ".";
-        }
-        return npc_name + " hands you an item.";
-    }
-    case MutationRequest::Type::TakeItemFromPlayer: {
-        auto it = m.params.find("item_id");
-        if (it != m.params.end()) {
-            std::string item_name = it->second;
-            auto world_it = world_.items.find(it->second);
-            if (world_it != world_.items.end()) {
-                item_name = world_it->second.name;
-            }
-            return npc_name + " takes the " + item_name + ".";
-        }
-        return npc_name + " takes an item.";
-    }
-    case MutationRequest::Type::UpdateNpcMood: {
-        auto it = m.params.find("mood");
-        if (it != m.params.end()) {
-            return npc_name + "'s expression shifts — they seem " + it->second + " now.";
-        }
-        break;
-    }
-    case MutationRequest::Type::MoveNpc: {
-        return npc_name + " excuses themselves and leaves.";
-    }
-    case MutationRequest::Type::RevealKnowledge: {
-        // Dialogue usually handles this, so action narration can be silent or subtle
+    auto key = template_key(m.type);
+    auto template_it = templates_.find(key);
+    if (template_it == templates_.end() || template_it->second.empty()) {
         return "";
     }
-    case MutationRequest::Type::UpdateNpcTrust:
-    case MutationRequest::Type::AddMemory:
-    case MutationRequest::Type::SetFlag:
-        // Silent mutations
-        return "";
+
+    auto narration = template_it->second;
+    narration = replace_all(std::move(narration), "{npc}", npc_name);
+
+    if (auto item_it = m.params.find("item_id"); item_it != m.params.end()) {
+        std::string item_name = item_it->second;
+        if (auto world_it = world_.items.find(item_it->second); world_it != world_.items.end()) {
+            item_name = world_it->second.name;
+        }
+        narration = replace_all(std::move(narration), "{item}", item_name);
     }
-    return "";
+
+    if (auto mood_it = m.params.find("mood"); mood_it != m.params.end()) {
+        narration = replace_all(std::move(narration), "{mood}", mood_it->second);
+    }
+
+    if (auto location_it = m.params.find("location_id"); location_it != m.params.end()) {
+        std::string location_name = location_it->second;
+        if (auto world_it = world_.locations.find(location_it->second);
+            world_it != world_.locations.end()) {
+            location_name = world_it->second.name;
+        }
+        narration = replace_all(std::move(narration), "{location}", location_name);
+    }
+
+    return narration;
 }
 
 void ResponseHandler::narrate_mutations(const std::vector<MutationRequest> &mutations,

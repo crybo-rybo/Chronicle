@@ -5,13 +5,15 @@
 #include "rendering/renderer.hpp"
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
 namespace chronicle {
 
 class ResponseHandler {
   public:
-    ResponseHandler(Renderer &renderer, TokenQueue &token_queue, const World &world);
+    ResponseHandler(Renderer &renderer, TokenQueue &token_queue, const World &world,
+                    std::unordered_map<std::string, std::string> templates = {});
 
     // Called on inference thread
     void on_token(std::string_view token);
@@ -24,6 +26,7 @@ class ResponseHandler {
     Renderer &renderer_;
     TokenQueue &token_queue_;
     const World &world_;
+    std::unordered_map<std::string, std::string> templates_;
 
     std::string describe_mutation(const MutationRequest &m, const std::string &npc_name) const;
 };

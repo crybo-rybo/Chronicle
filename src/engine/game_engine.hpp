@@ -12,6 +12,7 @@
 #include "rendering/renderer.hpp"
 
 #include <memory>
+#include <optional>
 #include <string>
 
 namespace chronicle {
@@ -21,7 +22,8 @@ class GameEngine {
     // Initializes the engine. Expects the paths to config.json and data directory.
     // If renderer is null, instantiates TerminalRenderer by default.
     GameEngine(const std::string &config_path, const std::string &data_dir,
-               std::unique_ptr<Renderer> renderer);
+               std::unique_ptr<Renderer> renderer,
+               std::unique_ptr<NpcAgentPool> agent_pool = nullptr);
 
     // Blocking: runs until the player quits or the game ends
     void run();
@@ -32,7 +34,7 @@ class GameEngine {
     const World &world() const { return world_; }
     GamePhase phase() const { return phase_; }
     
-    // Stub for now, will be implemented in Integration Phase
+    // Handles a dialogue turn with the active NPC agent, including tool mutations.
     void handle_dialogue(const std::string &npc_id, const std::string &input);
 
   private:
@@ -50,12 +52,20 @@ class GameEngine {
 
     bool running_ = true;
     GamePhase phase_ = GamePhase::Playing;
+    std::optional<std::string> current_conversation_npc_id_;
 
     void render_current_scene();
     void render_inventory();
+    bool drain_token_queue();
 
     // Helper to find exits/items
     bool player_can_see_item(const std::string &item_id) const;
+    bool player_can_see_npc(const std::string &npc_id) const;
+    std::optional<std::string> find_visible_npc_id(const std::string &query) const;
+    std::optional<std::string> find_accessible_item_id(const std::string &query) const;
+    std::optional<int> parse_slot(const std::string &slot_text) const;
+    void leave_conversation();
+    bool is_conversation_exit(std::string_view input) const;
 };
 
 } // namespace chronicle
