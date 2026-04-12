@@ -1,5 +1,6 @@
 #pragma once
 #include "engine/game_phase.hpp"
+#include <filesystem>
 #include <string>
 #include <unordered_map>
 
@@ -32,10 +33,13 @@ struct ParsedCommand {
 
 class CommandParser {
   public:
+    CommandParser();
+    explicit CommandParser(std::filesystem::path config_path);
+
     ParsedCommand parse(const std::string &raw_input, GamePhase phase) const;
 
   private:
-    static const std::unordered_map<std::string, CommandVerb> verb_table_;
+    std::unordered_map<std::string, CommandVerb> verb_table_;
     ParsedCommand parse_use_syntax(const std::string &args_after_verb,
                                    const std::string &raw) const;
 };

@@ -5,9 +5,15 @@ namespace chronicle {
 TerminalRenderer::TerminalRenderer(std::ostream &out, std::istream &in, bool use_color)
     : out_(out), in_(in), use_color_(use_color) {}
 
-void TerminalRenderer::assign_npc_colors(const std::vector<std::string> &npc_ids) {
+TerminalRenderer::TerminalRenderer(const std::vector<std::string> &npc_names, std::ostream &out,
+                                   std::istream &in, bool use_color)
+    : TerminalRenderer(out, in, use_color) {
+    assign_npc_colors(npc_names);
+}
+
+void TerminalRenderer::assign_npc_colors(const std::vector<std::string> &npc_names) {
     // Sort a copy so color assignment is deterministic regardless of input order
-    auto sorted = npc_ids;
+    auto sorted = npc_names;
     std::sort(sorted.begin(), sorted.end());
 
     for (const auto &id : sorted) {
@@ -100,6 +106,13 @@ void TerminalRenderer::render_move(const std::string &direction,
 void TerminalRenderer::render_npc_intro(std::string_view npc_name, std::string_view mood) {
     write_colored(npc_color(std::string(npc_name)), npc_name);
     out_ << " seems " << mood << ".\n";
+}
+
+void TerminalRenderer::begin_npc_dialogue(std::string_view npc_name) {
+    if (use_color_) {
+        out_ << npc_color(std::string(npc_name));
+        out_.flush();
+    }
 }
 
 void TerminalRenderer::stream_token(std::string_view token) {

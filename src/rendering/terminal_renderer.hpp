@@ -14,11 +14,14 @@ class TerminalRenderer : public Renderer {
   public:
     explicit TerminalRenderer(std::ostream &out = std::cout, std::istream &in = std::cin,
                               bool use_color = true);
+    explicit TerminalRenderer(const std::vector<std::string> &npc_names,
+                              std::ostream &out = std::cout, std::istream &in = std::cin,
+                              bool use_color = true);
 
     void render_scene(const Location &loc, const World &world) override;
-    void render_move(const std::string &direction,
-                     const std::string &new_location_name) override;
+    void render_move(const std::string &direction, const std::string &new_location_name) override;
     void render_npc_intro(std::string_view npc_name, std::string_view mood) override;
+    void begin_npc_dialogue(std::string_view npc_name) override;
     void stream_token(std::string_view token) override;
     void flush_dialogue() override;
     void render_action(std::string_view narration) override;
@@ -32,9 +35,9 @@ class TerminalRenderer : public Renderer {
     void clear_input_line() override;
 
     /// Pre-assign palette colors to known NPCs deterministically.
-    /// NPC IDs are sorted, then assigned palette colors in order.
+    /// NPC names are sorted, then assigned palette colors in order.
     /// Lazy assignment via npc_color() still works for NPCs not in this list.
-    void assign_npc_colors(const std::vector<std::string> &npc_ids);
+    void assign_npc_colors(const std::vector<std::string> &npc_names);
 
   private:
     std::ostream &out_;

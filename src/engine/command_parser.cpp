@@ -1,65 +1,13 @@
 #include "engine/command_parser.hpp"
 #include <algorithm>
+#include <cctype>
+#include <fstream>
+#include <nlohmann/json.hpp>
 #include <ranges>
+#include <stdexcept>
 #include <unordered_set>
 
 namespace chronicle {
-
-// ---------------------------------------------------------------------------
-// Verb table — canonical verbs and aliases
-// ---------------------------------------------------------------------------
-
-const std::unordered_map<std::string, CommandVerb> CommandParser::verb_table_ = {
-    // Movement
-    {"go", CommandVerb::Go},
-    {"walk", CommandVerb::Go},
-    {"move", CommandVerb::Go},
-    {"north", CommandVerb::Go},
-    {"south", CommandVerb::Go},
-    {"east", CommandVerb::Go},
-    {"west", CommandVerb::Go},
-    {"up", CommandVerb::Go},
-    {"down", CommandVerb::Go},
-    {"n", CommandVerb::Go},
-    {"s", CommandVerb::Go},
-    {"e", CommandVerb::Go},
-    {"w", CommandVerb::Go},
-    {"u", CommandVerb::Go},
-    {"d", CommandVerb::Go},
-
-    // Observation
-    {"look", CommandVerb::Look},
-    {"l", CommandVerb::Look},
-    {"examine", CommandVerb::Examine},
-    {"x", CommandVerb::Examine},
-    {"inspect", CommandVerb::Examine},
-
-    // Item manipulation
-    {"take", CommandVerb::Take},
-    {"get", CommandVerb::Take},
-    {"grab", CommandVerb::Take},
-    {"pick", CommandVerb::Take},
-    {"drop", CommandVerb::Drop},
-    {"use", CommandVerb::Use},
-    {"give", CommandVerb::Give},
-
-    // Social
-    {"talk", CommandVerb::Talk},
-    {"speak", CommandVerb::Talk},
-    {"chat", CommandVerb::Talk},
-
-    // Meta
-    {"inventory", CommandVerb::Inventory},
-    {"i", CommandVerb::Inventory},
-    {"inv", CommandVerb::Inventory},
-    {"save", CommandVerb::Save},
-    {"load", CommandVerb::Load},
-    {"quit", CommandVerb::Quit},
-    {"exit", CommandVerb::Quit},
-    {"q", CommandVerb::Quit},
-    {"help", CommandVerb::Help},
-    {"?", CommandVerb::Help},
-};
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -77,16 +25,138 @@ std::string trim(const std::string &s) {
 
 std::string to_lower(const std::string &s) {
     std::string result = s;
-    std::ranges::transform(result, result.begin(), ::tolower);
+    std::ranges::transform(result, result.begin(),
+                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     return result;
+}
+
+std::unordered_map<std::string, CommandVerb> canonical_verbs() {
+    return {
+        {"go", CommandVerb::Go},
+        {"look", CommandVerb::Look},
+        {"examine", CommandVerb::Examine},
+        {"take", CommandVerb::Take},
+        {"drop", CommandVerb::Drop},
+        {"use", CommandVerb::Use},
+        {"give", CommandVerb::Give},
+        {"talk", CommandVerb::Talk},
+        {"inventory", CommandVerb::Inventory},
+        {"save", CommandVerb::Save},
+        {"load", CommandVerb::Load},
+        {"quit", CommandVerb::Quit},
+        {"help", CommandVerb::Help},
+    };
+}
+
+std::unordered_map<std::string, CommandVerb> fallback_verb_table() {
+    return {
+        {"go", CommandVerb::Go},
+        {"walk", CommandVerb::Go},
+        {"move", CommandVerb::Go},
+        {"north", CommandVerb::Go},
+        {"south", CommandVerb::Go},
+        {"east", CommandVerb::Go},
+        {"west", CommandVerb::Go},
+        {"up", CommandVerb::Go},
+        {"down", CommandVerb::Go},
+        {"n", CommandVerb::Go},
+        {"s", CommandVerb::Go},
+        {"e", CommandVerb::Go},
+        {"w", CommandVerb::Go},
+        {"u", CommandVerb::Go},
+        {"d", CommandVerb::Go},
+        {"look", CommandVerb::Look},
+        {"l", CommandVerb::Look},
+        {"examine", CommandVerb::Examine},
+        {"x", CommandVerb::Examine},
+        {"inspect", CommandVerb::Examine},
+        {"take", CommandVerb::Take},
+        {"get", CommandVerb::Take},
+        {"grab", CommandVerb::Take},
+        {"pick", CommandVerb::Take},
+        {"drop", CommandVerb::Drop},
+        {"use", CommandVerb::Use},
+        {"give", CommandVerb::Give},
+        {"talk", CommandVerb::Talk},
+        {"speak", CommandVerb::Talk},
+        {"chat", CommandVerb::Talk},
+        {"inventory", CommandVerb::Inventory},
+        {"i", CommandVerb::Inventory},
+        {"inv", CommandVerb::Inventory},
+        {"save", CommandVerb::Save},
+        {"load", CommandVerb::Load},
+        {"quit", CommandVerb::Quit},
+        {"exit", CommandVerb::Quit},
+        {"q", CommandVerb::Quit},
+        {"help", CommandVerb::Help},
+        {"?", CommandVerb::Help},
+    };
+}
+
+std::unordered_map<std::string, CommandVerb>
+load_verb_table(const std::filesystem::path &config_path) {
+    std::ifstream in(config_path);
+    if (!in.is_open()) {
+        return fallback_verb_table();
+    }
+
+    nlohmann::json config;
+    try {
+        config = nlohmann::json::parse(in);
+    } catch (const nlohmann::json::exception &e) {
+        throw std::runtime_error("CommandParser: parse error in " + config_path.string() + ": " +
+                                 e.what());
+    }
+
+    auto aliases_it = config.find("verb_aliases");
+    if (aliases_it == config.end()) {
+        return fallback_verb_table();
+    }
+    if (!aliases_it->is_object()) {
+        throw std::runtime_error("CommandParser: verb_aliases must be a JSON object");
+    }
+
+    auto canonical = canonical_verbs();
+    std::unordered_map<std::string, CommandVerb> loaded;
+    for (const auto &[verb_name, aliases] : aliases_it->items()) {
+        auto verb_it = canonical.find(to_lower(verb_name));
+        if (verb_it == canonical.end()) {
+            throw std::runtime_error("CommandParser: unknown canonical verb '" + verb_name + "'");
+        }
+
+        if (!aliases.is_array()) {
+            throw std::runtime_error("CommandParser: aliases for '" + verb_name +
+                                     "' must be a JSON array");
+        }
+
+        for (const auto &alias : aliases) {
+            if (!alias.is_string()) {
+                throw std::runtime_error("CommandParser: aliases for '" + verb_name +
+                                         "' must be strings");
+            }
+            auto key = to_lower(trim(alias.get<std::string>()));
+            if (!key.empty()) {
+                loaded[key] = verb_it->second;
+            }
+        }
+    }
+
+    if (loaded.empty()) {
+        return fallback_verb_table();
+    }
+    return loaded;
+}
+
+bool is_hard_conversation_command(CommandVerb verb) {
+    return verb == CommandVerb::Quit || verb == CommandVerb::Save || verb == CommandVerb::Load ||
+           verb == CommandVerb::Help || verb == CommandVerb::Inventory || verb == CommandVerb::Look;
 }
 
 // Map directional shortcut to full direction name.
 // Returns empty string if not a directional shortcut.
 std::string expand_direction(const std::string &word) {
     static const std::unordered_map<std::string, std::string> dir_map = {
-        {"n", "north"}, {"s", "south"}, {"e", "east"}, {"w", "west"},
-        {"u", "up"},    {"d", "down"},
+        {"n", "north"}, {"s", "south"}, {"e", "east"}, {"w", "west"}, {"u", "up"}, {"d", "down"},
     };
     auto it = dir_map.find(word);
     if (it != dir_map.end())
@@ -103,6 +173,11 @@ bool is_direction_word(const std::string &word) {
 }
 
 } // namespace
+
+CommandParser::CommandParser() : CommandParser("config/default.json") {}
+
+CommandParser::CommandParser(std::filesystem::path config_path)
+    : verb_table_(load_verb_table(config_path)) {}
 
 // ---------------------------------------------------------------------------
 // parse_use_syntax
@@ -157,14 +232,11 @@ ParsedCommand CommandParser::parse(const std::string &raw_input, GamePhase phase
     }
 
     std::string first_lower = to_lower(first_word);
+    auto verb_it = verb_table_.find(first_lower);
 
     // InConversation phase: only hard commands break out of dialogue
     if (phase == GamePhase::InConversation) {
-        static const std::unordered_set<std::string> hard_commands = {
-            "quit", "exit", "q", "save", "load", "help", "?",
-            "inventory", "i", "inv", "look", "l",
-        };
-        if (!hard_commands.contains(first_lower)) {
+        if (verb_it == verb_table_.end() || !is_hard_conversation_command(verb_it->second)) {
             result.verb = CommandVerb::Dialogue;
             result.primary_arg = trimmed;
             return result;
@@ -172,14 +244,13 @@ ParsedCommand CommandParser::parse(const std::string &raw_input, GamePhase phase
     }
 
     // Look up verb
-    auto it = verb_table_.find(first_lower);
-    if (it == verb_table_.end()) {
+    if (verb_it == verb_table_.end()) {
         result.verb = CommandVerb::Unknown;
         result.primary_arg = first_lower;
         return result;
     }
 
-    CommandVerb verb = it->second;
+    CommandVerb verb = verb_it->second;
 
     // Use verb has special syntax
     if (verb == CommandVerb::Use) {

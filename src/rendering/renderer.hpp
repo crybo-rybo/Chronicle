@@ -15,6 +15,7 @@ class Renderer {
     virtual void render_move(const std::string &direction,
                              const std::string &new_location_name) = 0;
     virtual void render_npc_intro(std::string_view npc_name, std::string_view mood) = 0;
+    virtual void begin_npc_dialogue(std::string_view npc_name) = 0;
     virtual void stream_token(std::string_view token) = 0;
     virtual void flush_dialogue() = 0;
     virtual void render_action(std::string_view narration) = 0;

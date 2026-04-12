@@ -108,6 +108,21 @@ TEST(TerminalRendererTest, StreamTokenOutputsText) {
     EXPECT_EQ(out.str(), "hello");
 }
 
+TEST(TerminalRendererTest, BeginNpcDialogueColorsStreamedTokensUntilFlush) {
+    std::ostringstream out;
+    std::istringstream in;
+    chronicle::TerminalRenderer renderer({"Marcus"}, out, in, true);
+
+    renderer.begin_npc_dialogue("Marcus");
+    renderer.stream_token("hello");
+    renderer.flush_dialogue();
+
+    auto result = out.str();
+    EXPECT_NE(result.find("\033["), std::string::npos);
+    EXPECT_LT(result.find("\033["), result.find("hello"));
+    EXPECT_NE(result.find("hello\033[0m\n"), std::string::npos);
+}
+
 TEST(TerminalRendererTest, FlushDialogueAddsNewline) {
     std::ostringstream out;
     std::istringstream in;
@@ -233,6 +248,19 @@ TEST(TerminalRendererTest, AssignNpcColorsDeterministicOrder) {
     r2.assign_npc_colors({"marcus", "elara", "zara"});
 
     // Render NPC intros in the same order and compare output
+    for (const auto &name : {"elara", "marcus", "zara"}) {
+        r1.render_npc_intro(name, "neutral");
+        r2.render_npc_intro(name, "neutral");
+    }
+    EXPECT_EQ(out1.str(), out2.str());
+}
+
+TEST(TerminalRendererTest, ConstructorAssignsNpcColorsDeterministically) {
+    std::ostringstream out1, out2;
+    std::istringstream in1, in2;
+    chronicle::TerminalRenderer r1({"zara", "marcus", "elara"}, out1, in1, true);
+    chronicle::TerminalRenderer r2({"marcus", "elara", "zara"}, out2, in2, true);
+
     for (const auto &name : {"elara", "marcus", "zara"}) {
         r1.render_npc_intro(name, "neutral");
         r2.render_npc_intro(name, "neutral");

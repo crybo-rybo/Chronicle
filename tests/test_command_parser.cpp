@@ -1,8 +1,21 @@
 #include "engine/command_parser.hpp"
+#include <filesystem>
+#include <fstream>
 #include <gtest/gtest.h>
 
 using namespace chronicle;
 using Phase = GamePhase;
+
+namespace {
+
+std::filesystem::path write_command_config(std::string_view contents) {
+    auto path = std::filesystem::temp_directory_path() / "chronicle_command_parser_config.json";
+    std::ofstream out(path);
+    out << contents;
+    return path;
+}
+
+} // namespace
 
 // ---------------------------------------------------------------------------
 // Basic verbs
@@ -149,6 +162,40 @@ TEST(CommandParserTest, AliasQuestionMark) {
     CommandParser parser;
     auto cmd = parser.parse("?", Phase::Playing);
     EXPECT_EQ(cmd.verb, CommandVerb::Help);
+}
+
+TEST(CommandParserTest, LoadsAliasesFromConfigFile) {
+    auto config_path = write_command_config(R"({
+        "verb_aliases": {
+            "inventory": ["bag"]
+        }
+    })");
+
+    CommandParser parser(config_path);
+    auto cmd = parser.parse("bag", Phase::Playing);
+    EXPECT_EQ(cmd.verb, CommandVerb::Inventory);
+
+    std::filesystem::remove(config_path);
+}
+
+TEST(CommandParserTest, MissingConfigFallsBackToBuiltInAliases) {
+    CommandParser parser("/nonexistent/chronicle/config/default.json");
+    auto cmd = parser.parse("i", Phase::Playing);
+    EXPECT_EQ(cmd.verb, CommandVerb::Inventory);
+}
+
+TEST(CommandParserTest, InConversationConfigAliasCanBeHardCommand) {
+    auto config_path = write_command_config(R"({
+        "verb_aliases": {
+            "inventory": ["bag"]
+        }
+    })");
+
+    CommandParser parser(config_path);
+    auto cmd = parser.parse("bag", Phase::InConversation);
+    EXPECT_EQ(cmd.verb, CommandVerb::Inventory);
+
+    std::filesystem::remove(config_path);
 }
 
 // ---------------------------------------------------------------------------
