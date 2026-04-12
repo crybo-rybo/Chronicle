@@ -9,9 +9,13 @@ namespace chronicle {
 class PromptBuilder {
 public:
     struct Budget {
+        /// Active: limits NPC memory section in system prompt.
         int max_memory_tokens = 800;
+        /// Sprint 3+: will limit world context section when ResponseHandler is implemented.
         int max_world_tokens = 400;
+        /// Sprint 3+: will limit conversation history turns when history management is added.
         int max_history_tokens = 600;
+        /// Heuristic conversion factor for token estimation (chars per token).
         double chars_per_token = 4.0;
     };
 

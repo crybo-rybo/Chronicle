@@ -116,8 +116,9 @@ load_verb_table(const std::filesystem::path &config_path) {
         throw std::runtime_error("CommandParser: verb_aliases must be a JSON object");
     }
 
+    // Start with safe defaults, then overlay configured aliases
     auto canonical = canonical_verbs();
-    std::unordered_map<std::string, CommandVerb> loaded;
+    auto result = fallback_verb_table();
     for (const auto &[verb_name, aliases] : aliases_it->items()) {
         auto verb_it = canonical.find(to_lower(verb_name));
         if (verb_it == canonical.end()) {
@@ -136,15 +137,12 @@ load_verb_table(const std::filesystem::path &config_path) {
             }
             auto key = to_lower(trim(alias.get<std::string>()));
             if (!key.empty()) {
-                loaded[key] = verb_it->second;
+                result[key] = verb_it->second;
             }
         }
     }
 
-    if (loaded.empty()) {
-        return fallback_verb_table();
-    }
-    return loaded;
+    return result;
 }
 
 bool is_hard_conversation_command(CommandVerb verb) {
@@ -277,6 +275,12 @@ ParsedCommand CommandParser::parse(const std::string &raw_input, GamePhase phase
     }
 
     result.primary_arg = remainder;
+
+    // Normalize direction arguments to lowercase world IDs
+    if (verb == CommandVerb::Go && !result.primary_arg.empty()) {
+        result.primary_arg = to_lower(result.primary_arg);
+    }
+
     return result;
 }
 

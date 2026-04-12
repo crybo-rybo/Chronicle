@@ -5,6 +5,13 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# Compiler warning flags for Chronicle-owned targets (not vendored dependencies)
+option(CHRONICLE_WERROR "Treat compiler warnings as errors" OFF)
+set(CHRONICLE_WARNING_FLAGS -Wall -Wextra -Wpedantic)
+if(CHRONICLE_WERROR)
+    list(APPEND CHRONICLE_WARNING_FLAGS -Werror)
+endif()
+
 # Zoo-Keeper via FetchContent
 include(FetchContent)
 FetchContent_Declare(

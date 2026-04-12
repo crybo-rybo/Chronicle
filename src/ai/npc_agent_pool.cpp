@@ -1,4 +1,8 @@
 #include "ai/npc_agent_pool.hpp"
+#include "ai/zoo_agent_adapter.hpp"
+#include "entities/config.hpp"
+#include <stdexcept>
+#include <zoo/agent.hpp>
 
 namespace chronicle {
 
@@ -40,6 +44,32 @@ NpcAgentHandle& NpcAgentHandle::operator=(NpcAgentHandle&& other) noexcept {
 // ---------------------------------------------------------------------------
 
 NpcAgentPool::NpcAgentPool(std::unique_ptr<AgentInterface> agent) : agent_(std::move(agent)) {}
+
+NpcAgentPool NpcAgentPool::from_config(const Config &config) {
+    if (config.model_path.empty()) {
+        throw std::runtime_error(
+            "NpcAgentPool::from_config: model_path is empty. "
+            "Set model_path in config/default.json to a valid GGUF model file.");
+    }
+
+    zoo::ModelConfig model_config{
+        .model_path = config.model_path,
+        .context_size = config.context_size,
+        .n_gpu_layers = config.n_gpu_layers,
+    };
+
+    zoo::GenerationOptions gen_opts;
+    gen_opts.sampling.temperature = static_cast<float>(config.temperature);
+    gen_opts.max_tokens = config.max_response_tokens;
+
+    auto result = zoo::Agent::create(model_config, {}, gen_opts);
+    if (!result) {
+        throw std::runtime_error("NpcAgentPool::from_config: failed to create zoo::Agent: " +
+                                 result.error().to_string());
+    }
+
+    return NpcAgentPool(std::make_unique<ZooAgentAdapter>(std::move(*result)));
+}
 
 NpcAgentHandle NpcAgentPool::acquire(const std::string& npc_id) {
     if (in_use_) {

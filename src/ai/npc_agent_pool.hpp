@@ -6,6 +6,7 @@
 
 namespace chronicle {
 
+struct Config;
 class NpcAgentPool;
 
 /// RAII handle that exclusively borrows an agent for a single NPC interaction.
@@ -37,7 +38,12 @@ private:
 /// Only one NPC may hold the agent at a time; double-acquire throws.
 class NpcAgentPool {
 public:
+    /// Test-injection constructor: takes a pre-built agent.
     explicit NpcAgentPool(std::unique_ptr<AgentInterface> agent);
+
+    /// Production factory: creates pool with a real zoo::Agent from Config.
+    /// @throws std::runtime_error on empty model_path or agent creation failure.
+    static NpcAgentPool from_config(const Config &config);
 
     /// Acquires exclusive access to the agent for the given NPC.
     /// Clears conversation history before returning the handle.

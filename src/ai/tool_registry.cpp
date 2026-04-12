@@ -168,4 +168,93 @@ ToolRegistry::ValidationResult ToolRegistry::validate_set_flag(const std::string
                            {{"flag_id", flag_id}, {"value", value ? "true" : "false"}}};
 }
 
+// ---------------------------------------------------------------------------
+// Register methods: validate + enqueue
+// ---------------------------------------------------------------------------
+
+std::optional<std::string> ToolRegistry::register_give_item(const std::string &npc_id,
+                                                             const std::string &item_id) {
+    auto result = validate_give_item(npc_id, item_id);
+    if (auto *error = std::get_if<std::string>(&result))
+        return *error;
+    pending_.push_back(std::get<MutationRequest>(result));
+    return std::nullopt;
+}
+
+std::optional<std::string> ToolRegistry::register_take_item(const std::string &npc_id,
+                                                             const std::string &item_id) {
+    auto result = validate_take_item(npc_id, item_id);
+    if (auto *error = std::get_if<std::string>(&result))
+        return *error;
+    pending_.push_back(std::get<MutationRequest>(result));
+    return std::nullopt;
+}
+
+std::optional<std::string> ToolRegistry::register_update_mood(const std::string &npc_id,
+                                                               const std::string &mood) {
+    auto result = validate_update_mood(npc_id, mood);
+    if (auto *error = std::get_if<std::string>(&result))
+        return *error;
+    pending_.push_back(std::get<MutationRequest>(result));
+    return std::nullopt;
+}
+
+std::optional<std::string> ToolRegistry::register_update_trust(const std::string &npc_id,
+                                                                int delta) {
+    auto result = validate_update_trust(npc_id, delta);
+    if (auto *error = std::get_if<std::string>(&result))
+        return *error;
+    pending_.push_back(std::get<MutationRequest>(result));
+    return std::nullopt;
+}
+
+std::optional<std::string> ToolRegistry::register_move_npc(const std::string &npc_id,
+                                                            const std::string &location_id) {
+    auto result = validate_move_npc(npc_id, location_id);
+    if (auto *error = std::get_if<std::string>(&result))
+        return *error;
+    pending_.push_back(std::get<MutationRequest>(result));
+    return std::nullopt;
+}
+
+std::optional<std::string>
+ToolRegistry::register_reveal_knowledge(const std::string &npc_id, const std::string &fact_id) {
+    auto result = validate_reveal_knowledge(npc_id, fact_id);
+    if (auto *error = std::get_if<std::string>(&result))
+        return *error;
+    pending_.push_back(std::get<MutationRequest>(result));
+    return std::nullopt;
+}
+
+std::optional<std::string> ToolRegistry::register_add_memory(const std::string &npc_id,
+                                                              const std::string &summary,
+                                                              int importance) {
+    auto result = validate_add_memory(npc_id, summary, importance);
+    if (auto *error = std::get_if<std::string>(&result))
+        return *error;
+    pending_.push_back(std::get<MutationRequest>(result));
+    return std::nullopt;
+}
+
+std::optional<std::string> ToolRegistry::register_set_flag(const std::string &flag_id,
+                                                            bool value) {
+    auto result = validate_set_flag(flag_id, value);
+    if (auto *error = std::get_if<std::string>(&result))
+        return *error;
+    pending_.push_back(std::get<MutationRequest>(result));
+    return std::nullopt;
+}
+
+void ToolRegistry::register_say(const std::string &npc_id, const std::string &dialogue) {
+    dialogue_log_.emplace_back(npc_id, dialogue);
+}
+
+const std::vector<MutationRequest> &ToolRegistry::pending_mutations() const {
+    return pending_;
+}
+
+void ToolRegistry::clear_pending() {
+    pending_.clear();
+}
+
 } // namespace chronicle

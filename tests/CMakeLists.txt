@@ -10,6 +10,7 @@ FetchContent_MakeAvailable(googletest)
 # Gather all test_*.cpp files automatically
 file(GLOB TEST_SOURCES test_*.cpp)
 add_executable(chronicle_tests ${TEST_SOURCES})
+target_compile_options(chronicle_tests PRIVATE ${CHRONICLE_WARNING_FLAGS})
 if(TARGET chronicle_game)
     # chronicle_game links chronicle_entities publicly, so no need to list it again
     target_link_libraries(chronicle_tests PRIVATE GTest::gtest_main chronicle_game)

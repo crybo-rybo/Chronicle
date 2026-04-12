@@ -1,4 +1,5 @@
 #include "ai/npc_agent_pool.hpp"
+#include "entities/config.hpp"
 #include <gtest/gtest.h>
 
 namespace chronicle {
@@ -91,6 +92,35 @@ TEST(NpcAgentPoolTest, HandleNpcId) {
 
     auto handle = pool.acquire("marcus");
     EXPECT_EQ(handle.npc_id(), "marcus");
+}
+
+// ---------------------------------------------------------------------------
+// from_config failure tests (no model required)
+// ---------------------------------------------------------------------------
+
+TEST(NpcAgentPoolTest, FromConfigThrowsOnEmptyModelPath) {
+    Config config;
+    config.model_path = "";
+    EXPECT_THROW(NpcAgentPool::from_config(config), std::runtime_error);
+}
+
+TEST(NpcAgentPoolTest, FromConfigThrowsOnMissingModelFile) {
+    Config config;
+    config.model_path = "/nonexistent/path/to/model.gguf";
+    config.context_size = 2048;
+    EXPECT_THROW(NpcAgentPool::from_config(config), std::runtime_error);
+}
+
+TEST(NpcAgentPoolTest, FromConfigErrorMessageIsDescriptive) {
+    Config config;
+    config.model_path = "";
+    try {
+        NpcAgentPool::from_config(config);
+        FAIL() << "Expected std::runtime_error";
+    } catch (const std::runtime_error &e) {
+        std::string msg = e.what();
+        EXPECT_NE(msg.find("model_path"), std::string::npos);
+    }
 }
 
 } // namespace chronicle

@@ -3,3 +3,4 @@
 
 add_executable(zk_smoke_test zk_smoke_test.cpp)
 target_link_libraries(zk_smoke_test PRIVATE ZooKeeper::zoo)
+target_compile_options(zk_smoke_test PRIVATE ${CHRONICLE_WARNING_FLAGS})

@@ -178,6 +178,39 @@ TEST(CommandParserTest, LoadsAliasesFromConfigFile) {
     std::filesystem::remove(config_path);
 }
 
+TEST(CommandParserTest, PartialConfigPreservesDefaults) {
+    auto config_path = write_command_config(R"({
+        "verb_aliases": {
+            "inventory": ["bag"]
+        }
+    })");
+
+    CommandParser parser(config_path);
+
+    // Custom alias works
+    auto cmd1 = parser.parse("bag", Phase::Playing);
+    EXPECT_EQ(cmd1.verb, CommandVerb::Inventory);
+
+    // Built-in canonical verb still works
+    auto cmd2 = parser.parse("inventory", Phase::Playing);
+    EXPECT_EQ(cmd2.verb, CommandVerb::Inventory);
+
+    // Other default verbs preserved
+    auto cmd3 = parser.parse("quit", Phase::Playing);
+    EXPECT_EQ(cmd3.verb, CommandVerb::Quit);
+
+    auto cmd4 = parser.parse("go north", Phase::Playing);
+    EXPECT_EQ(cmd4.verb, CommandVerb::Go);
+
+    auto cmd5 = parser.parse("look", Phase::Playing);
+    EXPECT_EQ(cmd5.verb, CommandVerb::Look);
+
+    auto cmd6 = parser.parse("n", Phase::Playing);
+    EXPECT_EQ(cmd6.verb, CommandVerb::Go);
+
+    std::filesystem::remove(config_path);
+}
+
 TEST(CommandParserTest, MissingConfigFallsBackToBuiltInAliases) {
     CommandParser parser("/nonexistent/chronicle/config/default.json");
     auto cmd = parser.parse("i", Phase::Playing);
@@ -317,7 +350,21 @@ TEST(CommandParserTest, CaseInsensitiveMixed) {
     CommandParser parser;
     auto cmd = parser.parse("Go North", Phase::Playing);
     EXPECT_EQ(cmd.verb, CommandVerb::Go);
-    EXPECT_EQ(cmd.primary_arg, "North");
+    EXPECT_EQ(cmd.primary_arg, "north");
+}
+
+TEST(CommandParserTest, GoDirectionNormalizesAllCaps) {
+    CommandParser parser;
+    auto cmd = parser.parse("GO NORTH", Phase::Playing);
+    EXPECT_EQ(cmd.verb, CommandVerb::Go);
+    EXPECT_EQ(cmd.primary_arg, "north");
+}
+
+TEST(CommandParserTest, DialogueRawInputPreserved) {
+    CommandParser parser;
+    auto cmd = parser.parse("Tell me about the NORTH gate", Phase::InConversation);
+    EXPECT_EQ(cmd.verb, CommandVerb::Dialogue);
+    EXPECT_EQ(cmd.primary_arg, "Tell me about the NORTH gate");
 }
 
 // ---------------------------------------------------------------------------

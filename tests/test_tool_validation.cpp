@@ -303,4 +303,56 @@ TEST_F(ToolRegistryTest, ErrorStringsNonEmpty) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Pending mutation queue tests
+// ---------------------------------------------------------------------------
+
+TEST_F(ToolRegistryTest, RegisterPushesToPendingQueue) {
+    ToolRegistry reg(world);
+    EXPECT_TRUE(reg.pending_mutations().empty());
+
+    auto err1 = reg.register_give_item("marcus", "cargo_manifest");
+    EXPECT_FALSE(err1.has_value());
+    EXPECT_EQ(reg.pending_mutations().size(), 1u);
+
+    auto err2 = reg.register_update_mood("marcus", "suspicious");
+    EXPECT_FALSE(err2.has_value());
+    EXPECT_EQ(reg.pending_mutations().size(), 2u);
+}
+
+TEST_F(ToolRegistryTest, RegisterFailureDoesNotEnqueue) {
+    ToolRegistry reg(world);
+    auto err = reg.register_give_item("marcus", "crumpled_note");
+    EXPECT_TRUE(err.has_value());
+    EXPECT_TRUE(reg.pending_mutations().empty());
+}
+
+TEST_F(ToolRegistryTest, ClearPendingEmptiesQueue) {
+    ToolRegistry reg(world);
+    reg.register_give_item("marcus", "cargo_manifest");
+    EXPECT_EQ(reg.pending_mutations().size(), 1u);
+    reg.clear_pending();
+    EXPECT_TRUE(reg.pending_mutations().empty());
+}
+
+TEST_F(ToolRegistryTest, SayDoesNotEnqueue) {
+    ToolRegistry reg(world);
+    reg.register_say("marcus", "Hello, traveler.");
+    EXPECT_TRUE(reg.pending_mutations().empty());
+}
+
+TEST_F(ToolRegistryTest, RegisterMultipleToolTypes) {
+    ToolRegistry reg(world);
+    reg.register_give_item("marcus", "cargo_manifest");
+    reg.register_update_trust("marcus", 10);
+    reg.register_move_npc("marcus", "market_square");
+    reg.register_set_flag("intro_complete", false);
+    EXPECT_EQ(reg.pending_mutations().size(), 4u);
+
+    EXPECT_EQ(reg.pending_mutations()[0].type, MutationRequest::Type::GiveItemToPlayer);
+    EXPECT_EQ(reg.pending_mutations()[1].type, MutationRequest::Type::UpdateNpcTrust);
+    EXPECT_EQ(reg.pending_mutations()[2].type, MutationRequest::Type::MoveNpc);
+    EXPECT_EQ(reg.pending_mutations()[3].type, MutationRequest::Type::SetFlag);
+}
+
 } // namespace chronicle

@@ -1,6 +1,7 @@
 #include "ai/prompt_builder.hpp"
 #include <algorithm>
 #include <cmath>
+#include <nlohmann/json.hpp>
 #include <sstream>
 
 namespace chronicle {
@@ -104,7 +105,8 @@ std::string PromptBuilder::build_system_prompt(const NpcIdentity &identity, cons
 std::string PromptBuilder::build_user_turn(const std::string &player_input,
                                            const Player &player) const {
     std::ostringstream out;
-    out << "The player says: \"" << player_input << "\"";
+    nlohmann::json encoded = player_input;
+    out << "The player says: " << encoded.dump();
 
     if (!player.inventory.empty()) {
         out << "\n\nPlayer inventory: ";
@@ -129,24 +131,44 @@ std::vector<MemoryEntry> PromptBuilder::select_memories(const std::vector<Memory
         return {};
     }
 
-    // Importance-first selection: stable_sort preserves insertion order (chronological)
-    // as a recency tiebreaker when importance values are equal, satisfying the
-    // "importance-first, recency-fill" budgeting strategy.
-    auto sorted = all;
-    std::ranges::stable_sort(sorted, [](const MemoryEntry &a, const MemoryEntry &b) {
-        return a.importance > b.importance;
-    });
+    static constexpr int kHighImportanceThreshold = 7;
 
     std::vector<MemoryEntry> selected;
     int tokens_used = 0;
 
-    for (const auto &mem : sorted) {
+    // Phase 1: Select high-importance memories (>= threshold), ordered by importance desc.
+    // stable_sort preserves chronological order as tiebreaker within equal importance.
+    std::vector<MemoryEntry> high;
+    for (const auto &mem : all) {
+        if (mem.importance >= kHighImportanceThreshold) {
+            high.push_back(mem);
+        }
+    }
+    std::ranges::stable_sort(high, [](const MemoryEntry &a, const MemoryEntry &b) {
+        return a.importance > b.importance;
+    });
+
+    for (const auto &mem : high) {
         int cost = estimate_tokens(mem.summary);
         if (tokens_used + cost > token_budget) {
-            break;
+            continue; // skip oversized, try next
         }
         tokens_used += cost;
         selected.push_back(mem);
+    }
+
+    // Phase 2: Fill remaining budget with most-recent-first from lower-importance memories.
+    // Reverse iteration of `all` (insertion order) gives recency ordering.
+    for (auto it = all.rbegin(); it != all.rend(); ++it) {
+        if (it->importance >= kHighImportanceThreshold) {
+            continue; // already considered in phase 1
+        }
+        int cost = estimate_tokens(it->summary);
+        if (tokens_used + cost > token_budget) {
+            continue; // skip oversized
+        }
+        tokens_used += cost;
+        selected.push_back(*it);
     }
 
     return selected;
