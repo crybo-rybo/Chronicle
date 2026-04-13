@@ -114,12 +114,13 @@ TEST(NpcConversationIntegrationTest, RealAgentQueuesGiveItemMutation) {
     auto world = load_world(std::string(CHRONICLE_SOURCE_DIR) + "/data");
 
     debug_log("RealAgentQueuesGiveItemMutation: before zoo::Agent::create");
-    auto result = zoo::Agent::create(
-        zoo::ModelConfig{.model_path = config.model_path,
-                         .context_size = config.context_size,
-                         .n_gpu_layers = config.n_gpu_layers},
-        {},
-        zoo::GenerationOptions{.max_tokens = config.max_response_tokens});
+    zoo::ModelConfig model_config;
+    model_config.model_path = config.model_path;
+    model_config.context_size = config.context_size;
+    model_config.n_gpu_layers = config.n_gpu_layers;
+    zoo::GenerationOptions gen_opts;
+    gen_opts.max_tokens = config.max_response_tokens;
+    auto result = zoo::Agent::create(model_config, {}, gen_opts);
     ASSERT_TRUE(result) << result.error().to_string();
     debug_log("RealAgentQueuesGiveItemMutation: after zoo::Agent::create");
 
