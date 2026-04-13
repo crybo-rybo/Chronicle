@@ -319,19 +319,21 @@ void GameEngine::handle_dialogue(const std::string &npc_id, const std::string &i
 
         poll();
 
-        if (result.success) {
-            if (!streamed_any) {
-                for (const auto &[dialogue_npc_id, dialogue] : tool_registry_->drain_dialogue_log()) {
-                    if (dialogue_npc_id == npc_id) {
-                        renderer_->stream_token(dialogue);
-                        streamed_any = true;
-                    }
+        if (!streamed_any) {
+            for (const auto &[dialogue_npc_id, dialogue] : tool_registry_->drain_dialogue_log()) {
+                if (dialogue_npc_id == npc_id) {
+                    renderer_->stream_token(dialogue);
+                    streamed_any = true;
                 }
             }
-            renderer_->flush_dialogue();
-            process_pending_mutations();
-        } else {
-            renderer_->flush_dialogue();
+        }
+        renderer_->flush_dialogue();
+
+        // Always process mutations — tool lambdas validate and enqueue during inference,
+        // so mutations are valid even if the chat was cut short (e.g., iteration limit).
+        process_pending_mutations();
+
+        if (!result.success) {
             renderer_->render_error("Agent chat failed: " + result.error_message);
         }
         
