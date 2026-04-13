@@ -78,11 +78,13 @@ World load_world(const std::filesystem::path &data_dir) {
         for (auto &[key, value] : j_npcs.at("npcs").items()) {
             Npc npc = value.get<Npc>();
             npc.identity.id = key; // ensure id matches map key
+            // Capture location before move invalidates the local npc object.
+            const auto start_location = npc.state.current_location;
             world.npcs[key] = std::move(npc);
 
             // Add NPC to their location's npcs vector
-            auto loc_it = world.locations.find(world.npcs[key].state.current_location);
-            if (loc_it != world.locations.end()) {
+            if (auto loc_it = world.locations.find(start_location);
+                loc_it != world.locations.end()) {
                 loc_it->second.npcs.push_back(key);
             }
         }

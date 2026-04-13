@@ -181,13 +181,15 @@ ParsedCommand CommandParser::parse_use_syntax(const std::string &args_after_verb
 
     std::string args = text::trim_copy(args_after_verb);
 
+    // Lower-case once, outside the loop, to avoid redundant allocation per separator.
+    std::string lower_args = text::to_lower_copy(args);
+
     // Look for " on " or " with " separators
-    for (const auto &sep : {" on ", " with "}) {
-        std::string lower_args = text::to_lower_copy(args);
+    for (std::string_view sep : {" on ", " with "}) {
         auto pos = lower_args.find(sep);
         if (pos != std::string::npos) {
             result.primary_arg = text::trim_copy(args.substr(0, pos));
-            result.secondary_arg = text::trim_copy(args.substr(pos + std::string(sep).size()));
+            result.secondary_arg = text::trim_copy(args.substr(pos + sep.size()));
             return result;
         }
     }

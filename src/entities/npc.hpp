@@ -19,9 +19,11 @@
 
 #pragma once
 #include "entities/memory_entry.hpp"
+#include <algorithm>
+#include <array>
 #include <nlohmann/json.hpp>
-#include <set>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace chronicle {
@@ -30,8 +32,20 @@ namespace chronicle {
 ///
 /// Any LLM tool call that attempts to set an NPC's mood to a value not in this
 /// set will be rejected with an error returned to the model.
-inline const std::set<std::string> kValidMoods = {"neutral",  "suspicious", "friendly",
-                                                   "hostile",  "fearful",    "grieving"};
+/// Uses a sorted constexpr array of string_view to avoid heap allocation at static init
+/// and enable binary search for O(log n) lookup without hashing overhead.
+inline constexpr std::array<std::string_view, 6> kValidMoods = {{
+    "fearful", "friendly", "grieving", "hostile", "neutral", "suspicious",
+}};
+
+/// @brief Test whether a mood string is in the valid mood vocabulary.
+/// @param mood The mood string to check.
+/// @return @c true if @p mood is a recognised mood value.
+inline bool is_valid_mood(std::string_view mood) {
+    // Array is sorted, so binary search is correct.
+    auto it = std::lower_bound(kValidMoods.begin(), kValidMoods.end(), mood);
+    return it != kValidMoods.end() && *it == mood;
+}
 
 /// @brief Immutable identity data for a single NPC.
 ///

@@ -66,6 +66,14 @@ class ResponseHandler {
     void narrate_mutations(const std::vector<MutationRequest> &mutations,
                            const std::string &npc_name);
 
+    /// @brief Render narration for a single applied mutation.
+    ///
+    /// @details Avoids allocating a temporary vector for single-mutation narration.
+    ///
+    /// @param mutation  The mutation that was successfully applied.
+    /// @param npc_name  The display name of the NPC that triggered the mutation.
+    void narrate_mutation(const MutationRequest &mutation, const std::string &npc_name);
+
   private:
     Renderer &renderer_;                                          ///< Output renderer.
     TokenQueue &token_queue_;                                     ///< Streaming token buffer.

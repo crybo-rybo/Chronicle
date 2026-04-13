@@ -50,7 +50,7 @@ bool ToolRegistry::flag_exists(const std::string &flag_id) const {
 }
 
 bool ToolRegistry::is_valid_mood(const std::string &mood) const {
-    return kValidMoods.contains(mood);
+    return chronicle::is_valid_mood(mood);
 }
 
 // ---------------------------------------------------------------------------
@@ -75,12 +75,13 @@ static std::string format_inventory(const std::vector<std::string> &inv) {
 
 ToolRegistry::ValidationResult ToolRegistry::validate_give_item(const std::string &npc_id,
                                                                 const std::string &item_id) const {
-    if (!npc_exists(npc_id))
+    auto npc_it = world_.npcs.find(npc_id);
+    if (npc_it == world_.npcs.end())
         return "Error: NPC '" + npc_id + "' does not exist.";
     if (!item_exists(item_id))
         return "Error: Item '" + item_id + "' does not exist.";
-    if (!npc_has_item(npc_id, item_id)) {
-        const auto &inv = world_.npcs.at(npc_id).state.inventory;
+    const auto &inv = npc_it->second.state.inventory;
+    if (!std::ranges::contains(inv, item_id)) {
         return "Error: NPC '" + npc_id + "' does not have item '" + item_id +
                "'. Inventory: " + format_inventory(inv);
     }
@@ -118,10 +119,11 @@ ToolRegistry::validate_update_mood(const std::string &npc_id, const std::string 
 
 ToolRegistry::ValidationResult ToolRegistry::validate_update_trust(const std::string &npc_id,
                                                                    int delta) const {
-    if (!npc_exists(npc_id))
+    auto npc_it = world_.npcs.find(npc_id);
+    if (npc_it == world_.npcs.end())
         return "Error: NPC '" + npc_id + "' does not exist.";
 
-    int current = world_.npcs.at(npc_id).state.trust_toward_player;
+    int current = npc_it->second.state.trust_toward_player;
     int new_trust = std::clamp(current + delta, -100, 100);
     int clamped_delta = new_trust - current;
 
@@ -144,10 +146,11 @@ ToolRegistry::validate_move_npc(const std::string &npc_id,
 ToolRegistry::ValidationResult
 ToolRegistry::validate_reveal_knowledge(const std::string &npc_id,
                                         const std::string &fact_id) const {
-    if (!npc_exists(npc_id))
+    auto npc_it = world_.npcs.find(npc_id);
+    if (npc_it == world_.npcs.end())
         return "Error: NPC '" + npc_id + "' does not exist.";
 
-    const auto &knowledge = world_.npcs.at(npc_id).identity.knowledge;
+    const auto &knowledge = npc_it->second.identity.knowledge;
     if (!std::ranges::contains(knowledge, fact_id))
         return "Error: NPC '" + npc_id + "' does not know fact '" + fact_id + "'.";
 

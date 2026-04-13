@@ -94,10 +94,15 @@ std::string ResponseHandler::describe_mutation(const MutationRequest &m,
 void ResponseHandler::narrate_mutations(const std::vector<MutationRequest> &mutations,
                                         const std::string &npc_name) {
     for (const auto &m : mutations) {
-        std::string narration = describe_mutation(m, npc_name);
-        if (!narration.empty()) {
-            renderer_.render_action(narration);
-        }
+        narrate_mutation(m, npc_name);
+    }
+}
+
+void ResponseHandler::narrate_mutation(const MutationRequest &mutation,
+                                       const std::string &npc_name) {
+    std::string narration = describe_mutation(mutation, npc_name);
+    if (!narration.empty()) {
+        renderer_.render_action(narration);
     }
 }
 

@@ -8,7 +8,7 @@
 
 namespace chronicle {
 
-std::string Location::describe(const World & /*world*/) const {
+const std::string &Location::describe(const World & /*world*/) const {
     if (!current_description.empty()) {
         return current_description;
     }

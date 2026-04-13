@@ -26,18 +26,18 @@ void TerminalRenderer::assign_npc_colors(const std::vector<std::string> &npc_nam
     std::sort(sorted.begin(), sorted.end());
 
     for (const auto &id : sorted) {
-        if (npc_color_indices_.find(id) == npc_color_indices_.end()) {
-            npc_color_indices_[id] = next_color_index_++;
+        // try_emplace avoids the find-then-insert double-lookup pattern.
+        auto [it, inserted] = npc_color_indices_.try_emplace(id, next_color_index_);
+        if (inserted) {
+            ++next_color_index_;
         }
     }
 }
 
 std::string_view TerminalRenderer::npc_color(const std::string &npc_name) {
-    auto it = npc_color_indices_.find(npc_name);
-    if (it == npc_color_indices_.end()) {
-        int idx = next_color_index_++;
-        npc_color_indices_[npc_name] = idx;
-        return kNpcPalette[static_cast<std::size_t>(idx % 6)];
+    auto [it, inserted] = npc_color_indices_.try_emplace(npc_name, next_color_index_);
+    if (inserted) {
+        ++next_color_index_;
     }
     return kNpcPalette[static_cast<std::size_t>(it->second % 6)];
 }
@@ -53,7 +53,11 @@ void TerminalRenderer::write_colored(std::string_view color, std::string_view te
 void TerminalRenderer::render_scene(const Location &loc, const World &world) {
     // Location name in bold
     out_ << "\n";
-    write_colored(kBold, "--- " + std::string(loc.name) + " ---");
+    if (use_color_) {
+        out_ << kBold << "--- " << loc.name << " ---" << kReset;
+    } else {
+        out_ << "--- " << loc.name << " ---";
+    }
     out_ << "\n";
 
     // Description
@@ -137,7 +141,11 @@ void TerminalRenderer::flush_dialogue() {
 }
 
 void TerminalRenderer::render_action(std::string_view narration) {
-    write_colored(kItalic, "* " + std::string(narration) + " *");
+    if (use_color_) {
+        out_ << kItalic << "* " << narration << " *" << kReset;
+    } else {
+        out_ << "* " << narration << " *";
+    }
     out_ << "\n";
 }
 
@@ -169,7 +177,11 @@ void TerminalRenderer::render_item_examine(const Item &item) {
 }
 
 void TerminalRenderer::render_error(std::string_view message) {
-    write_colored(kDim, "[" + std::string(message) + "]");
+    if (use_color_) {
+        out_ << kDim << "[" << message << "]" << kReset;
+    } else {
+        out_ << "[" << message << "]";
+    }
     out_ << "\n";
 }
 

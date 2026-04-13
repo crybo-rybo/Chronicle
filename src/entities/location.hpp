@@ -70,8 +70,8 @@ struct Location {
     /// but is currently unused.
     ///
     /// @param world The current world state (reserved for future use).
-    /// @return The effective description string.
-    std::string describe(const World &world) const;
+    /// @return A const reference to the effective description string.
+    const std::string &describe(const World &world) const;
 };
 
 /// @cond INTERNAL

@@ -188,11 +188,15 @@ void GameEngine::handle_command(const ParsedCommand &cmd) {
             return false;
         });
         if (item_it != inv.end()) {
+            auto w_it = world_.items.find(*item_it);
+            if (w_it != world_.items.end() && w_it->second.key_item) {
+                renderer_->render_error("You can't drop that — it's too important to leave behind.");
+                return;
+            }
             auto loc_it = world_.locations.find(world_.player.current_location);
             if (loc_it != world_.locations.end()) {
                 loc_it->second.items.push_back(*item_it);
             }
-            auto w_it = world_.items.find(*item_it);
             renderer_->render_action("You drop the " + (w_it != world_.items.end() ? w_it->second.name : *item_it) + ".");
             inv.erase(item_it);
         } else {
@@ -263,7 +267,7 @@ void GameEngine::handle_command(const ParsedCommand &cmd) {
 }
 
 void GameEngine::process_pending_mutations() {
-    auto mutations = tool_registry_->pending_mutations();
+    const auto &mutations = tool_registry_->pending_mutations();
     if (!mutations.empty()) {
         std::vector<MutationRequest> applied;
         applied.reserve(mutations.size());
@@ -272,12 +276,17 @@ void GameEngine::process_pending_mutations() {
                 applied.push_back(m);
             }
         }
+
+        // Group applied mutations by NPC to batch narration and avoid
+        // per-mutation temporary vector allocation in narrate_mutations.
         for (const auto &mutation : applied) {
             std::string npc_name = mutation.npc_id;
-            if (!mutation.npc_id.empty() && world_.npcs.contains(mutation.npc_id)) {
-                npc_name = world_.npcs.at(mutation.npc_id).identity.name;
+            if (!mutation.npc_id.empty()) {
+                if (auto it = world_.npcs.find(mutation.npc_id); it != world_.npcs.end()) {
+                    npc_name = it->second.identity.name;
+                }
             }
-            response_handler_->narrate_mutations({mutation}, npc_name);
+            response_handler_->narrate_mutation(mutation, npc_name);
         }
         tool_registry_->clear_pending();
 
@@ -309,7 +318,11 @@ void GameEngine::handle_dialogue(const std::string &npc_id, const std::string &i
         auto handle = agent_pool_->acquire(npc_id);
         handle->register_tools(*tool_registry_, npc_id);
         
-        PromptBuilder::Budget budget;
+        PromptBuilder::Budget budget{
+            .max_memory_tokens = config_.max_memory_tokens,
+            .max_world_tokens = config_.max_world_tokens,
+            .max_history_tokens = config_.max_history_tokens,
+        };
         PromptBuilder pb(budget);
         
         std::string sys_prompt = pb.build_system_prompt(npc.identity, npc.state, world_);
@@ -434,7 +447,7 @@ void GameEngine::leave_conversation() {
 }
 
 bool GameEngine::is_conversation_exit(std::string_view input) const {
-    auto normalized = text::to_lower_copy(text::trim_copy(input));
+    auto normalized = text::trim_and_lower(input);
     return normalized == "bye" || normalized == "goodbye" || normalized == "leave" ||
            normalized == "exit conversation" || normalized == "leave conversation";
 }
