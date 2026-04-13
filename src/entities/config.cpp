@@ -1,3 +1,8 @@
+/**
+ * @file config.cpp
+ * @brief Implementation of @ref Config load/save and default narration templates.
+ */
+
 #include "entities/config.hpp"
 #include <fstream>
 #include <stdexcept>

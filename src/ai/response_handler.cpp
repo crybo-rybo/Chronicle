@@ -1,6 +1,14 @@
+/**
+ * @file response_handler.cpp
+ * @brief Implementation of @ref ResponseHandler — token forwarding and mutation narration.
+ *
+ * @details Implements the template-based mutation narration pipeline, including
+ * the @c replace_all helper and the @c template_key dispatcher that maps
+ * @ref MutationRequest::Type values to their string template keys.
+ */
+
 #include "ai/response_handler.hpp"
 #include "entities/config.hpp"
-#include <sstream>
 
 namespace chronicle {
 

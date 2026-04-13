@@ -1,3 +1,8 @@
+/**
+ * @file player.cpp
+ * @brief Implementation of @ref Player helper methods.
+ */
+
 #include "entities/player.hpp"
 
 #include <algorithm>

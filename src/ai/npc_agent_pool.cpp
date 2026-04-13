@@ -1,3 +1,12 @@
+/**
+ * @file npc_agent_pool.cpp
+ * @brief Implementation of @ref NpcAgentPool and @ref NpcAgentHandle.
+ *
+ * @details Implements the RAII handle move semantics and the pool acquire/release
+ * cycle, as well as the production @ref NpcAgentPool::from_config factory that
+ * creates a @c zoo::Agent from runtime configuration parameters.
+ */
+
 #include "ai/npc_agent_pool.hpp"
 #include "ai/zoo_agent_adapter.hpp"
 #include "entities/config.hpp"

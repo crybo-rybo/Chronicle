@@ -1,3 +1,8 @@
+/**
+ * @file world.cpp
+ * @brief Implementation of @ref World JSON serialisation.
+ */
+
 #include "entities/world.hpp"
 
 namespace chronicle {

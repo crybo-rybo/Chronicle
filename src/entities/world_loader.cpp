@@ -1,3 +1,13 @@
+/**
+ * @file world_loader.cpp
+ * @brief Implementation of @ref load_world — assembles a @ref World from JSON data files.
+ *
+ * @details Reads @c world.json (locations, items, start position), @c npcs.json
+ * (NPC identity and initial state), and @c events.json (scripted triggers).
+ * Entity IDs are injected from JSON map keys before deserialisation, and NPCs
+ * are cross-referenced into their starting location NPC lists.
+ */
+
 #include "entities/world_loader.hpp"
 #include <filesystem>
 #include <fstream>

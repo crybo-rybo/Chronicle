@@ -1,3 +1,8 @@
+/**
+ * @file item.cpp
+ * @brief Implementation of @ref Item JSON serialisation.
+ */
+
 #include "entities/item.hpp"
 
 namespace chronicle {

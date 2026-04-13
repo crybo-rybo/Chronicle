@@ -1,11 +1,20 @@
+/**
+ * @file game_engine.cpp
+ * @brief Implementation of @ref GameEngine — the main game loop and command dispatcher.
+ *
+ * @details Implements construction (subsystem wiring), the blocking @ref GameEngine::run
+ * loop, command dispatch, the dialogue pipeline (prompt build → agent chat →
+ * token streaming → mutation application), and all private helper utilities.
+ */
+
 #include "engine/game_engine.hpp"
 #include "ai/prompt_builder.hpp"
+#include "engine/mutations.hpp"
 #include "entities/world_loader.hpp"
 #include "engine/text_utils.hpp"
 #include "rendering/terminal_renderer.hpp"
 #include <algorithm>
 #include <iostream>
-#include <ranges>
 
 namespace chronicle {
 

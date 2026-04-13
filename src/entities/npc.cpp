@@ -1,3 +1,8 @@
+/**
+ * @file npc.cpp
+ * @brief Implementation of @ref NpcState, @ref Npc methods, and JSON serialisation.
+ */
+
 #include "entities/npc.hpp"
 
 #include <algorithm>

@@ -1,20 +1,57 @@
+/**
+ * @file memory_entry.hpp
+ * @brief NPC memory record used for long-term contextual recall.
+ *
+ * @details After each conversation the AI response pipeline performs a
+ * structured extraction pass that summarises the exchange into one or more
+ * @ref MemoryEntry records.  These summaries are persisted as part of
+ * @ref NpcState and injected back into future system prompts by the
+ * @ref PromptBuilder, giving each NPC a sense of history without storing full
+ * conversation transcripts.
+ */
+
 #pragma once
 #include <nlohmann/json.hpp>
 #include <string>
 
 namespace chronicle {
 
-/// A single memory held by an NPC. Generated via structured extraction after conversations.
+/// @brief A single condensed memory held by an NPC.
+///
+/// @details Memories are generated via structured extraction after significant
+/// interactions.  They serve as the NPC's long-term recall mechanism: the
+/// @ref PromptBuilder selects memories within a token budget and injects them
+/// into the system prompt so the LLM can reason about past events without
+/// receiving full conversation history.
+///
+/// @note The @c type and @c importance fields are validated by the AI response
+/// handler layer before a @c MemoryEntry is committed to @ref NpcState.
 struct MemoryEntry {
-    std::string timestamp;    ///< In-game time string, e.g. "Morning, Day 1"
-    std::string type;         ///< "conversation", "observation", "rumor", "event" — validated by the AI response handler layer
-    std::string summary;      ///< One- to two-sentence summary
-    int importance = 1;       ///< 1 (background noise) to 10 (critical plot event) — range validated by the AI response handler layer
-    std::string related_npc;  ///< Optional NPC id involved
-    std::string related_item; ///< Optional item id involved
+    /// In-game timestamp at which the memory was created, e.g. @c "Morning, Day 1".
+    std::string timestamp;
+
+    /// Categorises the nature of the memory.  Valid values are
+    /// @c "conversation", @c "observation", @c "rumor", and @c "event".
+    std::string type;
+
+    /// One- to two-sentence human-readable summary of what happened.
+    std::string summary;
+
+    /// Salience score from 1 (background noise) to 10 (critical plot event).
+    /// Used by @ref PromptBuilder to prioritise which memories fit within the
+    /// token budget.  Clamped to [1, 10] by the validation layer.
+    int importance = 1;
+
+    /// Optional ID of an NPC directly involved in this memory.  Empty if none.
+    std::string related_npc;
+
+    /// Optional ID of an item directly involved in this memory.  Empty if none.
+    std::string related_item;
 };
 
+/// @cond INTERNAL
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(MemoryEntry, timestamp, type, summary, importance,
                                                 related_npc, related_item)
+/// @endcond
 
 } // namespace chronicle

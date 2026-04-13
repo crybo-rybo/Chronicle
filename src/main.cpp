@@ -1,3 +1,13 @@
+/**
+ * @file main.cpp
+ * @brief Entry point for the Chronicle text adventure game.
+ *
+ * @details Bootstraps the runtime, verifies the Zoo-Keeper library is available,
+ * and will eventually initialize and run the GameEngine once the full startup
+ * pipeline is wired together.  For now it serves as a build-smoke-test and
+ * version banner.
+ */
+
 #include <iostream>
 
 #include <zoo/zoo.hpp>

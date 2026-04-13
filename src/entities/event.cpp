@@ -1,3 +1,8 @@
+/**
+ * @file event.cpp
+ * @brief Implementation of event system serialisation and string conversion utilities.
+ */
+
 #include "entities/event.hpp"
 #include <stdexcept>
 

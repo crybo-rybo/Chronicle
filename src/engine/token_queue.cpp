@@ -1,3 +1,8 @@
+/**
+ * @file token_queue.cpp
+ * @brief Implementation of the thread-safe @ref TokenQueue.
+ */
+
 #include "engine/token_queue.hpp"
 
 namespace chronicle {

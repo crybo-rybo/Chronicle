@@ -1,3 +1,12 @@
+/**
+ * @file tool_registry.cpp
+ * @brief Implementation of @ref ToolRegistry — validation, queuing, and Zoo-Keeper registration.
+ *
+ * @details Implements all @c validate_*, @c register_*, and utility methods,
+ * plus @ref ToolRegistry::register_tools which wires game tools onto a
+ * @c zoo::Agent via lambdas that capture @c this.
+ */
+
 #include "ai/tool_registry.hpp"
 #include <zoo/agent.hpp>
 #include <algorithm>

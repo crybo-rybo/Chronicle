@@ -1,3 +1,14 @@
+/**
+ * @file mutations.cpp
+ * @brief Implementation of world-state mutation functions.
+ *
+ * @details Each @c apply_* function applies a single validated
+ * @ref MutationRequest to the given @ref World.  Internal helpers
+ * (@c get_param, @c parse_int, @c parse_bool, @c add_unique) centralise
+ * parameter extraction and deduplication logic shared across multiple
+ * mutation types.
+ */
+
 #include "engine/mutations.hpp"
 #include <algorithm>
 #include <optional>

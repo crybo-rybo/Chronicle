@@ -1,3 +1,12 @@
+/**
+ * @file terminal_renderer.cpp
+ * @brief Implementation of @ref TerminalRenderer — ANSI-colour terminal output.
+ *
+ * @details Implements all @ref Renderer virtual methods for plain-terminal
+ * output.  Colour output uses compile-time ANSI SGR constants; the NPC colour
+ * palette is assigned lazily or eagerly depending on which constructor is used.
+ */
+
 #include "rendering/terminal_renderer.hpp"
 
 namespace chronicle {

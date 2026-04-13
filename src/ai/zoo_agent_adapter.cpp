@@ -1,3 +1,13 @@
+/**
+ * @file zoo_agent_adapter.cpp
+ * @brief Implementation of @ref ZooAgentAdapter — Zoo-Keeper agent wrapper.
+ *
+ * @details Adapts @c zoo::Agent calls to the @ref AgentInterface contract.
+ * The polling loop in @ref ZooAgentAdapter::chat_streaming drives the
+ * streaming token display by allowing the main thread to drain the
+ * @ref TokenQueue between 10 ms sleep intervals.
+ */
+
 #include "ai/zoo_agent_adapter.hpp"
 #include "ai/tool_registry.hpp"
 #include <chrono>

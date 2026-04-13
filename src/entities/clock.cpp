@@ -1,3 +1,8 @@
+/**
+ * @file clock.cpp
+ * @brief Implementation of @ref Clock and @ref TimePeriod utilities.
+ */
+
 #include "entities/clock.hpp"
 #include <stdexcept>
 

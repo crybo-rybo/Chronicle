@@ -1,9 +1,18 @@
+/**
+ * @file save_system.cpp
+ * @brief Implementation of @ref SaveSystem — JSON-based save/load for game state.
+ *
+ * @details Implements slot-based file management.  Each slot maps to a JSON file
+ * (@c slot_N.json) containing a schema version header, save metadata (timestamp,
+ * location name, clock display), and the full serialised @ref World.  The
+ * @ref SaveSystem::list_slots method uses a regex scan of the save directory.
+ */
+
 #include "persistence/save_system.hpp"
 #include <algorithm>
 #include <chrono>
 #include <ctime>
 #include <fstream>
-#include <ranges>
 #include <regex>
 #include <stdexcept>
 

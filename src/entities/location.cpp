@@ -1,3 +1,8 @@
+/**
+ * @file location.cpp
+ * @brief Implementation of @ref Location methods and JSON serialisation.
+ */
+
 #include "entities/location.hpp"
 #include "entities/world.hpp" // needed for World complete type
 

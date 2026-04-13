@@ -1,10 +1,16 @@
+/**
+ * @file command_parser.cpp
+ * @brief Implementation of @ref CommandParser — converts raw input to structured commands.
+ *
+ * @details Builds the verb lookup table from the config file (or the built-in
+ * fallback table) and implements the phase-aware parsing logic including
+ * direction expansion, alias resolution, and use-syntax parsing.
+ */
+
 #include "engine/command_parser.hpp"
 #include "engine/text_utils.hpp"
-#include <algorithm>
-#include <cctype>
 #include <fstream>
 #include <nlohmann/json.hpp>
-#include <ranges>
 #include <stdexcept>
 #include <unordered_set>
 
