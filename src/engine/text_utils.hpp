@@ -47,19 +47,60 @@ inline std::string to_lower_copy(std::string_view input) {
     return result;
 }
 
-/// @brief Case-insensitive substring search.
+/// @brief Return a copy of @p input with whitespace trimmed and characters lowered.
 ///
-/// @details Both @p haystack and @p needle are lower-cased before the search,
-/// so the comparison is locale-independent ASCII fold.
+/// @details Combines trim and lower into a single pass with one allocation
+/// instead of the two allocations that chaining trim_copy + to_lower_copy would require.
+///
+/// @param input The string view to normalize.
+/// @return A new @c std::string that is trimmed and lowered.
+inline std::string trim_and_lower(std::string_view input) {
+    const auto begin = input.find_first_not_of(" \t\n\r");
+    if (begin == std::string_view::npos) {
+        return "";
+    }
+    const auto end = input.find_last_not_of(" \t\n\r");
+    auto trimmed = input.substr(begin, end - begin + 1);
+    std::string result(trimmed);
+    std::ranges::transform(result, result.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    return result;
+}
+
+/// @brief Case-insensitive substring search (zero-allocation).
+///
+/// @details Performs an ASCII case-insensitive search without allocating
+/// temporary strings.  Uses a simple linear scan with per-character
+/// tolower comparison.  This replaces the previous implementation that
+/// heap-allocated two lowered copies per call.
 ///
 /// @param haystack The string to search within.
 /// @param needle   The substring to look for.  An empty needle always returns @c false.
-/// @return @c true if the lower-cased @p needle appears anywhere in the
-///         lower-cased @p haystack.
+/// @return @c true if the @p needle appears anywhere in the @p haystack,
+///         comparing characters case-insensitively (ASCII only).
 inline bool contains_normalized(std::string_view haystack, std::string_view needle) {
-    auto haystack_lower = to_lower_copy(haystack);
-    auto needle_lower = to_lower_copy(needle);
-    return !needle_lower.empty() && haystack_lower.find(needle_lower) != std::string::npos;
+    if (needle.empty() || needle.size() > haystack.size()) {
+        return false;
+    }
+    auto to_lower = [](unsigned char c) -> char {
+        return static_cast<char>(std::tolower(c));
+    };
+    auto end = haystack.size() - needle.size() + 1;
+    for (std::size_t i = 0; i < end; ++i) {
+        bool match = true;
+        for (std::size_t j = 0; j < needle.size(); ++j) {
+            if (to_lower(static_cast<unsigned char>(haystack[i + j])) !=
+                to_lower(static_cast<unsigned char>(needle[j]))) {
+                match = false;
+                break;
+            }
+        }
+        if (match) {
+            return true;
+        }
+    }
+    return false;
 }
 
 } // namespace chronicle::text

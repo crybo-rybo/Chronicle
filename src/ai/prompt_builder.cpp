@@ -141,28 +141,31 @@ std::vector<MemoryEntry> PromptBuilder::select_memories(const std::vector<Memory
 
     static constexpr int kHighImportanceThreshold = 7;
 
+    // Phase 1: Collect indices of high-importance memories, sorted by importance desc.
+    // Using indices avoids copying MemoryEntry objects (which contain std::strings)
+    // into a temporary vector just for sorting.
+    std::vector<std::size_t> high_indices;
+    high_indices.reserve(all.size()); // upper bound
+    for (std::size_t i = 0; i < all.size(); ++i) {
+        if (all[i].importance >= kHighImportanceThreshold) {
+            high_indices.push_back(i);
+        }
+    }
+    // stable_sort on indices preserves chronological order as tiebreaker.
+    std::ranges::stable_sort(high_indices, [&all](std::size_t a, std::size_t b) {
+        return all[a].importance > all[b].importance;
+    });
+
     std::vector<MemoryEntry> selected;
     int tokens_used = 0;
 
-    // Phase 1: Select high-importance memories (>= threshold), ordered by importance desc.
-    // stable_sort preserves chronological order as tiebreaker within equal importance.
-    std::vector<MemoryEntry> high;
-    for (const auto &mem : all) {
-        if (mem.importance >= kHighImportanceThreshold) {
-            high.push_back(mem);
-        }
-    }
-    std::ranges::stable_sort(high, [](const MemoryEntry &a, const MemoryEntry &b) {
-        return a.importance > b.importance;
-    });
-
-    for (const auto &mem : high) {
-        int cost = estimate_tokens(mem.summary);
+    for (std::size_t idx : high_indices) {
+        int cost = estimate_tokens(all[idx].summary);
         if (tokens_used + cost > token_budget) {
             continue; // skip oversized, try next
         }
         tokens_used += cost;
-        selected.push_back(mem);
+        selected.push_back(all[idx]);
     }
 
     // Phase 2: Fill remaining budget with most-recent-first from lower-importance memories.

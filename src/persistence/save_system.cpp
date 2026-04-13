@@ -95,7 +95,8 @@ std::vector<SaveSlotInfo> SaveSystem::list_slots() const {
         return {};
     }
 
-    std::regex slot_regex(R"(slot_(\d+)\.json)");
+    // Static regex: compiled once, reused across calls.
+    static const std::regex slot_regex(R"(slot_(\d+)\.json)");
     std::vector<SaveSlotInfo> slots;
 
     for (const auto &entry : std::filesystem::directory_iterator(save_dir_)) {

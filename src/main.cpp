@@ -2,21 +2,24 @@
  * @file main.cpp
  * @brief Entry point for the Chronicle text adventure game.
  *
- * @details Bootstraps the runtime, verifies the Zoo-Keeper library is available,
- * and will eventually initialize and run the GameEngine once the full startup
- * pipeline is wired together.  For now it serves as a build-smoke-test and
- * version banner.
+ * @details Bootstraps the runtime and launches the @ref GameEngine.
+ * Configuration is loaded from @c config/default.json and world data
+ * from the @c data/ directory, both resolved relative to the working
+ * directory.  If either path is missing or malformed, the error is
+ * reported and the process exits with a non-zero status.
  */
 
+#include "engine/game_engine.hpp"
+#include <exception>
 #include <iostream>
 
-#include <zoo/zoo.hpp>
-
 int main() {
-    std::cout << "Chronicle v0.1.0" << std::endl;
-    std::cout << "An LLM-driven text adventure" << std::endl;
-    std::cout << "Powered by Zoo-Keeper v" << zoo::VERSION_STRING << std::endl;
-    std::cout << "Roles: " << zoo::role_to_string(zoo::Role::User) << ", "
-              << zoo::role_to_string(zoo::Role::Assistant) << std::endl;
+    try {
+        chronicle::GameEngine engine("config/default.json", "data", nullptr);
+        engine.run();
+    } catch (const std::exception &e) {
+        std::cerr << "Fatal error: " << e.what() << "\n";
+        return 1;
+    }
     return 0;
 }
