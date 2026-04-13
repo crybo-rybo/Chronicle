@@ -11,5 +11,15 @@
   "max_history_tokens": 300,
   "save_directory": "/tmp/chronicle_saves",
   "use_tui": false,
-  "use_color": true
+  "use_color": true,
+  "mutation_narration_templates": {
+    "give_item_to_player": "{npc} hands you the {item}.",
+    "take_item_from_player": "{npc} takes the {item}.",
+    "update_npc_mood": "{npc}'s expression shifts - they seem {mood} now.",
+    "move_npc": "{npc} excuses themselves and leaves.",
+    "reveal_knowledge": "",
+    "update_npc_trust": "",
+    "add_memory": "",
+    "set_flag": ""
+  }
 }

@@ -2,8 +2,11 @@
 #include <filesystem>
 #include <nlohmann/json.hpp>
 #include <string>
+#include <unordered_map>
 
 namespace chronicle {
+
+std::unordered_map<std::string, std::string> default_mutation_narration_templates();
 
 /// Runtime configuration loaded from config.json.
 struct Config {
@@ -20,6 +23,8 @@ struct Config {
     std::string save_directory;
     bool use_tui = false;
     bool use_color = true;
+    std::unordered_map<std::string, std::string> mutation_narration_templates =
+        default_mutation_narration_templates();
 
     /// Load from JSON file. Throws std::runtime_error if file not found or malformed.
     static Config load(const std::filesystem::path &path);
@@ -32,6 +37,6 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Config, model_path, context_size
                                                 temperature, max_response_tokens, turns_per_period,
                                                 total_periods, max_memory_tokens, max_world_tokens,
                                                 max_history_tokens, save_directory, use_tui,
-                                                use_color)
+                                                use_color, mutation_narration_templates)
 
 } // namespace chronicle

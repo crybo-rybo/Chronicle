@@ -24,6 +24,8 @@ TEST(ConfigTest, LoadFromFixture) {
     EXPECT_EQ(cfg.save_directory, "/tmp/chronicle_saves");
     EXPECT_FALSE(cfg.use_tui);
     EXPECT_TRUE(cfg.use_color);
+    EXPECT_EQ(cfg.mutation_narration_templates.at("give_item_to_player"),
+              "{npc} hands you the {item}.");
 }
 
 // ---------------------------------------------------------------------------
@@ -52,6 +54,7 @@ TEST(ConfigTest, SaveReloadRoundtrip) {
     EXPECT_EQ(reloaded.save_directory, original.save_directory);
     EXPECT_EQ(reloaded.use_tui, original.use_tui);
     EXPECT_EQ(reloaded.use_color, original.use_color);
+    EXPECT_EQ(reloaded.mutation_narration_templates, original.mutation_narration_templates);
 
     std::filesystem::remove(tmp);
 }
@@ -83,6 +86,8 @@ TEST(ConfigTest, DefaultConstruction) {
     EXPECT_TRUE(cfg.save_directory.empty());
     EXPECT_FALSE(cfg.use_tui);
     EXPECT_TRUE(cfg.use_color);
+    EXPECT_EQ(cfg.mutation_narration_templates.at("move_npc"),
+              "{npc} excuses themselves and leaves.");
 }
 
 // ---------------------------------------------------------------------------

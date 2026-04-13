@@ -13,6 +13,10 @@ public:
     void set_system_prompt(std::string_view prompt) override;
     void clear_history() override;
     bool is_running() const noexcept override;
+    void register_tools(ToolRegistry &tool_registry, const std::string &npc_id) override;
+    AgentChatResult chat_streaming(std::string_view user_message,
+                                   TokenCallback on_token,
+                                   PollCallback poll) override;
 
     /// Access the underlying zoo::Agent for chat/tool calls in Sprint 3+.
     zoo::Agent &agent() { return *agent_; }
@@ -20,6 +24,7 @@ public:
 
 private:
     std::unique_ptr<zoo::Agent> agent_;
+    ToolRegistry *registered_tool_registry_ = nullptr;
 };
 
 } // namespace chronicle

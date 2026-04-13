@@ -21,6 +21,14 @@ public:
     void clear_history() override { ++clear_history_call_count; }
 
     bool is_running() const noexcept override { return running; }
+
+    void register_tools(ToolRegistry &, const std::string &) override {}
+
+    AgentChatResult chat_streaming(std::string_view,
+                                   AgentInterface::TokenCallback,
+                                   AgentInterface::PollCallback) override {
+        return AgentChatResult{true, ""};
+    }
 };
 
 // ---------------------------------------------------------------------------

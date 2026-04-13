@@ -1,4 +1,5 @@
 #include "ai/tool_registry.hpp"
+#include <zoo/agent.hpp>
 #include <algorithm>
 #include <sstream>
 
@@ -249,12 +250,100 @@ void ToolRegistry::register_say(const std::string &npc_id, const std::string &di
     dialogue_log_.emplace_back(npc_id, dialogue);
 }
 
+std::vector<std::pair<std::string, std::string>> ToolRegistry::drain_dialogue_log() {
+    auto dialogue = std::move(dialogue_log_);
+    dialogue_log_.clear();
+    return dialogue;
+}
+
 const std::vector<MutationRequest> &ToolRegistry::pending_mutations() const {
     return pending_;
 }
 
 void ToolRegistry::clear_pending() {
     pending_.clear();
+}
+
+void ToolRegistry::clear_dialogue_log() {
+    dialogue_log_.clear();
+}
+
+void ToolRegistry::clear_all() {
+    clear_pending();
+    clear_dialogue_log();
+}
+
+void ToolRegistry::set_active_npc_id(std::string npc_id) {
+    active_npc_id_ = std::move(npc_id);
+}
+
+void ToolRegistry::register_tools(zoo::Agent& agent, const std::string& npc_id) {
+    set_active_npc_id(npc_id);
+
+    auto say_func = [this](std::string dialogue) -> std::string {
+        this->register_say(active_npc_id_, dialogue);
+        return "OK";
+    };
+    (void)agent.register_tool("say", "Speak a dialogue line", {"dialogue"}, std::move(say_func));
+
+    auto give_item_func = [this](std::string item_id) -> std::string {
+        if (auto err = this->register_give_item(active_npc_id_, item_id)) return *err;
+        return "OK";
+    };
+    (void)agent.register_tool("give_item", "Give an item to the player", {"item_id"}, std::move(give_item_func));
+
+    auto take_item_func = [this](std::string item_id) -> std::string {
+        if (auto err = this->register_take_item(active_npc_id_, item_id)) return *err;
+        return "OK";
+    };
+    (void)agent.register_tool("take_item", "Take an item from the player", {"item_id"}, std::move(take_item_func));
+
+    auto update_mood_func = [this](std::string mood) -> std::string {
+        if (auto err = this->register_update_mood(active_npc_id_, mood)) return *err;
+        return "OK";
+    };
+    (void)agent.register_tool("update_mood", "Change the NPC's current mood", {"mood"}, std::move(update_mood_func));
+
+    auto update_trust_func = [this](std::string delta_str) -> std::string {
+        try {
+            int delta = std::stoi(delta_str);
+            if (auto err = this->register_update_trust(active_npc_id_, delta)) return *err;
+            return "OK";
+        } catch (const std::exception&) {
+            return "Error: trust delta must be a valid integer.";
+        }
+    };
+    (void)agent.register_tool("update_trust", "Change the player's trust level with this NPC (-100 to 100)", {"delta"}, std::move(update_trust_func));
+
+    auto move_self_func = [this](std::string location_id) -> std::string {
+        if (auto err = this->register_move_npc(active_npc_id_, location_id)) return *err;
+        return "OK";
+    };
+    (void)agent.register_tool("move_self", "Move the NPC to a new location", {"location_id"}, std::move(move_self_func));
+
+    auto reveal_knowledge_func = [this](std::string fact_id) -> std::string {
+        if (auto err = this->register_reveal_knowledge(active_npc_id_, fact_id)) return *err;
+        return "OK";
+    };
+    (void)agent.register_tool("reveal_knowledge", "Reveal a known fact to the player", {"fact_id"}, std::move(reveal_knowledge_func));
+
+    auto remember_func = [this](std::string summary, std::string importance_str) -> std::string {
+        try {
+            int importance = std::stoi(importance_str);
+            if (auto err = this->register_add_memory(active_npc_id_, summary, importance)) return *err;
+            return "OK";
+        } catch (const std::exception&) {
+            return "Error: importance must be a valid integer.";
+        }
+    };
+    (void)agent.register_tool("remember", "Save a memory of an event or interaction", {"summary", "importance"}, std::move(remember_func));
+
+    auto set_flag_func = [this](std::string flag_id, std::string value_str) -> std::string {
+        bool value = (value_str == "true" || value_str == "1");
+        if (auto err = this->register_set_flag(flag_id, value)) return *err;
+        return "OK";
+    };
+    (void)agent.register_tool("set_flag", "Set or update a world narrative flag", {"flag_id", "value"}, std::move(set_flag_func));
 }
 
 } // namespace chronicle
