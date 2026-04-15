@@ -420,3 +420,17 @@ TEST(PromptBuilderTest, EstimateTokensHeuristic) {
     // 9 chars -> ceil(9/4) = 3 tokens
     EXPECT_EQ(builder.estimate_tokens("123456789"), 3);
 }
+
+TEST(PromptBuilderTest, SystemPromptDiscouragedSpuriousToolCalls) {
+    chronicle::PromptBuilder builder(chronicle::PromptBuilder::Budget{});
+    auto identity = make_test_identity();
+    auto state = make_test_state();
+    auto world = make_test_world();
+
+    std::string prompt = builder.build_system_prompt(identity, state, world);
+
+    // The rules block must tell NPCs not to call tools for casual conversation.
+    // The substring "do not call tools for greetings" appears verbatim in the
+    // rule added in prompt_builder.cpp — verified as lowercase so find() matches.
+    EXPECT_NE(prompt.find("do not call tools for greetings"), std::string::npos);
+}
