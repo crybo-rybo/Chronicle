@@ -96,6 +96,14 @@ struct Config {
     /// @brief Enable ANSI colour output.  Default: @c true.
     bool use_color = true;
 
+    /// @brief Maximum tool-call iterations the Zoo-Keeper agent may perform per request.
+    ///
+    /// Maps directly to @c zoo::AgentConfig::max_tool_iterations.  Lower values
+    /// reduce wasted context on runaway tool loops; higher values allow more
+    /// complex multi-step tool chains.  Default: 5 (matches Zoo-Keeper's built-in
+    /// default so existing configs with no explicit value are unaffected).
+    int max_tool_iterations = 5;
+
     /// @brief Templates for narrating NPC mutation events to the player.
     ///
     /// Keys correspond to @ref MutationRequest::Type string representations
@@ -128,7 +136,8 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Config, model_path, context_size
                                                 temperature, max_response_tokens, turns_per_period,
                                                 total_periods, max_memory_tokens, max_world_tokens,
                                                 max_history_tokens, save_directory, use_tui,
-                                                use_color, mutation_narration_templates)
+                                                use_color, mutation_narration_templates,
+                                                max_tool_iterations)
 /// @endcond
 
 } // namespace chronicle
