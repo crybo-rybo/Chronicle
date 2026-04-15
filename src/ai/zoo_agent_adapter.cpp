@@ -45,7 +45,9 @@ void ZooAgentAdapter::register_tools(ToolRegistry &tool_registry, const std::str
 AgentChatResult ZooAgentAdapter::chat_streaming(std::string_view user_message,
                                                 TokenCallback on_token,
                                                 PollCallback poll) {
-    auto handle = agent_->chat(user_message, {}, std::move(on_token));
+    // Pass on_token as an lvalue (copy) so it remains usable for the nudge call below
+    // if the tool loop limit is hit. zoo::AsyncTextCallback is std::function — copyable.
+    auto handle = agent_->chat(user_message, {}, on_token);
     while (!handle.ready()) {
         if (poll) {
             poll();
@@ -58,7 +60,51 @@ AgentChatResult ZooAgentAdapter::chat_streaming(std::string_view user_message,
     }
 
     auto result = handle.await_result();
+
     if (!result) {
+        // When the tool iteration budget is exhausted the NPC has produced no visible
+        // response. Rather than surfacing the raw error to the player, issue a synthetic
+        // nudge that asks the NPC to respond naturally without further tool calls.
+        // The nudge tokens stream to the player via the same on_token callback.
+        if (result.error().code == zoo::ErrorCode::ToolLoopLimitReached) {
+            static constexpr std::string_view kNudge =
+                "Please give a brief, natural response to continue the conversation. "
+                "Do not call any tools.";
+
+            auto nudge_handle = agent_->chat(kNudge, {}, on_token);
+            while (!nudge_handle.ready()) {
+                if (poll) {
+                    poll();
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            }
+
+            if (poll) {
+                poll();
+            }
+
+            auto nudge_result = nudge_handle.await_result();
+
+            if (!nudge_result) {
+                // If the nudge itself exhausted the tool budget, swallow the 504 —
+                // the player should never see a raw error code regardless of which
+                // call hit the limit.  Genuine errors (non-ToolLoopLimitReached)
+                // still propagate so real failures aren't silently hidden.
+                if (nudge_result.error().code == zoo::ErrorCode::ToolLoopLimitReached) {
+                    if (poll) {
+                        poll();
+                    }
+                    return AgentChatResult{true, ""};
+                }
+                return AgentChatResult{false, nudge_result.error().to_string()};
+            }
+
+            if (poll) {
+                poll();
+            }
+            return AgentChatResult{true, ""};
+        }
+
         return AgentChatResult{false, result.error().to_string()};
     }
 

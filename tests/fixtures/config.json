@@ -12,6 +12,7 @@
   "save_directory": "/tmp/chronicle_saves",
   "use_tui": false,
   "use_color": true,
+  "max_tool_iterations": 3,
   "mutation_narration_templates": {
     "give_item_to_player": "{npc} hands you the {item}.",
     "take_item_from_player": "{npc} takes the {item}.",

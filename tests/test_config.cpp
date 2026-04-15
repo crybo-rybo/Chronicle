@@ -105,4 +105,28 @@ TEST(ConfigTest, LoadMalformedJsonThrows) {
     std::filesystem::remove(tmp);
 }
 
+// ---------------------------------------------------------------------------
+// max_tool_iterations field
+// ---------------------------------------------------------------------------
+
+TEST(ConfigTest, DefaultMaxToolIterations) {
+    Config cfg;
+    EXPECT_EQ(cfg.max_tool_iterations, 5);
+}
+
+TEST(ConfigTest, LoadFromFixtureMaxToolIterations) {
+    Config cfg = Config::load(FIXTURES_DIR "/config.json");
+    EXPECT_EQ(cfg.max_tool_iterations, 3);
+}
+
+TEST(ConfigTest, SaveReloadRoundtripMaxToolIterations) {
+    Config original = Config::load(FIXTURES_DIR "/config.json");
+    std::filesystem::path tmp =
+        std::filesystem::temp_directory_path() / "chronicle_test_config_mti.json";
+    original.save(tmp);
+    Config reloaded = Config::load(tmp);
+    EXPECT_EQ(reloaded.max_tool_iterations, original.max_tool_iterations);
+    std::filesystem::remove(tmp);
+}
+
 } // namespace chronicle
