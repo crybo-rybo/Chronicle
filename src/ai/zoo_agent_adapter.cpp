@@ -86,6 +86,16 @@ AgentChatResult ZooAgentAdapter::chat_streaming(std::string_view user_message,
             auto nudge_result = nudge_handle.await_result();
 
             if (!nudge_result) {
+                // If the nudge itself exhausted the tool budget, swallow the 504 —
+                // the player should never see a raw error code regardless of which
+                // call hit the limit.  Genuine errors (non-ToolLoopLimitReached)
+                // still propagate so real failures aren't silently hidden.
+                if (nudge_result.error().code == zoo::ErrorCode::ToolLoopLimitReached) {
+                    if (poll) {
+                        poll();
+                    }
+                    return AgentChatResult{true, ""};
+                }
                 return AgentChatResult{false, nudge_result.error().to_string()};
             }
 
