@@ -71,7 +71,10 @@ NpcAgentPool NpcAgentPool::from_config(const Config &config) {
     gen_opts.sampling.temperature = static_cast<float>(config.temperature);
     gen_opts.max_tokens = config.max_response_tokens;
 
-    auto result = zoo::Agent::create(model_config, {}, gen_opts);
+    zoo::AgentConfig agent_config;
+    agent_config.max_tool_iterations = config.max_tool_iterations;
+
+    auto result = zoo::Agent::create(model_config, agent_config, gen_opts);
     if (!result) {
         throw std::runtime_error("NpcAgentPool::from_config: failed to create zoo::Agent: " +
                                  result.error().to_string());
