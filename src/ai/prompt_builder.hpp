@@ -95,6 +95,21 @@ public:
     std::string build_static_system_prompt(const NpcIdentity &identity,
                                            const World &world) const;
 
+    /// @brief Assemble the dynamic context block for a single dialogue turn.
+    ///
+    /// @details Produces the state that may change between turns: mood, trust,
+    /// secret (if trust threshold met), memories, and world context (time,
+    /// location, NPCs present, visible items).  This block is prepended to the
+    /// user message rather than included in the system prompt, so the system
+    /// prompt can remain fixed for the conversation lifetime.
+    ///
+    /// @param identity  NPC identity (used for secret text and threshold).
+    /// @param state     Current NPC state (mood, trust, memories, location).
+    /// @param world     Read-only world context (clock, locations, other NPCs).
+    /// @return The formatted dynamic context string.
+    std::string build_dynamic_context(const NpcIdentity &identity, const NpcState &state,
+                                      const World &world) const;
+
     /// @brief Assemble the user-turn message for a single dialogue exchange.
     ///
     /// @details Wraps the player's raw input as a JSON-encoded quoted string

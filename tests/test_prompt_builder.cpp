@@ -519,3 +519,86 @@ TEST(PromptBuilderTest, StaticPromptOmitsEmptyBackstory) {
     EXPECT_EQ(prompt.find("Your goals:"), std::string::npos);
     EXPECT_EQ(prompt.find("What you know:"), std::string::npos);
 }
+
+// --- Dynamic context tests ---
+
+TEST(PromptBuilderTest, DynamicContextContainsMoodAndTrust) {
+    chronicle::PromptBuilder builder(chronicle::PromptBuilder::Budget{});
+    auto identity = make_test_identity();
+    auto state = make_test_state();
+    state.mood = "suspicious";
+    state.trust_toward_player = 35;
+    auto world = make_test_world();
+
+    std::string ctx = builder.build_dynamic_context(identity, state, world);
+    EXPECT_NE(ctx.find("Current mood: suspicious"), std::string::npos);
+    EXPECT_NE(ctx.find("Trust toward the player: 35/100"), std::string::npos);
+}
+
+TEST(PromptBuilderTest, DynamicContextContainsWorldState) {
+    chronicle::PromptBuilder builder(chronicle::PromptBuilder::Budget{});
+    auto identity = make_test_identity();
+    auto state = make_test_state();
+    auto world = make_test_world();
+
+    std::string ctx = builder.build_dynamic_context(identity, state, world);
+    EXPECT_NE(ctx.find("Morning of Day 1"), std::string::npos);
+    EXPECT_NE(ctx.find("The Broken Wheel Tavern"), std::string::npos);
+    EXPECT_NE(ctx.find("The player is here."), std::string::npos);
+}
+
+TEST(PromptBuilderTest, DynamicContextIncludesSecretWhenTrustHigh) {
+    chronicle::PromptBuilder builder(chronicle::PromptBuilder::Budget{});
+    auto identity = make_test_identity(); // threshold = 65
+    auto state = make_test_state();
+    state.trust_toward_player = 80;
+    auto world = make_test_world();
+
+    std::string ctx = builder.build_dynamic_context(identity, state, world);
+    EXPECT_NE(ctx.find("He helped the thief escape."), std::string::npos);
+}
+
+TEST(PromptBuilderTest, DynamicContextExcludesSecretWhenTrustLow) {
+    chronicle::PromptBuilder builder(chronicle::PromptBuilder::Budget{});
+    auto identity = make_test_identity(); // threshold = 65
+    auto state = make_test_state();
+    state.trust_toward_player = 30;
+    auto world = make_test_world();
+
+    std::string ctx = builder.build_dynamic_context(identity, state, world);
+    EXPECT_EQ(ctx.find("He helped the thief escape."), std::string::npos);
+}
+
+TEST(PromptBuilderTest, DynamicContextContainsMemories) {
+    chronicle::PromptBuilder builder(chronicle::PromptBuilder::Budget{});
+    auto identity = make_test_identity();
+    auto state = make_test_state();
+    state.memories.push_back(make_memory("player asked about cargo", 5));
+    auto world = make_test_world();
+
+    std::string ctx = builder.build_dynamic_context(identity, state, world);
+    EXPECT_NE(ctx.find("player asked about cargo"), std::string::npos);
+}
+
+TEST(PromptBuilderTest, DynamicContextExcludesStaticContent) {
+    chronicle::PromptBuilder builder(chronicle::PromptBuilder::Budget{});
+    auto identity = make_test_identity();
+    auto state = make_test_state();
+    auto world = make_test_world();
+
+    std::string ctx = builder.build_dynamic_context(identity, state, world);
+    EXPECT_EQ(ctx.find("Background:"), std::string::npos);
+    EXPECT_EQ(ctx.find("Your goals:"), std::string::npos);
+    EXPECT_EQ(ctx.find("Rules:"), std::string::npos);
+    EXPECT_EQ(ctx.find("What you know:"), std::string::npos);
+}
+
+TEST(PromptBuilderTest, DynamicContextHasHeaderLabel) {
+    chronicle::PromptBuilder builder(chronicle::PromptBuilder::Budget{});
+    auto identity = make_test_identity();
+    auto state = make_test_state();
+    auto world = make_test_world();
+
+    std::string ctx = builder.build_dynamic_context(identity, state, world);
+    EXPECT_NE(ctx.find("[Current state]"), std::string::npos);
+}

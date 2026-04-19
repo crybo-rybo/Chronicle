@@ -165,6 +165,67 @@ std::string PromptBuilder::build_static_system_prompt(const NpcIdentity &identit
     return out.str();
 }
 
+std::string PromptBuilder::build_dynamic_context(const NpcIdentity &identity,
+                                                  const NpcState &state,
+                                                  const World &world) const {
+    std::ostringstream out;
+
+    out << "[Current state]\n";
+
+    // 1. Secret (only if trust threshold met)
+    if (state.trust_toward_player >= identity.trust_reveal_threshold) {
+        out << "Secret: " << identity.secret << "\n";
+    }
+
+    // 2. Current state
+    out << "Current mood: " << state.mood << "\n";
+    out << "Trust toward the player: " << state.trust_toward_player << "/100\n";
+
+    // 3. Memories (selected within budget)
+    auto selected = select_memories(state.memories, budget_.max_memory_tokens);
+    if (!selected.empty()) {
+        out << "\nWhat you remember:\n";
+        for (const auto &mem : selected) {
+            out << "- [" << mem.type << "] " << mem.summary << "\n";
+        }
+    }
+
+    // 4. World context
+    out << "\nCurrent time: " << world.clock.to_prompt_string() << "\n";
+
+    auto loc_it = world.locations.find(state.current_location);
+    if (loc_it != world.locations.end()) {
+        out << "Location: " << loc_it->second.name << "\n";
+    } else {
+        out << "Location: " << state.current_location << "\n";
+    }
+
+    if (world.player.current_location == state.current_location) {
+        out << "The player is here.\n";
+    }
+
+    if (loc_it != world.locations.end()) {
+        for (const auto &npc_id : loc_it->second.npcs) {
+            if (npc_id == identity.id) {
+                continue;
+            }
+            auto npc_it = world.npcs.find(npc_id);
+            if (npc_it != world.npcs.end()) {
+                out << npc_it->second.identity.name << " is also here.\n";
+            }
+        }
+
+        for (const auto &item_id : loc_it->second.items) {
+            auto item_it = world.items.find(item_id);
+            if (item_it != world.items.end() && !item_it->second.hidden) {
+                out << "You can see: " << item_it->second.name << "\n";
+            }
+        }
+    }
+
+    return out.str();
+}
+
 std::string PromptBuilder::build_user_turn(const std::string &player_input,
                                            const Player &player) const {
     std::ostringstream out;
