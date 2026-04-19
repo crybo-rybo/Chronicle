@@ -13,6 +13,20 @@ cmake --build build --parallel
 ctest --test-dir build --output-on-failure
 ```
 
+For dialogue/model debugging, use the logging preset. It enables Chronicle
+diagnostics and turns on Zoo-Keeper logging by default:
+
+```bash
+cmake --preset debug-logging
+cmake --build --preset debug-logging
+CHRONICLE_LOG_FILE=chronicle.log ./build-logging/src/chronicle
+```
+
+`CHRONICLE_LOG_LEVEL` accepts `debug`, `info`, `warning`, or `error`.
+`CHRONICLE_LOG=off` disables Chronicle logging at runtime even in a logging
+build. Pass `-DCHRONICLE_ENABLE_ZOO_LOGGING=OFF` during configure if you need
+Chronicle diagnostics without Zoo-Keeper diagnostics.
+
 Manual Zoo-Keeper smoke tests are opt-in because they require a local model:
 
 ```bash

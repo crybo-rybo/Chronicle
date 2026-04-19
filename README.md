@@ -15,10 +15,23 @@ cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --parallel
 ```
 
+For a local debug build with Chronicle and Zoo-Keeper diagnostics enabled:
+
+```bash
+cmake --preset debug-logging
+cmake --build --preset debug-logging
+```
+
 ## Running
 
 ```bash
 ./build/src/chronicle
+```
+
+Logging builds default to stderr. To keep the terminal UI clean, send logs to a file:
+
+```bash
+CHRONICLE_LOG_FILE=chronicle.log ./build-logging/src/chronicle
 ```
 
 ## Testing

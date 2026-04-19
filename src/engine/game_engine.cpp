@@ -9,6 +9,7 @@
 
 #include "engine/game_engine.hpp"
 #include "ai/prompt_builder.hpp"
+#include "diagnostics/logger.hpp"
 #include "engine/mutation_gate.hpp"
 #include "engine/mutations.hpp"
 #include "engine/text_utils.hpp"
@@ -16,8 +17,94 @@
 #include "rendering/terminal_renderer.hpp"
 #include <algorithm>
 #include <iostream>
+#include <sstream>
 
 namespace chronicle {
+
+namespace {
+
+std::string_view command_verb_name(CommandVerb verb) {
+    switch (verb) {
+    case CommandVerb::Go:
+        return "go";
+    case CommandVerb::Look:
+        return "look";
+    case CommandVerb::Examine:
+        return "examine";
+    case CommandVerb::Take:
+        return "take";
+    case CommandVerb::Drop:
+        return "drop";
+    case CommandVerb::Use:
+        return "use";
+    case CommandVerb::Give:
+        return "give";
+    case CommandVerb::Talk:
+        return "talk";
+    case CommandVerb::Inventory:
+        return "inventory";
+    case CommandVerb::Save:
+        return "save";
+    case CommandVerb::Load:
+        return "load";
+    case CommandVerb::Quit:
+        return "quit";
+    case CommandVerb::Help:
+        return "help";
+    case CommandVerb::Dialogue:
+        return "dialogue";
+    case CommandVerb::Unknown:
+        return "unknown";
+    }
+    return "unknown";
+}
+
+std::string_view mutation_type_name(MutationRequest::Type type) {
+    switch (type) {
+    case MutationRequest::Type::GiveItemToPlayer:
+        return "give_item_to_player";
+    case MutationRequest::Type::TakeItemFromPlayer:
+        return "take_item_from_player";
+    case MutationRequest::Type::UpdateNpcMood:
+        return "update_npc_mood";
+    case MutationRequest::Type::UpdateNpcTrust:
+        return "update_npc_trust";
+    case MutationRequest::Type::MoveNpc:
+        return "move_npc";
+    case MutationRequest::Type::RevealKnowledge:
+        return "reveal_knowledge";
+    case MutationRequest::Type::AddMemory:
+        return "add_memory";
+    case MutationRequest::Type::SetFlag:
+        return "set_flag";
+    case MutationRequest::Type::PlayerMove:
+        return "player_move";
+    case MutationRequest::Type::PlayerTake:
+        return "player_take";
+    case MutationRequest::Type::PlayerDrop:
+        return "player_drop";
+    case MutationRequest::Type::SpawnItem:
+        return "spawn_item";
+    }
+    return "unknown";
+}
+
+std::string format_params(const std::map<std::string, std::string> &params) {
+    std::ostringstream oss;
+    oss << "{";
+    bool first = true;
+    for (const auto &[key, value] : params) {
+        if (!first) {
+            oss << ", ";
+        }
+        first = false;
+        oss << key << "=" << value;
+    }
+    oss << "}";
+    return oss.str();
+}
+
+} // namespace
 
 GameEngine::GameEngine(const std::string &config_path, const std::string &data_dir,
                        std::unique_ptr<Renderer> renderer, std::unique_ptr<NpcAgentPool> agent_pool)
@@ -25,6 +112,12 @@ GameEngine::GameEngine(const std::string &config_path, const std::string &data_d
       renderer_(std::move(renderer)),
       save_system_(config_.save_directory.empty() ? "saves" : config_.save_directory),
       agent_pool_(std::move(agent_pool)) {
+
+    logging::write(logging::Level::Info, "engine",
+                   "loaded config=" + config_path + " data_dir=" + data_dir +
+                       " locations=" + std::to_string(world_.locations.size()) +
+                       " npcs=" + std::to_string(world_.npcs.size()) +
+                       " items=" + std::to_string(world_.items.size()));
 
     if (!renderer_) {
         renderer_ = std::make_unique<TerminalRenderer>();
@@ -38,8 +131,14 @@ GameEngine::GameEngine(const std::string &config_path, const std::string &data_d
 
     if (!agent_pool_ && !config_.model_path.empty()) {
         try {
+            logging::write(logging::Level::Info, "ai",
+                           "initializing agent pool model_path=" + config_.model_path +
+                               " context_size=" + std::to_string(config_.context_size) +
+                               " n_gpu_layers=" + std::to_string(config_.n_gpu_layers));
             agent_pool_ = std::make_unique<NpcAgentPool>(NpcAgentPool::from_config(config_));
         } catch (const std::exception &e) {
+            logging::write(logging::Level::Error, "ai",
+                           std::string("failed to initialize agent pool: ") + e.what());
             std::cerr << "Failed to initialize Agent Pool: " << e.what() << "\n";
         }
     }
@@ -90,6 +189,11 @@ bool GameEngine::drain_token_queue() {
 }
 
 void GameEngine::handle_command(const ParsedCommand &cmd) {
+    logging::write(logging::Level::Debug, "engine",
+                   "handle_command verb=" + std::string(command_verb_name(cmd.verb)) +
+                       " raw_input=\"" + cmd.raw_input + "\" primary_arg=\"" + cmd.primary_arg +
+                       "\"");
+
     if (cmd.verb == CommandVerb::Unknown) {
         renderer_->render_error("I don't understand that command.");
         return;
@@ -248,11 +352,21 @@ void GameEngine::process_pending_mutations() {
         return;
     }
 
+    logging::write(logging::Level::Debug, "mutations",
+                   "processing pending count=" + std::to_string(pending_mutations_.size()));
+
     std::vector<MutationRequest> applied;
     applied.reserve(pending_mutations_.size());
     for (const auto &m : pending_mutations_) {
         if (apply_mutation(world_, m)) {
+            logging::write(logging::Level::Info, "mutations",
+                           "applied type=" + std::string(mutation_type_name(m.type)) +
+                               " actor=" + m.actor_id + " params=" + format_params(m.params));
             applied.push_back(m);
+        } else {
+            logging::write(logging::Level::Warning, "mutations",
+                           "rejected type=" + std::string(mutation_type_name(m.type)) +
+                               " actor=" + m.actor_id + " params=" + format_params(m.params));
         }
     }
     pending_mutations_.clear();
@@ -275,12 +389,15 @@ void GameEngine::process_pending_mutations() {
 
 void GameEngine::handle_dialogue(const std::string &npc_id, const std::string &input) {
     if (!agent_pool_) {
+        logging::write(logging::Level::Warning, "dialogue",
+                       "agent pool unavailable; using stub dialogue for npc=" + npc_id);
         renderer_->render_system("Dialogue stub: " + input + " (AI not initialized)");
         return;
     }
 
     auto npc_it = world_.npcs.find(npc_id);
     if (npc_it == world_.npcs.end()) {
+        logging::write(logging::Level::Error, "dialogue", "npc not found id=" + npc_id);
         renderer_->render_error("NPC not found.");
         return;
     }
@@ -291,6 +408,9 @@ void GameEngine::handle_dialogue(const std::string &npc_id, const std::string &i
         pending_mutations_.clear();
         tool_registry_->clear_all();
         token_queue_.reset();
+
+        logging::write(logging::Level::Info, "dialogue",
+                       "starting npc=" + npc_id + " player_input=\"" + input + "\"");
 
         auto handle = agent_pool_->acquire(npc_id);
         handle->register_tools(*tool_registry_, npc_id);
@@ -307,6 +427,13 @@ void GameEngine::handle_dialogue(const std::string &npc_id, const std::string &i
 
         std::string user_msg = pb.build_user_turn(input, world_.player);
 
+        logging::write(logging::Level::Debug, "dialogue",
+                       "system_prompt npc=" + npc_id +
+                           " chars=" + std::to_string(sys_prompt.size()) + "\n" + sys_prompt);
+        logging::write(logging::Level::Debug, "dialogue",
+                       "user_turn npc=" + npc_id + " chars=" + std::to_string(user_msg.size()) +
+                           "\n" + user_msg);
+
         renderer_->begin_npc_dialogue(npc.identity.name);
 
         bool streamed_any = false;
@@ -315,6 +442,11 @@ void GameEngine::handle_dialogue(const std::string &npc_id, const std::string &i
             user_msg, [this](std::string_view t) { response_handler_->on_token(t); }, poll);
 
         poll();
+
+        logging::write(logging::Level::Info, "dialogue",
+                       "chat completed npc=" + npc_id +
+                           " success=" + (result.success ? std::string("true") : "false") +
+                           " streamed_any=" + (streamed_any ? std::string("true") : "false"));
 
         if (!streamed_any) {
             for (const auto &[dialogue_npc_id, dialogue] : tool_registry_->drain_dialogue_log()) {
@@ -331,10 +463,14 @@ void GameEngine::handle_dialogue(const std::string &npc_id, const std::string &i
         process_pending_mutations();
 
         if (!result.success) {
+            logging::write(logging::Level::Error, "dialogue",
+                           "agent chat failed npc=" + npc_id + " error=" + result.error_message);
             renderer_->render_error("Agent chat failed: " + result.error_message);
         }
 
     } catch (const std::exception &e) {
+        logging::write(logging::Level::Error, "dialogue",
+                       "dialogue exception npc=" + npc_id + " error=" + e.what());
         renderer_->render_error(std::string("Dialogue error: ") + e.what());
     }
 }

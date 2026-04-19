@@ -9,11 +9,13 @@
  * reported and the process exits with a non-zero status.
  */
 
+#include "diagnostics/logger.hpp"
 #include "engine/game_engine.hpp"
 #include <exception>
 #include <iostream>
 
 int main() {
+    chronicle::logging::configure_from_environment();
     try {
         chronicle::GameEngine engine("config/default.json", "data", nullptr);
         engine.run();

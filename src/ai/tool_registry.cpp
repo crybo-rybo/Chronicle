@@ -8,6 +8,7 @@
  */
 
 #include "ai/tool_registry.hpp"
+#include "diagnostics/logger.hpp"
 #include "engine/parse_utils.hpp"
 #include <algorithm>
 #include <sstream>
@@ -15,10 +16,22 @@
 
 namespace chronicle {
 
+namespace {
+
+void log_tool_result(std::string_view tool_name, const std::string &result) {
+    const auto level = result == "OK" ? logging::Level::Info : logging::Level::Warning;
+    logging::write(level, "tools", "tool=" + std::string(tool_name) + " result=\"" + result + "\"");
+}
+
+} // namespace
+
 ToolRegistry::ToolRegistry(const World &world, MutationSink sink)
     : world_(world), sink_(std::move(sink)) {}
 
 void ToolRegistry::emit(MutationRequest req) {
+    logging::write(logging::Level::Debug, "tools",
+                   "queueing mutation actor=" + req.actor_id +
+                       " param_count=" + std::to_string(req.params.size()));
     if (sink_) {
         sink_(std::move(req));
     } else {
@@ -293,6 +306,8 @@ std::string ToolRegistry::handle_set_flag_tool(const std::string &flag_id,
 }
 
 void ToolRegistry::register_say(const std::string &npc_id, const std::string &dialogue) {
+    logging::write(logging::Level::Info, "tools",
+                   "tool=say npc=" + npc_id + " dialogue=\"" + dialogue + "\"");
     dialogue_log_.emplace_back(npc_id, dialogue);
 }
 
@@ -320,11 +335,13 @@ void ToolRegistry::clear_all() {
 }
 
 void ToolRegistry::set_active_npc_id(std::string npc_id) {
+    logging::write(logging::Level::Debug, "tools", "active_npc_id=" + npc_id);
     active_npc_id_ = std::move(npc_id);
 }
 
 void ToolRegistry::register_tools(zoo::Agent &agent, const std::string &npc_id) {
     set_active_npc_id(npc_id);
+    logging::write(logging::Level::Info, "tools", "registering tools npc=" + npc_id);
 
     auto say_func = [this](std::string dialogue) -> std::string {
         this->register_say(active_npc_id_, dialogue);
@@ -333,37 +350,59 @@ void ToolRegistry::register_tools(zoo::Agent &agent, const std::string &npc_id) 
     (void)agent.register_tool("say", "Speak a dialogue line", {"dialogue"}, std::move(say_func));
 
     auto give_item_func = [this](std::string item_id) -> std::string {
-        if (auto err = this->register_give_item(active_npc_id_, item_id))
+        logging::write(logging::Level::Info, "tools",
+                       "tool=give_item npc=" + active_npc_id_ + " item_id=" + item_id);
+        if (auto err = this->register_give_item(active_npc_id_, item_id)) {
+            log_tool_result("give_item", *err);
             return *err;
+        }
+        log_tool_result("give_item", "OK");
         return "OK";
     };
     (void)agent.register_tool("give_item", "Give an item to the player", {"item_id"},
                               std::move(give_item_func));
 
     auto take_item_func = [this](std::string item_id) -> std::string {
-        if (auto err = this->register_take_item(active_npc_id_, item_id))
+        logging::write(logging::Level::Info, "tools",
+                       "tool=take_item npc=" + active_npc_id_ + " item_id=" + item_id);
+        if (auto err = this->register_take_item(active_npc_id_, item_id)) {
+            log_tool_result("take_item", *err);
             return *err;
+        }
+        log_tool_result("take_item", "OK");
         return "OK";
     };
     (void)agent.register_tool("take_item", "Take an item from the player", {"item_id"},
                               std::move(take_item_func));
 
     auto update_mood_func = [this](std::string mood) -> std::string {
-        if (auto err = this->register_update_mood(active_npc_id_, mood))
+        logging::write(logging::Level::Info, "tools",
+                       "tool=update_mood npc=" + active_npc_id_ + " mood=" + mood);
+        if (auto err = this->register_update_mood(active_npc_id_, mood)) {
+            log_tool_result("update_mood", *err);
             return *err;
+        }
+        log_tool_result("update_mood", "OK");
         return "OK";
     };
     (void)agent.register_tool("update_mood", "Change the NPC's current mood", {"mood"},
                               std::move(update_mood_func));
 
     auto update_trust_func = [this](std::string delta_str) -> std::string {
+        logging::write(logging::Level::Info, "tools",
+                       "tool=update_trust npc=" + active_npc_id_ + " delta=" + delta_str);
         try {
             int delta = std::stoi(delta_str);
-            if (auto err = this->register_update_trust(active_npc_id_, delta))
+            if (auto err = this->register_update_trust(active_npc_id_, delta)) {
+                log_tool_result("update_trust", *err);
                 return *err;
+            }
+            log_tool_result("update_trust", "OK");
             return "OK";
         } catch (const std::exception &) {
-            return "Error: trust delta must be a valid integer.";
+            std::string error = "Error: trust delta must be a valid integer.";
+            log_tool_result("update_trust", error);
+            return error;
         }
     };
     (void)agent.register_tool("update_trust",
@@ -371,36 +410,58 @@ void ToolRegistry::register_tools(zoo::Agent &agent, const std::string &npc_id) 
                               {"delta"}, std::move(update_trust_func));
 
     auto move_self_func = [this](std::string location_id) -> std::string {
-        if (auto err = this->register_move_npc(active_npc_id_, location_id))
+        logging::write(logging::Level::Info, "tools",
+                       "tool=move_self npc=" + active_npc_id_ + " location_id=" + location_id);
+        if (auto err = this->register_move_npc(active_npc_id_, location_id)) {
+            log_tool_result("move_self", *err);
             return *err;
+        }
+        log_tool_result("move_self", "OK");
         return "OK";
     };
     (void)agent.register_tool("move_self", "Move the NPC to a new location", {"location_id"},
                               std::move(move_self_func));
 
     auto reveal_knowledge_func = [this](std::string fact_id) -> std::string {
-        if (auto err = this->register_reveal_knowledge(active_npc_id_, fact_id))
+        logging::write(logging::Level::Info, "tools",
+                       "tool=reveal_knowledge npc=" + active_npc_id_ + " fact_id=" + fact_id);
+        if (auto err = this->register_reveal_knowledge(active_npc_id_, fact_id)) {
+            log_tool_result("reveal_knowledge", *err);
             return *err;
+        }
+        log_tool_result("reveal_knowledge", "OK");
         return "OK";
     };
     (void)agent.register_tool("reveal_knowledge", "Reveal a known fact to the player", {"fact_id"},
                               std::move(reveal_knowledge_func));
 
     auto remember_func = [this](std::string summary, std::string importance_str) -> std::string {
+        logging::write(logging::Level::Info, "tools",
+                       "tool=remember npc=" + active_npc_id_ + " importance=" + importance_str +
+                           " summary=\"" + summary + "\"");
         try {
             int importance = std::stoi(importance_str);
-            if (auto err = this->register_add_memory(active_npc_id_, summary, importance))
+            if (auto err = this->register_add_memory(active_npc_id_, summary, importance)) {
+                log_tool_result("remember", *err);
                 return *err;
+            }
+            log_tool_result("remember", "OK");
             return "OK";
         } catch (const std::exception &) {
-            return "Error: importance must be a valid integer.";
+            std::string error = "Error: importance must be a valid integer.";
+            log_tool_result("remember", error);
+            return error;
         }
     };
     (void)agent.register_tool("remember", "Save a memory of an event or interaction",
                               {"summary", "importance"}, std::move(remember_func));
 
     auto set_flag_func = [this](std::string flag_id, std::string value_str) -> std::string {
-        return this->handle_set_flag_tool(flag_id, value_str);
+        logging::write(logging::Level::Info, "tools",
+                       "tool=set_flag flag_id=" + flag_id + " value=" + value_str);
+        auto result = this->handle_set_flag_tool(flag_id, value_str);
+        log_tool_result("set_flag", result);
+        return result;
     };
     (void)agent.register_tool("set_flag", "Set or update a world narrative flag",
                               {"flag_id", "value"}, std::move(set_flag_func));

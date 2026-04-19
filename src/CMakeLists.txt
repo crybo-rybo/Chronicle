@@ -1,3 +1,13 @@
+# chronicle_diagnostics — opt-in logging used by Chronicle runtime layers
+add_library(chronicle_diagnostics STATIC diagnostics/logger.cpp)
+target_include_directories(chronicle_diagnostics PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_compile_options(chronicle_diagnostics PRIVATE ${CHRONICLE_WARNING_FLAGS})
+if(CHRONICLE_ENABLE_LOGGING)
+    target_compile_definitions(chronicle_diagnostics PUBLIC CHRONICLE_ENABLE_LOGGING=1)
+else()
+    target_compile_definitions(chronicle_diagnostics PUBLIC CHRONICLE_ENABLE_LOGGING=0)
+endif()
+
 # chronicle_domain — entity structs + JSON serialization (no AI, no Zoo-Keeper)
 # NOTE: Adding or removing .cpp files requires re-running CMake (cmake -B build)
 file(GLOB DOMAIN_SOURCES entities/*.cpp)
@@ -15,14 +25,14 @@ file(GLOB ENGINE_SOURCES engine/*.cpp)
 list(FILTER ENGINE_SOURCES EXCLUDE REGEX "game_engine\\.cpp$")
 add_library(chronicle_engine STATIC ${ENGINE_SOURCES})
 target_include_directories(chronicle_engine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(chronicle_engine PUBLIC chronicle_domain)
+target_link_libraries(chronicle_engine PUBLIC chronicle_domain chronicle_diagnostics)
 target_compile_options(chronicle_engine PRIVATE ${CHRONICLE_WARNING_FLAGS})
 
 # chronicle_ai — AI layer (Zoo-Keeper adapter, prompt builder, tool registry, response handler)
 file(GLOB AI_SOURCES ai/*.cpp)
 add_library(chronicle_ai STATIC ${AI_SOURCES})
 target_include_directories(chronicle_ai PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(chronicle_ai PUBLIC chronicle_engine ZooKeeper::zoo)
+target_link_libraries(chronicle_ai PUBLIC chronicle_engine chronicle_diagnostics ZooKeeper::zoo)
 target_compile_options(chronicle_ai PRIVATE ${CHRONICLE_WARNING_FLAGS})
 
 # chronicle_rendering — renderer interfaces and terminal renderer

@@ -7,9 +7,15 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Compiler warning flags for Chronicle-owned targets (not vendored dependencies)
 option(CHRONICLE_WERROR "Treat compiler warnings as errors" OFF)
+option(CHRONICLE_ENABLE_LOGGING "Enable Chronicle diagnostic logging by default" OFF)
+option(CHRONICLE_ENABLE_ZOO_LOGGING "Enable Zoo-Keeper logging when Chronicle logging is enabled" ON)
 set(CHRONICLE_WARNING_FLAGS -Wall -Wextra -Wpedantic)
 if(CHRONICLE_WERROR)
     list(APPEND CHRONICLE_WARNING_FLAGS -Werror)
+endif()
+
+if(CHRONICLE_ENABLE_LOGGING AND CHRONICLE_ENABLE_ZOO_LOGGING)
+    set(ZOO_ENABLE_LOGGING ON CACHE BOOL "Enable Zoo-Keeper debug logging to stderr" FORCE)
 endif()
 
 # nlohmann/json — fetched before Zoo-Keeper so chronicle_domain can link it
