@@ -601,6 +601,40 @@ TEST(PromptBuilderTest, DynamicContextHasHeaderLabel) {
     EXPECT_NE(ctx.find("[Current state]"), std::string::npos);
 }
 
+// --- NPC inventory in dynamic context tests ---
+
+TEST(PromptBuilderTest, DynamicContextContainsNpcInventory) {
+    chronicle::PromptBuilder builder(chronicle::PromptBuilder::Budget{});
+    auto identity = make_test_identity();
+    auto state = make_test_state();
+    state.inventory = {"old_key", "ledger"};
+    auto world = make_test_world();
+
+    // Add an item to world so name resolution works for one item
+    chronicle::Item key;
+    key.id = "old_key";
+    key.name = "Old Key";
+    world.items["old_key"] = key;
+
+    std::string ctx = builder.build_dynamic_context(identity, state, world);
+    EXPECT_NE(ctx.find("Your inventory:"), std::string::npos);
+    // "old_key" should resolve to display name "Old Key"
+    EXPECT_NE(ctx.find("Old Key"), std::string::npos);
+    // "ledger" has no item definition, so raw ID is used
+    EXPECT_NE(ctx.find("ledger"), std::string::npos);
+}
+
+TEST(PromptBuilderTest, DynamicContextOmitsEmptyNpcInventory) {
+    chronicle::PromptBuilder builder(chronicle::PromptBuilder::Budget{});
+    auto identity = make_test_identity();
+    auto state = make_test_state();
+    // state.inventory is empty by default
+    auto world = make_test_world();
+
+    std::string ctx = builder.build_dynamic_context(identity, state, world);
+    EXPECT_EQ(ctx.find("Your inventory:"), std::string::npos);
+}
+
 // --- build_user_turn with dynamic context tests ---
 
 TEST(PromptBuilderTest, BuildUserTurnWithDynamicContext) {

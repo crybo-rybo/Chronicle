@@ -85,7 +85,24 @@ std::string PromptBuilder::build_dynamic_context(const NpcIdentity &identity, co
     out << "Current mood: " << state.mood << "\n";
     out << "Trust toward the player: " << state.trust_toward_player << "/100\n";
 
-    // 3. Memories (selected within budget)
+    // 3. NPC inventory
+    if (!state.inventory.empty()) {
+        out << "Your inventory: ";
+        for (size_t i = 0; i < state.inventory.size(); ++i) {
+            if (i > 0) {
+                out << ", ";
+            }
+            auto item_it = world.items.find(state.inventory[i]);
+            if (item_it != world.items.end()) {
+                out << item_it->second.name;
+            } else {
+                out << state.inventory[i];
+            }
+        }
+        out << "\n";
+    }
+
+    // 4. Memories (selected within budget)
     auto selected = select_memories(state.memories, budget_.max_memory_tokens);
     if (!selected.empty()) {
         out << "\nWhat you remember:\n";
