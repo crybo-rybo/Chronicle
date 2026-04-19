@@ -8,7 +8,7 @@ namespace chronicle {
 // ---------------------------------------------------------------------------
 
 class ToolRegistryTest : public ::testing::Test {
-protected:
+  protected:
     World world;
 
     void SetUp() override {
@@ -373,16 +373,12 @@ TEST_F(ToolRegistryTest, RegisterMultipleToolTypes) {
 // ---------------------------------------------------------------------------
 
 TEST_F(ToolRegistryTest, SetFlagStrictBoolRejectsGarbage) {
-    // This tests the strict bool parsing at the Zoo-Keeper tool lambda level.
-    // The validate_set_flag method takes a bool directly, so we test parse_bool
-    // indirectly by checking that the register pathway rejects garbage values.
-    // The actual lambda in register_tools now uses parse_bool and returns an error
-    // for values like "maybe" instead of silently treating them as false.
-
-    // Verify that direct bool validation still works
     ToolRegistry reg(world);
-    auto ok = reg.validate_set_flag("intro_complete", false);
-    ASSERT_TRUE(std::holds_alternative<MutationRequest>(ok));
+
+    auto result = reg.handle_set_flag_tool("intro_complete", "maybe");
+
+    EXPECT_NE(result.find("Error:"), std::string::npos);
+    EXPECT_TRUE(reg.pending_mutations().empty());
 }
 
 } // namespace chronicle

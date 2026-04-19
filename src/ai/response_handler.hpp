@@ -3,26 +3,26 @@
  * @brief Processes streaming LLM output and narrates applied mutations.
  *
  * @details @ref ResponseHandler sits between the LLM inference pipeline and
- * the renderer.  It has two distinct responsibilities:
+ * the output pipeline.  It has two distinct responsibilities:
  *
  * 1. **Token forwarding** — @ref on_token is called from the Zoo-Keeper
  *    inference thread for each generated token.  The token is pushed into the
- *    @ref TokenQueue so the main thread can drain it and pass it to the
- *    renderer for streaming display.
+ *    @ref TokenQueue so the main thread can drain it and pass it to the output
+ *    layer for streaming display.
  *
  * 2. **Mutation narration** — @ref narrate_mutations is called on the main
  *    thread after @ref GameEngine::process_pending_mutations applies the
  *    queued state changes.  For each mutation, it resolves a narration
  *    template from the configurable template map, substitutes placeholders
- *    ({npc}, {item}, {mood}, {location}), and renders the result as an
- *    action narration.
+ *    ({npc}, {item}, {mood}, {location}), and emits the result through a
+ *    caller-owned callback.
  */
 
 #pragma once
 #include "engine/mutation_request.hpp"
 #include "engine/token_queue.hpp"
 #include "entities/world.hpp"
-#include "rendering/renderer.hpp"
+#include <functional>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -30,7 +30,7 @@
 
 namespace chronicle {
 
-/// @brief Bridges LLM inference output with the renderer and narration pipeline.
+/// @brief Bridges LLM inference output with token and narration sinks.
 class ResponseHandler {
   public:
     /// @brief Construct with the required subsystem references.
@@ -38,11 +38,13 @@ class ResponseHandler {
     /// @details If @p templates is empty, @ref default_mutation_narration_templates
     /// is used to populate the narration template map.
     ///
-    /// @param renderer    The renderer used to display action narration.
+    using ActionNarrator = std::function<void(std::string_view)>;
+
+    /// @param action_narrator Callback used to display action narration.
     /// @param token_queue The queue into which streaming tokens are pushed.
     /// @param world       Read-only world reference for resolving item and location names.
     /// @param templates   Optional custom narration templates keyed by mutation type string.
-    ResponseHandler(Renderer &renderer, TokenQueue &token_queue, const World &world,
+    ResponseHandler(ActionNarrator action_narrator, TokenQueue &token_queue, const World &world,
                     std::unordered_map<std::string, std::string> templates = {});
 
     /// @brief Push a single streaming token into the token queue.
@@ -57,7 +59,7 @@ class ResponseHandler {
     ///
     /// @details Called on the main thread after mutations have been applied to
     /// the world.  For each mutation, resolves a narration template, substitutes
-    /// placeholders, and calls @ref Renderer::render_action.  Mutations whose
+    /// placeholders, and calls the narration callback.  Mutations whose
     /// template is empty or absent produce no output.
     ///
     /// @param mutations  The mutations that were successfully applied.
@@ -75,10 +77,10 @@ class ResponseHandler {
     void narrate_mutation(const MutationRequest &mutation, const std::string &npc_name);
 
   private:
-    Renderer &renderer_;                                          ///< Output renderer.
-    TokenQueue &token_queue_;                                     ///< Streaming token buffer.
-    const World &world_;                                          ///< Read-only world for name lookup.
-    std::unordered_map<std::string, std::string> templates_;      ///< Mutation narration templates.
+    ActionNarrator action_narrator_;                         ///< Action narration sink.
+    TokenQueue &token_queue_;                                ///< Streaming token buffer.
+    const World &world_;                                     ///< Read-only world for name lookup.
+    std::unordered_map<std::string, std::string> templates_; ///< Mutation narration templates.
 
     /// @brief Resolve and populate a narration template for a single mutation.
     ///

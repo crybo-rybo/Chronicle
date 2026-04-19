@@ -56,14 +56,16 @@ TEST_F(MutationsTest, ApplyGiveItemToPlayer) {
     EXPECT_TRUE(apply_mutation(world, req));
 
     EXPECT_TRUE(std::ranges::find(world.player.inventory, "apple") != world.player.inventory.end());
-    EXPECT_TRUE(std::ranges::find(world.npcs["marcus"].state.inventory, "apple") == world.npcs["marcus"].state.inventory.end());
+    EXPECT_TRUE(std::ranges::find(world.npcs["marcus"].state.inventory, "apple") ==
+                world.npcs["marcus"].state.inventory.end());
 }
 
 TEST_F(MutationsTest, ApplyTakeItemFromPlayer) {
     MutationRequest req{Type::TakeItemFromPlayer, Source::Npc, "marcus", {{"item_id", "sword"}}};
     EXPECT_TRUE(apply_mutation(world, req));
 
-    EXPECT_TRUE(std::ranges::find(world.npcs["marcus"].state.inventory, "sword") != world.npcs["marcus"].state.inventory.end());
+    EXPECT_TRUE(std::ranges::find(world.npcs["marcus"].state.inventory, "sword") !=
+                world.npcs["marcus"].state.inventory.end());
     EXPECT_TRUE(std::ranges::find(world.player.inventory, "sword") == world.player.inventory.end());
 }
 
@@ -90,10 +92,10 @@ TEST_F(MutationsTest, ApplyMoveNpc) {
 
     EXPECT_EQ(world.npcs["marcus"].state.current_location, "market");
 
-    auto& market_npcs = world.locations["market"].npcs;
+    auto &market_npcs = world.locations["market"].npcs;
     EXPECT_TRUE(std::ranges::find(market_npcs, "marcus") != market_npcs.end());
 
-    auto& tavern_npcs = world.locations["tavern"].npcs;
+    auto &tavern_npcs = world.locations["tavern"].npcs;
     EXPECT_TRUE(std::ranges::find(tavern_npcs, "marcus") == tavern_npcs.end());
 }
 
@@ -101,11 +103,15 @@ TEST_F(MutationsTest, ApplyRevealKnowledge) {
     MutationRequest req{Type::RevealKnowledge, Source::Npc, "marcus", {{"fact_id", "secret1"}}};
     EXPECT_TRUE(apply_mutation(world, req));
 
-    EXPECT_TRUE(std::ranges::find(world.player.known_facts, "secret1") != world.player.known_facts.end());
+    EXPECT_TRUE(std::ranges::find(world.player.known_facts, "secret1") !=
+                world.player.known_facts.end());
 }
 
 TEST_F(MutationsTest, ApplyAddMemory) {
-    MutationRequest req{Type::AddMemory, Source::Npc, "marcus", {{"summary", "Player was nice"}, {"importance", "5"}}};
+    MutationRequest req{Type::AddMemory,
+                        Source::Npc,
+                        "marcus",
+                        {{"summary", "Player was nice"}, {"importance", "5"}}};
     EXPECT_TRUE(apply_mutation(world, req));
 
     ASSERT_EQ(world.npcs["marcus"].state.memories.size(), 1);
@@ -114,7 +120,8 @@ TEST_F(MutationsTest, ApplyAddMemory) {
 }
 
 TEST_F(MutationsTest, ApplySetFlag) {
-    MutationRequest req{Type::SetFlag, Source::Npc, "", {{"flag_id", "door_open"}, {"value", "true"}}};
+    MutationRequest req{
+        Type::SetFlag, Source::Npc, "", {{"flag_id", "door_open"}, {"value", "true"}}};
     EXPECT_TRUE(apply_mutation(world, req));
 
     EXPECT_TRUE(world.flags["door_open"]);
@@ -185,4 +192,23 @@ TEST_F(MutationsTest, ApplyPlayerDrop) {
 TEST_F(MutationsTest, ApplyPlayerDropNotInInventory) {
     MutationRequest req{Type::PlayerDrop, Source::Player, "player", {{"item_id", "apple"}}};
     EXPECT_FALSE(apply_mutation(world, req));
+}
+
+TEST_F(MutationsTest, SpawnItemRejectsMissingItem) {
+    MutationRequest req{Type::SpawnItem,
+                        Source::System,
+                        "event",
+                        {{"item_id", "missing"}, {"location_id", "market"}}};
+
+    EXPECT_FALSE(apply_mutation(world, req));
+    EXPECT_FALSE(std::ranges::contains(world.locations["market"].items, "missing"));
+}
+
+TEST_F(MutationsTest, SpawnItemRejectsDuplicateOwnership) {
+    MutationRequest req{
+        Type::SpawnItem, Source::System, "event", {{"item_id", "coin"}, {"location_id", "market"}}};
+
+    EXPECT_FALSE(apply_mutation(world, req));
+    EXPECT_FALSE(std::ranges::contains(world.locations["market"].items, "coin"));
+    EXPECT_TRUE(std::ranges::contains(world.locations["tavern"].items, "coin"));
 }

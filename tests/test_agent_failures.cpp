@@ -1,6 +1,6 @@
-#include "mocks/mock_agent.hpp"
 #include "ai/npc_agent_pool.hpp"
 #include "engine/game_engine.hpp"
+#include "mocks/mock_agent.hpp"
 #include "rendering/renderer.hpp"
 #include <gtest/gtest.h>
 
@@ -11,7 +11,7 @@ namespace chronicle {
 // ---------------------------------------------------------------------------
 
 class ErrorCapturingRenderer : public Renderer {
-public:
+  public:
     std::vector<std::string> errors;
     std::vector<std::string> systems;
 
@@ -37,7 +37,7 @@ public:
 // ---------------------------------------------------------------------------
 
 class AgentFailureTest : public ::testing::Test {
-protected:
+  protected:
     std::unique_ptr<GameEngine> engine;
     ErrorCapturingRenderer *renderer_ptr = nullptr;
 
@@ -49,10 +49,8 @@ protected:
         auto renderer = std::make_unique<ErrorCapturingRenderer>();
         renderer_ptr = renderer.get();
 
-        engine = std::make_unique<GameEngine>(
-            std::string(FIXTURES_DIR) + "/config.json",
-            FIXTURES_DIR,
-            std::move(renderer), std::move(pool));
+        engine = std::make_unique<GameEngine>(std::string(FIXTURES_DIR) + "/config.json",
+                                              FIXTURES_DIR, std::move(renderer), std::move(pool));
     }
 
     void start_conversation() {
@@ -122,10 +120,21 @@ TEST_F(AgentFailureTest, MalformedToolArgsNoMutationsLeaked) {
     build_engine(FailureMockAgent::Mode::MalformedToolArgs);
     start_conversation();
     ASSERT_EQ(engine->phase(), GamePhase::InConversation);
+    ASSERT_FALSE(engine->world().flags.at("test_flag"));
 
     EXPECT_NO_THROW(send_dialogue("Hello"));
 
-    // Game loop stays alive, no crash
+    EXPECT_EQ(engine->phase(), GamePhase::InConversation);
+    EXPECT_FALSE(engine->world().flags.at("test_flag"));
+}
+
+TEST_F(AgentFailureTest, HangBrieflyKeepsGameAlive) {
+    build_engine(FailureMockAgent::Mode::HangBriefly);
+    start_conversation();
+    ASSERT_EQ(engine->phase(), GamePhase::InConversation);
+
+    EXPECT_NO_THROW(send_dialogue("Hello"));
+
     EXPECT_EQ(engine->phase(), GamePhase::InConversation);
 }
 

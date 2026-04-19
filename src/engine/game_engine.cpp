@@ -11,8 +11,8 @@
 #include "ai/prompt_builder.hpp"
 #include "engine/mutation_gate.hpp"
 #include "engine/mutations.hpp"
-#include "entities/world_loader.hpp"
 #include "engine/text_utils.hpp"
+#include "entities/world_loader.hpp"
 #include "rendering/terminal_renderer.hpp"
 #include <algorithm>
 #include <iostream>
@@ -20,11 +20,8 @@
 namespace chronicle {
 
 GameEngine::GameEngine(const std::string &config_path, const std::string &data_dir,
-                       std::unique_ptr<Renderer> renderer,
-                       std::unique_ptr<NpcAgentPool> agent_pool)
-    : config_(Config::load(config_path)),
-      world_(load_world(data_dir)),
-      parser_(config_path),
+                       std::unique_ptr<Renderer> renderer, std::unique_ptr<NpcAgentPool> agent_pool)
+    : config_(Config::load(config_path)), world_(load_world(data_dir)), parser_(config_path),
       renderer_(std::move(renderer)),
       save_system_(config_.save_directory.empty() ? "saves" : config_.save_directory),
       agent_pool_(std::move(agent_pool)) {
@@ -36,12 +33,13 @@ GameEngine::GameEngine(const std::string &config_path, const std::string &data_d
     tool_registry_ = std::make_unique<ToolRegistry>(
         world_, [this](MutationRequest req) { pending_mutations_.push_back(std::move(req)); });
     response_handler_ = std::make_unique<ResponseHandler>(
-        *renderer_, token_queue_, world_, config_.mutation_narration_templates);
-    
+        [this](std::string_view narration) { renderer_->render_action(narration); }, token_queue_,
+        world_, config_.mutation_narration_templates);
+
     if (!agent_pool_ && !config_.model_path.empty()) {
         try {
             agent_pool_ = std::make_unique<NpcAgentPool>(NpcAgentPool::from_config(config_));
-        } catch (const std::exception& e) {
+        } catch (const std::exception &e) {
             std::cerr << "Failed to initialize Agent Pool: " << e.what() << "\n";
         }
     }
@@ -49,7 +47,7 @@ GameEngine::GameEngine(const std::string &config_path, const std::string &data_d
 
 void GameEngine::run() {
     render_current_scene();
-    
+
     while (running_) {
         // Stream any dialogue tokens
         drain_token_queue();
@@ -58,7 +56,7 @@ void GameEngine::run() {
         if (phase_ == GamePhase::InConversation) {
             prompt = "(Conversation) > ";
         }
-        
+
         std::string input = renderer_->get_player_input(prompt);
         if (input.empty()) {
             continue;
@@ -66,7 +64,7 @@ void GameEngine::run() {
 
         auto cmd = parser_.parse(input, phase_);
         handle_command(cmd);
-        
+
         process_pending_mutations();
     }
 }
@@ -96,7 +94,7 @@ void GameEngine::handle_command(const ParsedCommand &cmd) {
         renderer_->render_error("I don't understand that command.");
         return;
     }
-    
+
     if (cmd.verb == CommandVerb::Dialogue) {
         if (is_conversation_exit(cmd.raw_input)) {
             leave_conversation();
@@ -161,9 +159,8 @@ void GameEngine::handle_command(const ParsedCommand &cmd) {
             pending_mutations_.push_back(std::move(req));
             process_pending_mutations();
             auto w_it = world_.items.find(item_id);
-            renderer_->render_action("You take the " +
-                                     (w_it != world_.items.end() ? w_it->second.name : item_id) +
-                                     ".");
+            renderer_->render_action(
+                "You take the " + (w_it != world_.items.end() ? w_it->second.name : item_id) + ".");
         }
         return;
     }
@@ -178,9 +175,8 @@ void GameEngine::handle_command(const ParsedCommand &cmd) {
             pending_mutations_.push_back(std::move(req));
             process_pending_mutations();
             auto w_it = world_.items.find(item_id);
-            renderer_->render_action("You drop the " +
-                                     (w_it != world_.items.end() ? w_it->second.name : item_id) +
-                                     ".");
+            renderer_->render_action(
+                "You drop the " + (w_it != world_.items.end() ? w_it->second.name : item_id) + ".");
         }
         return;
     }
@@ -230,7 +226,7 @@ void GameEngine::handle_command(const ParsedCommand &cmd) {
         render_current_scene();
         return;
     }
-    
+
     if (cmd.verb == CommandVerb::Talk) {
         // Find NPC locally
         if (auto npc_id = find_visible_npc_id(cmd.primary_arg)) {
@@ -288,9 +284,9 @@ void GameEngine::handle_dialogue(const std::string &npc_id, const std::string &i
         renderer_->render_error("NPC not found.");
         return;
     }
-    
-    const auto& npc = npc_it->second;
-    
+
+    const auto &npc = npc_it->second;
+
     try {
         pending_mutations_.clear();
         tool_registry_->clear_all();
@@ -298,27 +294,25 @@ void GameEngine::handle_dialogue(const std::string &npc_id, const std::string &i
 
         auto handle = agent_pool_->acquire(npc_id);
         handle->register_tools(*tool_registry_, npc_id);
-        
+
         PromptBuilder::Budget budget{
             .max_memory_tokens = config_.max_memory_tokens,
             .max_world_tokens = config_.max_world_tokens,
             .max_history_tokens = config_.max_history_tokens,
         };
         PromptBuilder pb(budget);
-        
+
         std::string sys_prompt = pb.build_system_prompt(npc.identity, npc.state, world_);
         handle->set_system_prompt(sys_prompt);
-        
+
         std::string user_msg = pb.build_user_turn(input, world_.player);
-        
+
         renderer_->begin_npc_dialogue(npc.identity.name);
-        
+
         bool streamed_any = false;
         auto poll = [this, &streamed_any]() { streamed_any = drain_token_queue() || streamed_any; };
         auto result = handle->chat_streaming(
-            user_msg,
-            [this](std::string_view t) { response_handler_->on_token(t); },
-            poll);
+            user_msg, [this](std::string_view t) { response_handler_->on_token(t); }, poll);
 
         poll();
 
@@ -339,8 +333,8 @@ void GameEngine::handle_dialogue(const std::string &npc_id, const std::string &i
         if (!result.success) {
             renderer_->render_error("Agent chat failed: " + result.error_message);
         }
-        
-    } catch (const std::exception& e) {
+
+    } catch (const std::exception &e) {
         renderer_->render_error(std::string("Dialogue error: ") + e.what());
     }
 }

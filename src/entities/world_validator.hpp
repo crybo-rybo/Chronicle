@@ -6,8 +6,8 @@
  * cross-entity referential integrity (dangling IDs, duplicate ownership, etc.)
  * and returns a human-readable report of errors and warnings.
  *
- * This validator intentionally does NOT validate event trigger semantics;
- * that requires event-schema-specific knowledge handled elsewhere.
+ * Event trigger conditions and action parameters are also checked so authored
+ * scenario data fails fast before gameplay starts.
  */
 
 #pragma once
@@ -35,6 +35,7 @@ struct ValidationReport {
 ///   ownership, player location/inventory) point to entities that exist.
 /// - Item ownership uniqueness (each item appears in at most one container).
 /// - NPC knowledge fact IDs exist in the world facts registry.
+/// - Event trigger/action parameters refer only to declared flags and entities.
 /// - Warning-level checks for items with inconsistent properties.
 ///
 /// @param world The world state to validate.

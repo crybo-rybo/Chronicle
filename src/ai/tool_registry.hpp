@@ -47,7 +47,7 @@ namespace chronicle {
 
 /// @brief Validates proposed NPC tool calls and maintains the pending mutation queue.
 class ToolRegistry {
-public:
+  public:
     /// @brief Return type for validate_* methods.
     ///
     /// Holds either a valid @ref MutationRequest on success, or a @c std::string
@@ -87,8 +87,7 @@ public:
     /// @param npc_id The NPC whose mood would change.
     /// @param mood   The proposed new mood (must be in @ref kValidMoods).
     /// @return A @ref MutationRequest on success, or an error string.
-    ValidationResult validate_update_mood(const std::string &npc_id,
-                                          const std::string &mood) const;
+    ValidationResult validate_update_mood(const std::string &npc_id, const std::string &mood) const;
 
     /// @brief Validate an update_trust request.
     ///
@@ -116,7 +115,7 @@ public:
     /// @param fact_id The fact ID to reveal.
     /// @return A @ref MutationRequest on success, or an error string.
     ValidationResult validate_reveal_knowledge(const std::string &npc_id,
-                                                const std::string &fact_id) const;
+                                               const std::string &fact_id) const;
 
     /// @brief Validate an add_memory request.
     ///
@@ -148,17 +147,17 @@ public:
     /// @brief Validate and enqueue a give_item mutation.
     /// @return @c std::nullopt on success; error string on failure.
     std::optional<std::string> register_give_item(const std::string &npc_id,
-                                                   const std::string &item_id);
+                                                  const std::string &item_id);
 
     /// @brief Validate and enqueue a take_item mutation.
     /// @return @c std::nullopt on success; error string on failure.
     std::optional<std::string> register_take_item(const std::string &npc_id,
-                                                   const std::string &item_id);
+                                                  const std::string &item_id);
 
     /// @brief Validate and enqueue an update_mood mutation.
     /// @return @c std::nullopt on success; error string on failure.
     std::optional<std::string> register_update_mood(const std::string &npc_id,
-                                                     const std::string &mood);
+                                                    const std::string &mood);
 
     /// @brief Validate and enqueue an update_trust mutation.
     /// @return @c std::nullopt on success; error string on failure.
@@ -167,21 +166,29 @@ public:
     /// @brief Validate and enqueue a move_npc mutation.
     /// @return @c std::nullopt on success; error string on failure.
     std::optional<std::string> register_move_npc(const std::string &npc_id,
-                                                  const std::string &location_id);
+                                                 const std::string &location_id);
 
     /// @brief Validate and enqueue a reveal_knowledge mutation.
     /// @return @c std::nullopt on success; error string on failure.
     std::optional<std::string> register_reveal_knowledge(const std::string &npc_id,
-                                                          const std::string &fact_id);
+                                                         const std::string &fact_id);
 
     /// @brief Validate and enqueue an add_memory mutation.
     /// @return @c std::nullopt on success; error string on failure.
     std::optional<std::string> register_add_memory(const std::string &npc_id,
-                                                    const std::string &summary, int importance);
+                                                   const std::string &summary, int importance);
 
     /// @brief Validate and enqueue a set_flag mutation.
     /// @return @c std::nullopt on success; error string on failure.
     std::optional<std::string> register_set_flag(const std::string &flag_id, bool value);
+
+    /// @brief Handle the stringly Zoo-Keeper set_flag tool path.
+    ///
+    /// @details This keeps strict boolean parsing testable without requiring
+    /// a live model-backed @c zoo::Agent invocation.
+    ///
+    /// @return "OK" on success, or an error string on validation failure.
+    std::string handle_set_flag_tool(const std::string &flag_id, const std::string &value_str);
 
     // -----------------------------------------------------------------------
     // Dialogue capture (non-mutating)
@@ -242,16 +249,16 @@ public:
     /// @details Creates and registers a lambda for each game tool
     /// (say, give_item, take_item, update_mood, update_trust, move_self,
     /// reveal_knowledge, remember, set_flag).  Each lambda captures @c this
-    /// by pointer and calls the corresponding @c register_* method at
+    /// by pointer and calls the corresponding tool handler or @c register_* method at
     /// inference time.
     ///
     /// @param agent   The Zoo-Keeper agent to register tools on.
     /// @param npc_id  The active NPC — forwarded to @ref set_active_npc_id.
-    void register_tools(zoo::Agent& agent, const std::string& npc_id);
+    void register_tools(zoo::Agent &agent, const std::string &npc_id);
 
-private:
-    const World &world_;  ///< Read-only world reference used for validation.
-    MutationSink sink_;   ///< External mutation consumer (if set).
+  private:
+    const World &world_;                   ///< Read-only world reference used for validation.
+    MutationSink sink_;                    ///< External mutation consumer (if set).
     std::vector<MutationRequest> pending_; ///< Fallback queue when no sink is provided.
     std::vector<std::pair<std::string, std::string>> dialogue_log_; ///< Captured NPC dialogue.
     std::string active_npc_id_; ///< NPC context for tool lambda callbacks.

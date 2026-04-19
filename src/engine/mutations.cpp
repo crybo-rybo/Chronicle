@@ -33,6 +33,23 @@ bool add_unique(std::vector<std::string> &values, const std::string &value) {
     return true;
 }
 
+bool item_is_owned(const World &world, const std::string &item_id) {
+    if (std::ranges::contains(world.player.inventory, item_id)) {
+        return true;
+    }
+    for (const auto &[_, loc] : world.locations) {
+        if (std::ranges::contains(loc.items, item_id)) {
+            return true;
+        }
+    }
+    for (const auto &[_, npc] : world.npcs) {
+        if (std::ranges::contains(npc.state.inventory, item_id)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 } // namespace
 
 bool apply_give_item_to_player(World &world, const MutationRequest &mutation) {
@@ -258,7 +275,8 @@ bool apply_spawn_item(World &world, const MutationRequest &mutation) {
         return false;
     }
     auto loc_it = world.locations.find(*location_id);
-    if (loc_it == world.locations.end()) {
+    if (loc_it == world.locations.end() || !world.items.contains(*item_id) ||
+        item_is_owned(world, *item_id)) {
         return false;
     }
     add_unique(loc_it->second.items, *item_id);

@@ -55,10 +55,12 @@ std::string template_key(MutationRequest::Type type) {
 
 } // namespace
 
-ResponseHandler::ResponseHandler(Renderer &renderer, TokenQueue &token_queue, const World &world,
+ResponseHandler::ResponseHandler(ActionNarrator action_narrator, TokenQueue &token_queue,
+                                 const World &world,
                                  std::unordered_map<std::string, std::string> templates)
-    : renderer_(renderer), token_queue_(token_queue), world_(world),
-      templates_(templates.empty() ? default_mutation_narration_templates() : std::move(templates)) {}
+    : action_narrator_(std::move(action_narrator)), token_queue_(token_queue), world_(world),
+      templates_(templates.empty() ? default_mutation_narration_templates()
+                                   : std::move(templates)) {}
 
 void ResponseHandler::on_token(std::string_view token) {
     token_queue_.push(std::string(token));
@@ -109,8 +111,8 @@ void ResponseHandler::narrate_mutations(const std::vector<MutationRequest> &muta
 void ResponseHandler::narrate_mutation(const MutationRequest &mutation,
                                        const std::string &npc_name) {
     std::string narration = describe_mutation(mutation, npc_name);
-    if (!narration.empty()) {
-        renderer_.render_action(narration);
+    if (!narration.empty() && action_narrator_) {
+        action_narrator_(narration);
     }
 }
 
