@@ -1,0 +1,8 @@
+{
+  "flags": {
+    "test_flag": {
+      "default": false,
+      "description": "A test flag"
+    }
+  }
+}

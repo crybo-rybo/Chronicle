@@ -1,0 +1,44 @@
+/**
+ * @file world_validator.hpp
+ * @brief Structural integrity validator for the World state.
+ *
+ * @details Provides a single entry point, @ref validate_world, that checks
+ * cross-entity referential integrity (dangling IDs, duplicate ownership, etc.)
+ * and returns a human-readable report of errors and warnings.
+ *
+ * This validator intentionally does NOT validate event trigger semantics;
+ * that requires event-schema-specific knowledge handled elsewhere.
+ */
+
+#pragma once
+#include "entities/world.hpp"
+#include <string>
+#include <vector>
+
+namespace chronicle {
+
+/// @brief Result of a structural validation pass over a @ref World instance.
+///
+/// @details If @c ok is @c true, no errors were found (warnings may still be
+/// present).  Each string in @c errors or @c warnings is a self-contained,
+/// human-readable description of a single issue.
+struct ValidationReport {
+    bool ok = true;
+    std::vector<std::string> errors;
+    std::vector<std::string> warnings;
+};
+
+/// @brief Validate the structural integrity of a World.
+///
+/// @details Checks include:
+/// - All entity cross-references (location exits, NPC locations, item
+///   ownership, player location/inventory) point to entities that exist.
+/// - Item ownership uniqueness (each item appears in at most one container).
+/// - NPC knowledge fact IDs exist in the world facts registry.
+/// - Warning-level checks for items with inconsistent properties.
+///
+/// @param world The world state to validate.
+/// @return A @ref ValidationReport summarising all issues found.
+ValidationReport validate_world(const World &world);
+
+} // namespace chronicle

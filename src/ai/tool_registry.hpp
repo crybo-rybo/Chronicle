@@ -31,8 +31,8 @@
  */
 
 #pragma once
+#include "engine/mutation_request.hpp"
 #include "entities/world.hpp"
-#include <map>
 #include <optional>
 #include <string>
 #include <utility>
@@ -44,29 +44,6 @@ class Agent;
 } // namespace zoo
 
 namespace chronicle {
-
-/// @brief Describes a single validated, pending state change to the world.
-///
-/// @details Produced by @ref ToolRegistry validate/register methods and
-/// consumed by the @ref apply_mutation dispatcher in @c mutations.hpp.
-/// All parameters are stored as strings to keep the type serialisation-friendly.
-struct MutationRequest {
-    /// @brief Enumeration of all possible state change types.
-    enum class Type {
-        GiveItemToPlayer,   ///< Transfer an item from an NPC to the player.
-        TakeItemFromPlayer, ///< Transfer an item from the player to an NPC.
-        UpdateNpcMood,      ///< Change an NPC's emotional state.
-        UpdateNpcTrust,     ///< Adjust an NPC's trust toward the player.
-        MoveNpc,            ///< Move an NPC to a different location.
-        RevealKnowledge,    ///< Add a fact to the player's known-facts list.
-        AddMemory,          ///< Append a @ref MemoryEntry to an NPC's memory list.
-        SetFlag             ///< Set a global narrative flag to a boolean value.
-    };
-
-    Type type;                             ///< The kind of state change to perform.
-    std::string npc_id;                    ///< The NPC initiating the change (empty for SetFlag).
-    std::map<std::string, std::string> params; ///< Type-specific named parameters.
-};
 
 /// @brief Validates proposed NPC tool calls and maintains the pending mutation queue.
 class ToolRegistry {
@@ -83,7 +60,10 @@ public:
     /// this registry.  The caller must ensure the @ref World outlives the registry.
     ///
     /// @param world The world to validate mutations against.
-    explicit ToolRegistry(const World &world);
+    /// @param sink  Callback invoked for each validated mutation.  If null,
+    ///              mutations are pushed to an internal vector accessible via
+    ///              @ref pending_mutations (test/standalone convenience).
+    explicit ToolRegistry(const World &world, MutationSink sink = nullptr);
 
     // -----------------------------------------------------------------------
     // Validation-only methods (do not enqueue)
@@ -271,9 +251,13 @@ public:
 
 private:
     const World &world_;  ///< Read-only world reference used for validation.
-    std::vector<MutationRequest> pending_;             ///< Validated, pending state changes.
+    MutationSink sink_;   ///< External mutation consumer (if set).
+    std::vector<MutationRequest> pending_; ///< Fallback queue when no sink is provided.
     std::vector<std::pair<std::string, std::string>> dialogue_log_; ///< Captured NPC dialogue.
     std::string active_npc_id_; ///< NPC context for tool lambda callbacks.
+
+    /// @brief Enqueue a mutation via the sink or the internal fallback vector.
+    void emit(MutationRequest req);
 
     // Private validation helpers
     bool npc_exists(const std::string &npc_id) const;

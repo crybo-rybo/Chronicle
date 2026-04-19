@@ -8,13 +8,23 @@
  */
 
 #include "ai/tool_registry.hpp"
+#include "engine/parse_utils.hpp"
 #include <zoo/agent.hpp>
 #include <algorithm>
 #include <sstream>
 
 namespace chronicle {
 
-ToolRegistry::ToolRegistry(const World &world) : world_(world) {}
+ToolRegistry::ToolRegistry(const World &world, MutationSink sink)
+    : world_(world), sink_(std::move(sink)) {}
+
+void ToolRegistry::emit(MutationRequest req) {
+    if (sink_) {
+        sink_(std::move(req));
+    } else {
+        pending_.push_back(std::move(req));
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Validation helpers
@@ -86,7 +96,7 @@ ToolRegistry::ValidationResult ToolRegistry::validate_give_item(const std::strin
                "'. Inventory: " + format_inventory(inv);
     }
     return MutationRequest{
-        MutationRequest::Type::GiveItemToPlayer, npc_id, {{"item_id", item_id}}};
+        MutationRequest::Type::GiveItemToPlayer, MutationRequest::Source::Npc, npc_id, {{"item_id", item_id}}};
 }
 
 ToolRegistry::ValidationResult ToolRegistry::validate_take_item(const std::string &npc_id,
@@ -103,7 +113,7 @@ ToolRegistry::ValidationResult ToolRegistry::validate_take_item(const std::strin
     if (is_key_item(item_id))
         return "Error: Item '" + item_id + "' is a key item and cannot be taken.";
     return MutationRequest{
-        MutationRequest::Type::TakeItemFromPlayer, npc_id, {{"item_id", item_id}}};
+        MutationRequest::Type::TakeItemFromPlayer, MutationRequest::Source::Npc, npc_id, {{"item_id", item_id}}};
 }
 
 ToolRegistry::ValidationResult
@@ -114,7 +124,7 @@ ToolRegistry::validate_update_mood(const std::string &npc_id, const std::string 
         return "Error: '" + mood +
                "' is not a valid mood. Valid moods: neutral, suspicious, friendly, hostile, "
                "fearful, grieving.";
-    return MutationRequest{MutationRequest::Type::UpdateNpcMood, npc_id, {{"mood", mood}}};
+    return MutationRequest{MutationRequest::Type::UpdateNpcMood, MutationRequest::Source::Npc, npc_id, {{"mood", mood}}};
 }
 
 ToolRegistry::ValidationResult ToolRegistry::validate_update_trust(const std::string &npc_id,
@@ -128,7 +138,7 @@ ToolRegistry::ValidationResult ToolRegistry::validate_update_trust(const std::st
     int clamped_delta = new_trust - current;
 
     return MutationRequest{MutationRequest::Type::UpdateNpcTrust,
-                           npc_id,
+                           MutationRequest::Source::Npc, npc_id,
                            {{"delta", std::to_string(clamped_delta)}}};
 }
 
@@ -140,7 +150,7 @@ ToolRegistry::validate_move_npc(const std::string &npc_id,
     if (!location_exists(location_id))
         return "Error: Location '" + location_id + "' does not exist.";
     return MutationRequest{
-        MutationRequest::Type::MoveNpc, npc_id, {{"location_id", location_id}}};
+        MutationRequest::Type::MoveNpc, MutationRequest::Source::Npc, npc_id, {{"location_id", location_id}}};
 }
 
 ToolRegistry::ValidationResult
@@ -155,7 +165,7 @@ ToolRegistry::validate_reveal_knowledge(const std::string &npc_id,
         return "Error: NPC '" + npc_id + "' does not know fact '" + fact_id + "'.";
 
     return MutationRequest{
-        MutationRequest::Type::RevealKnowledge, npc_id, {{"fact_id", fact_id}}};
+        MutationRequest::Type::RevealKnowledge, MutationRequest::Source::Npc, npc_id, {{"fact_id", fact_id}}};
 }
 
 ToolRegistry::ValidationResult ToolRegistry::validate_add_memory(const std::string &npc_id,
@@ -168,7 +178,7 @@ ToolRegistry::ValidationResult ToolRegistry::validate_add_memory(const std::stri
 
     int clamped = std::clamp(importance, 1, 10);
     return MutationRequest{MutationRequest::Type::AddMemory,
-                           npc_id,
+                           MutationRequest::Source::Npc, npc_id,
                            {{"summary", summary}, {"importance", std::to_string(clamped)}}};
 }
 
@@ -177,7 +187,7 @@ ToolRegistry::ValidationResult ToolRegistry::validate_set_flag(const std::string
     if (!flag_exists(flag_id))
         return "Error: Flag '" + flag_id + "' does not exist in world flags.";
     return MutationRequest{MutationRequest::Type::SetFlag,
-                           "",
+                           MutationRequest::Source::Npc, "",
                            {{"flag_id", flag_id}, {"value", value ? "true" : "false"}}};
 }
 
@@ -190,7 +200,7 @@ std::optional<std::string> ToolRegistry::register_give_item(const std::string &n
     auto result = validate_give_item(npc_id, item_id);
     if (auto *error = std::get_if<std::string>(&result))
         return *error;
-    pending_.push_back(std::get<MutationRequest>(result));
+    emit(std::get<MutationRequest>(result));
     return std::nullopt;
 }
 
@@ -199,7 +209,7 @@ std::optional<std::string> ToolRegistry::register_take_item(const std::string &n
     auto result = validate_take_item(npc_id, item_id);
     if (auto *error = std::get_if<std::string>(&result))
         return *error;
-    pending_.push_back(std::get<MutationRequest>(result));
+    emit(std::get<MutationRequest>(result));
     return std::nullopt;
 }
 
@@ -208,7 +218,7 @@ std::optional<std::string> ToolRegistry::register_update_mood(const std::string 
     auto result = validate_update_mood(npc_id, mood);
     if (auto *error = std::get_if<std::string>(&result))
         return *error;
-    pending_.push_back(std::get<MutationRequest>(result));
+    emit(std::get<MutationRequest>(result));
     return std::nullopt;
 }
 
@@ -217,7 +227,7 @@ std::optional<std::string> ToolRegistry::register_update_trust(const std::string
     auto result = validate_update_trust(npc_id, delta);
     if (auto *error = std::get_if<std::string>(&result))
         return *error;
-    pending_.push_back(std::get<MutationRequest>(result));
+    emit(std::get<MutationRequest>(result));
     return std::nullopt;
 }
 
@@ -226,7 +236,7 @@ std::optional<std::string> ToolRegistry::register_move_npc(const std::string &np
     auto result = validate_move_npc(npc_id, location_id);
     if (auto *error = std::get_if<std::string>(&result))
         return *error;
-    pending_.push_back(std::get<MutationRequest>(result));
+    emit(std::get<MutationRequest>(result));
     return std::nullopt;
 }
 
@@ -235,7 +245,7 @@ ToolRegistry::register_reveal_knowledge(const std::string &npc_id, const std::st
     auto result = validate_reveal_knowledge(npc_id, fact_id);
     if (auto *error = std::get_if<std::string>(&result))
         return *error;
-    pending_.push_back(std::get<MutationRequest>(result));
+    emit(std::get<MutationRequest>(result));
     return std::nullopt;
 }
 
@@ -245,7 +255,7 @@ std::optional<std::string> ToolRegistry::register_add_memory(const std::string &
     auto result = validate_add_memory(npc_id, summary, importance);
     if (auto *error = std::get_if<std::string>(&result))
         return *error;
-    pending_.push_back(std::get<MutationRequest>(result));
+    emit(std::get<MutationRequest>(result));
     return std::nullopt;
 }
 
@@ -254,7 +264,7 @@ std::optional<std::string> ToolRegistry::register_set_flag(const std::string &fl
     auto result = validate_set_flag(flag_id, value);
     if (auto *error = std::get_if<std::string>(&result))
         return *error;
-    pending_.push_back(std::get<MutationRequest>(result));
+    emit(std::get<MutationRequest>(result));
     return std::nullopt;
 }
 
@@ -351,8 +361,12 @@ void ToolRegistry::register_tools(zoo::Agent& agent, const std::string& npc_id) 
     (void)agent.register_tool("remember", "Save a memory of an event or interaction", {"summary", "importance"}, std::move(remember_func));
 
     auto set_flag_func = [this](std::string flag_id, std::string value_str) -> std::string {
-        bool value = (value_str == "true" || value_str == "1");
-        if (auto err = this->register_set_flag(flag_id, value)) return *err;
+        auto value = parse_bool(value_str);
+        if (!value) {
+            return "Error: flag value must be 'true', 'false', '1', or '0', got '" + value_str +
+                   "'.";
+        }
+        if (auto err = this->register_set_flag(flag_id, *value)) return *err;
         return "OK";
     };
     (void)agent.register_tool("set_flag", "Set or update a world narrative flag", {"flag_id", "value"}, std::move(set_flag_func));

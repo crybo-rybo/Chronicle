@@ -25,6 +25,31 @@ ZOO_MODEL_PATH=/path/to/model.gguf ./build/tools/zk_smoke_test
 Automated integration tests that need a model use the separate
 `ZOO_INTEGRATION_MODEL` environment variable.
 
+### Local Model Paths
+
+The tracked `config/default.json` keeps `model_path` empty. Machine-local model
+paths belong in one of:
+
+- `.secret/` (gitignored) — e.g. `.secret/local_config.json`
+- Environment variables: `ZOO_MODEL_PATH` / `ZOO_INTEGRATION_MODEL`
+- A gitignored local config override
+
+Never commit a machine-local path into tracked configuration.
+
+### Integration Tests
+
+Integration tests require a local LLM model and are gated behind a CMake option:
+
+```bash
+cmake -B build -DCHRONICLE_INTEGRATION_TESTS=ON
+cmake --build build --parallel
+ZOO_INTEGRATION_MODEL=/path/to/model.gguf ctest --test-dir build --output-on-failure
+```
+
+With the default `CHRONICLE_INTEGRATION_TESTS=OFF`, integration tests are not
+compiled. The integration tests also runtime-skip if `ZOO_INTEGRATION_MODEL`
+(or `ZOO_MODEL_PATH`) is not set, as a defense-in-depth guard.
+
 ## Style
 
 - Types use `PascalCase`.

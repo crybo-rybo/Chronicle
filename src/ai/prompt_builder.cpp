@@ -42,11 +42,15 @@ std::string PromptBuilder::build_system_prompt(const NpcIdentity &identity, cons
         }
     }
 
-    // 5. Knowledge (skip if empty)
+    // 5. Knowledge (skip if empty; resolve fact IDs to authored text)
     if (!identity.knowledge.empty()) {
         out << "\nWhat you know:\n";
-        for (const auto &fact : identity.knowledge) {
-            out << "- " << fact << "\n";
+        for (const auto &fact_id : identity.knowledge) {
+            if (auto it = world.facts.find(fact_id); it != world.facts.end()) {
+                out << "- " << it->second.text << "\n";
+            } else {
+                out << "- " << fact_id << "\n";
+            }
         }
     }
 

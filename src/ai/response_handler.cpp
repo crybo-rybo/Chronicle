@@ -41,6 +41,14 @@ std::string template_key(MutationRequest::Type type) {
         return "add_memory";
     case MutationRequest::Type::SetFlag:
         return "set_flag";
+    case MutationRequest::Type::PlayerMove:
+        return "player_move";
+    case MutationRequest::Type::PlayerTake:
+        return "player_take";
+    case MutationRequest::Type::PlayerDrop:
+        return "player_drop";
+    case MutationRequest::Type::SpawnItem:
+        return "spawn_item";
     }
     return "";
 }

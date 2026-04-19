@@ -1,5 +1,4 @@
 #include "ai/response_handler.hpp"
-#include "ai/tool_registry.hpp"
 #include "engine/token_queue.hpp"
 #include "entities/world.hpp"
 #include "rendering/renderer.hpp"
@@ -75,15 +74,16 @@ TEST(ResponseHandlerTest, NarrateMutationsUsesTemplatesForVisibleAndSilentMutati
 
     ResponseHandler handler(renderer, queue, world, templates);
 
+    using Source = MutationRequest::Source;
     std::vector<MutationRequest> mutations;
-    mutations.push_back({MutationRequest::Type::GiveItemToPlayer, "marcus", {{"item_id", "sword"}}});
-    mutations.push_back({MutationRequest::Type::TakeItemFromPlayer, "marcus", {{"item_id", "sword"}}});
-    mutations.push_back({MutationRequest::Type::UpdateNpcMood, "marcus", {{"mood", "angry"}}});
-    mutations.push_back({MutationRequest::Type::MoveNpc, "marcus", {{"location_id", "market"}}});
-    mutations.push_back({MutationRequest::Type::RevealKnowledge, "marcus", {{"fact_id", "test"}}});
-    mutations.push_back({MutationRequest::Type::UpdateNpcTrust, "marcus", {{"delta", "5"}}});
-    mutations.push_back({MutationRequest::Type::AddMemory, "marcus", {{"summary", "test"}}});
-    mutations.push_back({MutationRequest::Type::SetFlag, "marcus", {{"flag_id", "test"}}});
+    mutations.push_back({MutationRequest::Type::GiveItemToPlayer, Source::Npc, "marcus", {{"item_id", "sword"}}});
+    mutations.push_back({MutationRequest::Type::TakeItemFromPlayer, Source::Npc, "marcus", {{"item_id", "sword"}}});
+    mutations.push_back({MutationRequest::Type::UpdateNpcMood, Source::Npc, "marcus", {{"mood", "angry"}}});
+    mutations.push_back({MutationRequest::Type::MoveNpc, Source::Npc, "marcus", {{"location_id", "market"}}});
+    mutations.push_back({MutationRequest::Type::RevealKnowledge, Source::Npc, "marcus", {{"fact_id", "test"}}});
+    mutations.push_back({MutationRequest::Type::UpdateNpcTrust, Source::Npc, "marcus", {{"delta", "5"}}});
+    mutations.push_back({MutationRequest::Type::AddMemory, Source::Npc, "marcus", {{"summary", "test"}}});
+    mutations.push_back({MutationRequest::Type::SetFlag, Source::Npc, "", {{"flag_id", "test"}}});
 
     handler.narrate_mutations(mutations, "Marcus");
 

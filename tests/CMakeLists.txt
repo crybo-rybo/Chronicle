@@ -7,16 +7,19 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(googletest)
 
-# Gather all test_*.cpp files automatically
-file(GLOB TEST_SOURCES test_*.cpp integration/test_*.cpp)
+# Unit tests (always compiled)
+file(GLOB TEST_SOURCES test_*.cpp)
+
+# Integration tests (model-backed, opt-in)
+option(CHRONICLE_INTEGRATION_TESTS "Build integration tests that require a local LLM model" OFF)
+if(CHRONICLE_INTEGRATION_TESTS)
+    file(GLOB INTEGRATION_SOURCES integration/test_*.cpp)
+    list(APPEND TEST_SOURCES ${INTEGRATION_SOURCES})
+endif()
+
 add_executable(chronicle_tests ${TEST_SOURCES})
 target_compile_options(chronicle_tests PRIVATE ${CHRONICLE_WARNING_FLAGS})
-if(TARGET chronicle_game)
-    # chronicle_game links chronicle_entities publicly, so no need to list it again
-    target_link_libraries(chronicle_tests PRIVATE GTest::gtest_main chronicle_game)
-else()
-    target_link_libraries(chronicle_tests PRIVATE GTest::gtest_main chronicle_entities)
-endif()
+target_link_libraries(chronicle_tests PRIVATE GTest::gtest_main chronicle_runtime)
 
 # Copy fixture files to build directory so tests can find them
 # NOTE: Copies at configure time only — re-run CMake (cmake -B build) when adding new fixture files

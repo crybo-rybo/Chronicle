@@ -1,0 +1,14 @@
+{
+  "facts": {
+    "fact_stolen_cargo": {
+      "text": "A merchant's cargo was stolen from the docks last week. The goods were never recovered.",
+      "category": "backstory",
+      "revealed_by_default": false
+    },
+    "fact_thief_identity": {
+      "text": "The thief was a dockworker named Harlan who fled upriver after the job.",
+      "category": "backstory",
+      "revealed_by_default": false
+    }
+  }
+}

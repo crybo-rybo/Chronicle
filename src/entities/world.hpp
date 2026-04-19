@@ -16,6 +16,7 @@
 #pragma once
 #include "entities/clock.hpp"
 #include "entities/event.hpp"
+#include "entities/fact.hpp"
 #include "entities/item.hpp"
 #include "entities/location.hpp"
 #include "entities/npc.hpp"
@@ -60,6 +61,12 @@ struct World {
 
     /// The player character's current state.
     Player player;
+
+    /// @brief Authored fact registry, keyed by fact ID.
+    ///
+    /// Facts are loaded from @c facts.json and referenced by NPC knowledge
+    /// lists.  The prompt builder resolves fact IDs to authored text here.
+    std::unordered_map<std::string, Fact> facts;
 
     /// @brief Global narrative flags, keyed by flag ID.
     ///

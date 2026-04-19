@@ -19,7 +19,7 @@
  */
 
 #pragma once
-#include "ai/tool_registry.hpp"
+#include "engine/mutation_request.hpp"
 #include "engine/token_queue.hpp"
 #include "entities/world.hpp"
 #include "rendering/renderer.hpp"

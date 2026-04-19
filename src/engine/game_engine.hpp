@@ -32,6 +32,7 @@
 #include "ai/response_handler.hpp"
 #include "ai/tool_registry.hpp"
 #include "engine/command_parser.hpp"
+#include "engine/mutation_request.hpp"
 #include "engine/game_phase.hpp"
 #include "engine/token_queue.hpp"
 #include "entities/config.hpp"
@@ -128,10 +129,12 @@ class GameEngine {
 
     /// Agent pool — may be @c nullptr if no model is configured.
     std::unique_ptr<NpcAgentPool> agent_pool_;
-    /// Tool registry — owns the pending mutation queue.
+    /// Tool registry — validates and routes NPC mutations to @c pending_mutations_.
     std::unique_ptr<ToolRegistry> tool_registry_;
     /// Response handler — narrates mutations and forwards tokens.
     std::unique_ptr<ResponseHandler> response_handler_;
+    /// Authoritative pending mutation queue — drained by @ref process_pending_mutations.
+    std::vector<MutationRequest> pending_mutations_;
 
     bool running_ = true;                              ///< Set to @c false to exit the game loop.
     GamePhase phase_ = GamePhase::Playing;             ///< Current game phase.
