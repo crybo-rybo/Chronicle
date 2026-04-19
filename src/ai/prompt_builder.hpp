@@ -112,14 +112,16 @@ public:
 
     /// @brief Assemble the user-turn message for a single dialogue exchange.
     ///
-    /// @details Wraps the player's raw input as a JSON-encoded quoted string
-    /// to prevent prompt-injection, then appends a summary of the player's
-    /// current inventory for context.
+    /// @details Optionally prepends a dynamic context block before the player's
+    /// input.  The player's raw input is JSON-encoded to prevent prompt injection,
+    /// then a summary of the player's current inventory is appended.
     ///
-    /// @param player_input The raw dialogue text typed by the player.
-    /// @param player       The player's current state, used for inventory context.
+    /// @param player_input    The raw dialogue text typed by the player.
+    /// @param player          The player's current state, used for inventory context.
+    /// @param dynamic_context Optional dynamic state context to prepend.
     /// @return The formatted user message string.
-    std::string build_user_turn(const std::string &player_input, const Player &player) const;
+    std::string build_user_turn(const std::string &player_input, const Player &player,
+                                const std::string &dynamic_context = "") const;
 
     /// @brief Estimate the token count of a text string.
     ///

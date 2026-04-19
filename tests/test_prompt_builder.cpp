@@ -602,3 +602,32 @@ TEST(PromptBuilderTest, DynamicContextHasHeaderLabel) {
     std::string ctx = builder.build_dynamic_context(identity, state, world);
     EXPECT_NE(ctx.find("[Current state]"), std::string::npos);
 }
+
+// --- build_user_turn with dynamic context tests ---
+
+TEST(PromptBuilderTest, BuildUserTurnWithDynamicContext) {
+    chronicle::PromptBuilder builder(chronicle::PromptBuilder::Budget{});
+    chronicle::Player player;
+    player.current_location = "tavern";
+
+    std::string dynamic_ctx = "[Current state]\nCurrent mood: suspicious\n";
+    std::string result = builder.build_user_turn("hello there", player, dynamic_ctx);
+
+    // Dynamic context should appear before player dialogue
+    auto ctx_pos = result.find("[Current state]");
+    auto says_pos = result.find("The player says:");
+    ASSERT_NE(ctx_pos, std::string::npos);
+    ASSERT_NE(says_pos, std::string::npos);
+    EXPECT_LT(ctx_pos, says_pos);
+}
+
+TEST(PromptBuilderTest, BuildUserTurnEmptyDynamicContext) {
+    chronicle::PromptBuilder builder(chronicle::PromptBuilder::Budget{});
+    chronicle::Player player;
+    player.current_location = "tavern";
+
+    // Empty dynamic context should produce same output as no-context overload
+    std::string with_empty = builder.build_user_turn("hello", player, "");
+    std::string without = builder.build_user_turn("hello", player);
+    EXPECT_EQ(with_empty, without);
+}

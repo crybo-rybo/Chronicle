@@ -226,9 +226,14 @@ std::string PromptBuilder::build_dynamic_context(const NpcIdentity &identity,
     return out.str();
 }
 
-std::string PromptBuilder::build_user_turn(const std::string &player_input,
-                                           const Player &player) const {
+std::string PromptBuilder::build_user_turn(const std::string &player_input, const Player &player,
+                                           const std::string &dynamic_context) const {
     std::ostringstream out;
+
+    if (!dynamic_context.empty()) {
+        out << dynamic_context << "\n";
+    }
+
     nlohmann::json encoded = player_input;
     out << "The player says: " << encoded.dump();
 
