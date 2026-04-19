@@ -70,9 +70,8 @@ std::string PromptBuilder::build_static_system_prompt(const NpcIdentity &identit
     return out.str();
 }
 
-std::string PromptBuilder::build_dynamic_context(const NpcIdentity &identity,
-                                                  const NpcState &state,
-                                                  const World &world) const {
+std::string PromptBuilder::build_dynamic_context(const NpcIdentity &identity, const NpcState &state,
+                                                 const World &world) const {
     std::ostringstream out;
 
     out << "[Current state]\n";

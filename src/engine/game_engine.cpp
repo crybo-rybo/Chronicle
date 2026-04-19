@@ -434,8 +434,10 @@ void GameEngine::handle_dialogue(const std::string &npc_id, const std::string &i
 
         bool streamed_any = false;
         auto poll = [this, &streamed_any]() { streamed_any = drain_token_queue() || streamed_any; };
-        auto result = (*active_conversation_handle_)->chat_streaming(
-            user_msg, [this](std::string_view t) { response_handler_->on_token(t); }, poll);
+        auto result =
+            (*active_conversation_handle_)
+                ->chat_streaming(
+                    user_msg, [this](std::string_view t) { response_handler_->on_token(t); }, poll);
 
         poll();
 
@@ -558,8 +560,7 @@ bool GameEngine::start_conversation(const std::string &npc_id) {
                            " will use stub dialogue");
         phase_ = GamePhase::InConversation;
         current_conversation_npc_id_ = npc_id;
-        renderer_->render_system("You are now talking to " +
-                                 npc_it->second.identity.name + ".");
+        renderer_->render_system("You are now talking to " + npc_it->second.identity.name + ".");
         return true;
     }
 
@@ -587,8 +588,7 @@ bool GameEngine::start_conversation(const std::string &npc_id) {
         current_conversation_npc_id_ = npc_id;
         renderer_->render_system("You are now talking to " + npc.identity.name + ".");
 
-        logging::write(logging::Level::Info, "dialogue",
-                       "conversation started npc=" + npc_id);
+        logging::write(logging::Level::Info, "dialogue", "conversation started npc=" + npc_id);
         return true;
 
     } catch (const std::exception &e) {

@@ -42,7 +42,7 @@ namespace chronicle {
 
 /// @brief Builds structured LLM prompts from game state.
 class PromptBuilder {
-public:
+  public:
     /// @brief Token-budget configuration for the various prompt sections.
     struct Budget {
         /// @brief Maximum tokens allocated to the NPC memory section.  Default: 800.
@@ -92,8 +92,7 @@ public:
     /// @param identity  Immutable NPC identity data.
     /// @param world     Read-only world context (used to resolve knowledge fact IDs).
     /// @return The formatted static system prompt string.
-    std::string build_static_system_prompt(const NpcIdentity &identity,
-                                           const World &world) const;
+    std::string build_static_system_prompt(const NpcIdentity &identity, const World &world) const;
 
     /// @brief Assemble the dynamic context block for a single dialogue turn.
     ///
@@ -133,7 +132,7 @@ public:
     /// @return Estimated token count, rounded up.
     int estimate_tokens(const std::string &text) const;
 
-private:
+  private:
     Budget budget_; ///< Token-budget configuration.
 
     /// @brief Select memories that fit within @p token_budget.

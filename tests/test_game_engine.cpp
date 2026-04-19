@@ -1,7 +1,7 @@
-#include "engine/game_engine.hpp"
 #include "ai/npc_agent_pool.hpp"
-#include <gtest/gtest.h>
+#include "engine/game_engine.hpp"
 #include <filesystem>
+#include <gtest/gtest.h>
 #include <ranges>
 
 using namespace chronicle;
@@ -31,9 +31,7 @@ class MockEngineRenderer : public Renderer {
     }
     void render_inventory(const Player &, const World &) override {}
     void render_item_examine(const Item &item) override { examined_items.push_back(item.id); }
-    void render_error(std::string_view message) override {
-        errors.push_back(std::string(message));
-    }
+    void render_error(std::string_view message) override { errors.push_back(std::string(message)); }
     void render_system(std::string_view message) override {
         systems.push_back(std::string(message));
     }
@@ -85,9 +83,7 @@ class GameEngineTest : public ::testing::Test {
   protected:
     std::unique_ptr<MockEngineRenderer> mock_renderer;
 
-    void SetUp() override {
-        mock_renderer = std::make_unique<MockEngineRenderer>();
-    }
+    void SetUp() override { mock_renderer = std::make_unique<MockEngineRenderer>(); }
 };
 
 TEST_F(GameEngineTest, HandlesGoCommandValid) {
@@ -105,7 +101,8 @@ TEST_F(GameEngineTest, HandlesGoCommandValid) {
 
 TEST_F(GameEngineTest, GoInvalidExitRendersError) {
     auto *renderer = mock_renderer.get();
-    GameEngine engine(std::string(FIXTURES_DIR) + "/config.json", FIXTURES_DIR, std::move(mock_renderer));
+    GameEngine engine(std::string(FIXTURES_DIR) + "/config.json", FIXTURES_DIR,
+                      std::move(mock_renderer));
 
     ParsedCommand cmd;
     cmd.verb = CommandVerb::Go;
@@ -118,7 +115,8 @@ TEST_F(GameEngineTest, GoInvalidExitRendersError) {
 
 TEST_F(GameEngineTest, TakeAddsItemToInventoryAndRemovesFromLocation) {
     auto *renderer = mock_renderer.get();
-    GameEngine engine(std::string(FIXTURES_DIR) + "/config.json", FIXTURES_DIR, std::move(mock_renderer));
+    GameEngine engine(std::string(FIXTURES_DIR) + "/config.json", FIXTURES_DIR,
+                      std::move(mock_renderer));
 
     ParsedCommand cmd;
     cmd.verb = CommandVerb::Take;
@@ -131,7 +129,8 @@ TEST_F(GameEngineTest, TakeAddsItemToInventoryAndRemovesFromLocation) {
 }
 
 TEST_F(GameEngineTest, DropMovesItemFromInventoryBackToLocation) {
-    GameEngine engine(std::string(FIXTURES_DIR) + "/config.json", FIXTURES_DIR, std::move(mock_renderer));
+    GameEngine engine(std::string(FIXTURES_DIR) + "/config.json", FIXTURES_DIR,
+                      std::move(mock_renderer));
 
     ParsedCommand take;
     take.verb = CommandVerb::Take;
@@ -149,7 +148,8 @@ TEST_F(GameEngineTest, DropMovesItemFromInventoryBackToLocation) {
 
 TEST_F(GameEngineTest, ExamineVisibleLocationItemRendersItem) {
     auto *renderer = mock_renderer.get();
-    GameEngine engine(std::string(FIXTURES_DIR) + "/config.json", FIXTURES_DIR, std::move(mock_renderer));
+    GameEngine engine(std::string(FIXTURES_DIR) + "/config.json", FIXTURES_DIR,
+                      std::move(mock_renderer));
 
     ParsedCommand cmd;
     cmd.verb = CommandVerb::Examine;
@@ -164,7 +164,8 @@ TEST_F(GameEngineTest, SaveAndLoadDefaultSlotRoundtripsWorld) {
     auto save_dir = std::filesystem::path("/tmp/chronicle_saves");
     std::filesystem::remove(save_dir / "slot_1.json");
 
-    GameEngine engine(std::string(FIXTURES_DIR) + "/config.json", FIXTURES_DIR, std::move(mock_renderer));
+    GameEngine engine(std::string(FIXTURES_DIR) + "/config.json", FIXTURES_DIR,
+                      std::move(mock_renderer));
 
     ParsedCommand take;
     take.verb = CommandVerb::Take;
@@ -212,8 +213,8 @@ TEST_F(GameEngineTest, DialogueUsesCurrentConversationNpcAndStreamsTokens) {
     EXPECT_EQ(fake_agent_ptr->active_npc_id, "marcus");
     EXPECT_EQ(renderer_ptr->tokens, (std::vector<std::string>{"Take ", "this."}));
     EXPECT_TRUE(std::ranges::contains(engine.world().player.inventory, "cargo_manifest"));
-    EXPECT_FALSE(std::ranges::contains(engine.world().npcs.at("marcus").state.inventory,
-                                       "cargo_manifest"));
+    EXPECT_FALSE(
+        std::ranges::contains(engine.world().npcs.at("marcus").state.inventory, "cargo_manifest"));
     ASSERT_FALSE(renderer_ptr->actions.empty());
     EXPECT_EQ(renderer_ptr->actions.back(), "Marcus hands you the Cargo Manifest.");
 }
@@ -240,7 +241,8 @@ TEST_F(GameEngineTest, DialogueExitClearsConversation) {
 }
 
 TEST_F(GameEngineTest, HandlesQuitCommand) {
-    GameEngine engine(std::string(FIXTURES_DIR) + "/config.json", FIXTURES_DIR, std::move(mock_renderer));
+    GameEngine engine(std::string(FIXTURES_DIR) + "/config.json", FIXTURES_DIR,
+                      std::move(mock_renderer));
 
     ParsedCommand cmd;
     cmd.verb = CommandVerb::Quit;

@@ -32,8 +32,8 @@
 #include "ai/response_handler.hpp"
 #include "ai/tool_registry.hpp"
 #include "engine/command_parser.hpp"
-#include "engine/mutation_request.hpp"
 #include "engine/game_phase.hpp"
+#include "engine/mutation_request.hpp"
 #include "engine/token_queue.hpp"
 #include "entities/config.hpp"
 #include "entities/world.hpp"
@@ -120,12 +120,12 @@ class GameEngine {
     void handle_dialogue(const std::string &npc_id, const std::string &input);
 
   private:
-    Config config_;                              ///< Loaded runtime configuration.
-    World world_;                                ///< Authoritative game state.
-    CommandParser parser_;                       ///< Input parser (phase-aware).
-    std::unique_ptr<Renderer> renderer_;         ///< Output renderer.
-    SaveSystem save_system_;                     ///< Save/load manager.
-    TokenQueue token_queue_;                     ///< Streaming token bridge.
+    Config config_;                      ///< Loaded runtime configuration.
+    World world_;                        ///< Authoritative game state.
+    CommandParser parser_;               ///< Input parser (phase-aware).
+    std::unique_ptr<Renderer> renderer_; ///< Output renderer.
+    SaveSystem save_system_;             ///< Save/load manager.
+    TokenQueue token_queue_;             ///< Streaming token bridge.
 
     /// Agent pool — may be @c nullptr if no model is configured.
     std::unique_ptr<NpcAgentPool> agent_pool_;
@@ -136,10 +136,11 @@ class GameEngine {
     /// Authoritative pending mutation queue — drained by @ref process_pending_mutations.
     std::vector<MutationRequest> pending_mutations_;
 
-    bool running_ = true;                              ///< Set to @c false to exit the game loop.
-    GamePhase phase_ = GamePhase::Playing;             ///< Current game phase.
+    bool running_ = true;                  ///< Set to @c false to exit the game loop.
+    GamePhase phase_ = GamePhase::Playing; ///< Current game phase.
     std::optional<std::string> current_conversation_npc_id_; ///< NPC ID for active conversation.
-    std::optional<NpcAgentHandle> active_conversation_handle_; ///< Agent handle for active conversation.
+    std::optional<NpcAgentHandle>
+        active_conversation_handle_; ///< Agent handle for active conversation.
 
     /// Re-render the current location scene.
     void render_current_scene();
