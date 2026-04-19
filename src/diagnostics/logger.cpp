@@ -172,6 +172,7 @@ void write(Level level, std::string_view category, std::string_view message) {
 
     *settings.sink << "[chronicle:" << to_string(level) << "][" << category << "] " << message
                    << '\n';
+    settings.sink->flush();
 }
 
 } // namespace chronicle::logging

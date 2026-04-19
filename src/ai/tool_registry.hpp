@@ -246,11 +246,10 @@ class ToolRegistry {
 
     /// @brief Register all game tools on a @c zoo::Agent instance.
     ///
-    /// @details Creates and registers a lambda for each game tool
-    /// (say, give_item, take_item, update_mood, update_trust, move_self,
-    /// reveal_knowledge, remember, set_flag).  Each lambda captures @c this
-    /// by pointer and calls the corresponding tool handler or @c register_* method at
-    /// inference time.
+    /// @details Creates and registers a lambda for each state-changing game tool
+    /// (give_item, take_item, update_mood, update_trust, move_self, reveal_knowledge,
+    /// remember, set_flag).  Each lambda captures @c this by pointer and calls the
+    /// corresponding tool handler or @c register_* method at inference time.
     ///
     /// @param agent   The Zoo-Keeper agent to register tools on.
     /// @param npc_id  The active NPC — forwarded to @ref set_active_npc_id.

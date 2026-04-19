@@ -433,4 +433,6 @@ TEST(PromptBuilderTest, SystemPromptDiscouragedSpuriousToolCalls) {
     // The substring "do not call tools for greetings" appears verbatim in the
     // rule added in prompt_builder.cpp — verified as lowercase so find() matches.
     EXPECT_NE(prompt.find("do not call tools for greetings"), std::string::npos);
+    EXPECT_NE(prompt.find("Speak to the player using normal dialogue text"),
+              std::string::npos);
 }

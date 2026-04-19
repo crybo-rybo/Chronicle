@@ -343,12 +343,6 @@ void ToolRegistry::register_tools(zoo::Agent &agent, const std::string &npc_id) 
     set_active_npc_id(npc_id);
     logging::write(logging::Level::Info, "tools", "registering tools npc=" + npc_id);
 
-    auto say_func = [this](std::string dialogue) -> std::string {
-        this->register_say(active_npc_id_, dialogue);
-        return "OK";
-    };
-    (void)agent.register_tool("say", "Speak a dialogue line", {"dialogue"}, std::move(say_func));
-
     auto give_item_func = [this](std::string item_id) -> std::string {
         logging::write(logging::Level::Info, "tools",
                        "tool=give_item npc=" + active_npc_id_ + " item_id=" + item_id);

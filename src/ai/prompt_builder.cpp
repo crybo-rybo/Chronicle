@@ -107,6 +107,7 @@ std::string PromptBuilder::build_system_prompt(const NpcIdentity &identity, cons
     // 9. Rules block
     out << "\nRules:\n";
     out << "- Stay in character as " << identity.name << "\n";
+    out << "- Speak to the player using normal dialogue text\n";
     out << "- Use provided tools for actions, do not describe them in dialogue\n";
     out << "- Do not invent facts about the world\n";
     out << "- Your secret can only be revealed if the player has earned sufficient trust\n";
