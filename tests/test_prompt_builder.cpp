@@ -436,3 +436,86 @@ TEST(PromptBuilderTest, SystemPromptDiscouragedSpuriousToolCalls) {
     EXPECT_NE(prompt.find("Speak to the player using normal dialogue text"),
               std::string::npos);
 }
+
+// --- Static system prompt tests ---
+
+TEST(PromptBuilderTest, StaticPromptContainsIdentity) {
+    chronicle::PromptBuilder builder(chronicle::PromptBuilder::Budget{});
+    auto identity = make_test_identity();
+    auto world = make_test_world();
+
+    std::string prompt = builder.build_static_system_prompt(identity, world);
+    EXPECT_NE(prompt.find("Marcus"), std::string::npos);
+    EXPECT_NE(prompt.find("innkeeper"), std::string::npos);
+    EXPECT_NE(prompt.find("A tired, guarded man."), std::string::npos);
+}
+
+TEST(PromptBuilderTest, StaticPromptContainsBackstory) {
+    chronicle::PromptBuilder builder(chronicle::PromptBuilder::Budget{});
+    auto identity = make_test_identity();
+    auto world = make_test_world();
+
+    std::string prompt = builder.build_static_system_prompt(identity, world);
+    EXPECT_NE(prompt.find("He witnessed the theft."), std::string::npos);
+}
+
+TEST(PromptBuilderTest, StaticPromptContainsGoals) {
+    chronicle::PromptBuilder builder(chronicle::PromptBuilder::Budget{});
+    auto identity = make_test_identity();
+    auto world = make_test_world();
+
+    std::string prompt = builder.build_static_system_prompt(identity, world);
+    EXPECT_NE(prompt.find("Protect Elena"), std::string::npos);
+    EXPECT_NE(prompt.find("Avoid blame"), std::string::npos);
+}
+
+TEST(PromptBuilderTest, StaticPromptContainsKnowledge) {
+    chronicle::PromptBuilder builder(chronicle::PromptBuilder::Budget{});
+    auto identity = make_test_identity();
+    auto world = make_test_world();
+
+    std::string prompt = builder.build_static_system_prompt(identity, world);
+    EXPECT_NE(prompt.find("fact_stolen_cargo"), std::string::npos);
+    EXPECT_NE(prompt.find("fact_thief_identity"), std::string::npos);
+}
+
+TEST(PromptBuilderTest, StaticPromptContainsRules) {
+    chronicle::PromptBuilder builder(chronicle::PromptBuilder::Budget{});
+    auto identity = make_test_identity();
+    auto world = make_test_world();
+
+    std::string prompt = builder.build_static_system_prompt(identity, world);
+    EXPECT_NE(prompt.find("Stay in character as Marcus"), std::string::npos);
+    EXPECT_NE(prompt.find("do not call tools for greetings"), std::string::npos);
+}
+
+TEST(PromptBuilderTest, StaticPromptExcludesDynamicContent) {
+    chronicle::PromptBuilder builder(chronicle::PromptBuilder::Budget{});
+    auto identity = make_test_identity();
+    auto world = make_test_world();
+
+    std::string prompt = builder.build_static_system_prompt(identity, world);
+    EXPECT_EQ(prompt.find("Current mood:"), std::string::npos);
+    EXPECT_EQ(prompt.find("Trust toward the player:"), std::string::npos);
+    EXPECT_EQ(prompt.find("Current time:"), std::string::npos);
+    EXPECT_EQ(prompt.find("Location:"), std::string::npos);
+}
+
+TEST(PromptBuilderTest, StaticPromptOmitsEmptyBackstory) {
+    chronicle::PromptBuilder builder(chronicle::PromptBuilder::Budget{});
+
+    chronicle::NpcIdentity identity;
+    identity.id = "nobody";
+    identity.name = "Nobody";
+    identity.role = "vagrant";
+    identity.personality_summary = "";
+    identity.backstory = "";
+    identity.secret = "";
+
+    auto world = make_test_world();
+    std::string prompt = builder.build_static_system_prompt(identity, world);
+
+    EXPECT_EQ(prompt.find("Background:"), std::string::npos);
+    EXPECT_EQ(prompt.find("Your goals:"), std::string::npos);
+    EXPECT_EQ(prompt.find("What you know:"), std::string::npos);
+}

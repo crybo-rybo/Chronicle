@@ -118,6 +118,53 @@ std::string PromptBuilder::build_system_prompt(const NpcIdentity &identity, cons
     return out.str();
 }
 
+std::string PromptBuilder::build_static_system_prompt(const NpcIdentity &identity,
+                                                      const World &world) const {
+    std::ostringstream out;
+
+    // 1. Identity
+    out << "You are " << identity.name << ", " << identity.role << ".\n"
+        << identity.personality_summary << "\n";
+
+    // 2. Backstory (only if non-empty)
+    if (!identity.backstory.empty()) {
+        out << "\nBackground:\n" << identity.backstory << "\n";
+    }
+
+    // 3. Goals (skip if empty)
+    if (!identity.goals.empty()) {
+        out << "\nYour goals:\n";
+        for (const auto &goal : identity.goals) {
+            out << "- " << goal << "\n";
+        }
+    }
+
+    // 4. Knowledge (skip if empty; resolve fact IDs to authored text)
+    if (!identity.knowledge.empty()) {
+        out << "\nWhat you know:\n";
+        for (const auto &fact_id : identity.knowledge) {
+            if (auto it = world.facts.find(fact_id); it != world.facts.end()) {
+                out << "- " << it->second.text << "\n";
+            } else {
+                out << "- " << fact_id << "\n";
+            }
+        }
+    }
+
+    // 5. Rules block
+    out << "\nRules:\n";
+    out << "- Stay in character as " << identity.name << "\n";
+    out << "- Speak to the player using normal dialogue text\n";
+    out << "- Use provided tools for actions, do not describe them in dialogue\n";
+    out << "- Do not invent facts about the world\n";
+    out << "- Your secret can only be revealed if the player has earned sufficient trust\n";
+    out << "- Only call tools when world state actually changes as a direct result of this "
+           "exchange (e.g. giving an item, moving to another location); "
+           "do not call tools for greetings or casual conversation where nothing changes\n";
+
+    return out.str();
+}
+
 std::string PromptBuilder::build_user_turn(const std::string &player_input,
                                            const Player &player) const {
     std::ostringstream out;

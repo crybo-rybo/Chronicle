@@ -83,6 +83,18 @@ public:
     std::string build_system_prompt(const NpcIdentity &identity, const NpcState &state,
                                     const World &world) const;
 
+    /// @brief Assemble the static portion of the NPC system prompt.
+    ///
+    /// @details Produces the system prompt sections that do not change during
+    /// a conversation: identity, background, goals, knowledge, and rules.
+    /// Called once when a conversation starts.
+    ///
+    /// @param identity  Immutable NPC identity data.
+    /// @param world     Read-only world context (used to resolve knowledge fact IDs).
+    /// @return The formatted static system prompt string.
+    std::string build_static_system_prompt(const NpcIdentity &identity,
+                                           const World &world) const;
+
     /// @brief Assemble the user-turn message for a single dialogue exchange.
     ///
     /// @details Wraps the player's raw input as a JSON-encoded quoted string
