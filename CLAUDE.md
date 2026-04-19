@@ -39,6 +39,8 @@ The design docs cover:
 - Deep technical detail (all data structures, AI integration, threading model)
 - Sprint-by-sprint implementation roadmap (8+ sprints)
 
+When starting a new session, please start by reading the design documents.
+
 ## Development Conventions
 
 ### Branching

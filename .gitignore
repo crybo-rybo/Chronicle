@@ -18,3 +18,8 @@ docs/superpowers/
 
 # Git worktrees
 .worktrees/
+
+# Local AI artifacts
+.claude/**
+GEMINI.md
+AGENTS.md
