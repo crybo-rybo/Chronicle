@@ -321,6 +321,7 @@ void GameEngine::handle_command(const ParsedCommand &cmd) {
             return;
         }
         world_ = std::move(save_data->world);
+        active_conversation_handle_.reset();
         current_conversation_npc_id_.reset();
         phase_ = GamePhase::Playing;
         pending_mutations_.clear();
@@ -332,12 +333,8 @@ void GameEngine::handle_command(const ParsedCommand &cmd) {
     }
 
     if (cmd.verb == CommandVerb::Talk) {
-        // Find NPC locally
         if (auto npc_id = find_visible_npc_id(cmd.primary_arg)) {
-            phase_ = GamePhase::InConversation;
-            current_conversation_npc_id_ = *npc_id;
-            renderer_->render_system("You are now talking to " +
-                                     world_.npcs.at(*npc_id).identity.name + ".");
+            start_conversation(*npc_id);
         } else {
             renderer_->render_error("There is no one here by that name.");
         }
@@ -382,16 +379,23 @@ void GameEngine::process_pending_mutations() {
     }
 
     if (current_conversation_npc_id_ && !player_can_see_npc(*current_conversation_npc_id_)) {
+        active_conversation_handle_.reset();
         current_conversation_npc_id_.reset();
         phase_ = GamePhase::Playing;
     }
 }
 
 void GameEngine::handle_dialogue(const std::string &npc_id, const std::string &input) {
-    if (!agent_pool_) {
-        logging::write(logging::Level::Warning, "dialogue",
-                       "agent pool unavailable; using stub dialogue for npc=" + npc_id);
-        renderer_->render_system("Dialogue stub: " + input + " (AI not initialized)");
+    if (!active_conversation_handle_) {
+        if (!agent_pool_) {
+            logging::write(logging::Level::Warning, "dialogue",
+                           "agent pool unavailable; using stub dialogue for npc=" + npc_id);
+            renderer_->render_system("Dialogue stub: " + input + " (AI not initialized)");
+            return;
+        }
+        logging::write(logging::Level::Error, "dialogue",
+                       "no active conversation handle for npc=" + npc_id);
+        renderer_->render_error("No active conversation.");
         return;
     }
 
@@ -412,9 +416,6 @@ void GameEngine::handle_dialogue(const std::string &npc_id, const std::string &i
         logging::write(logging::Level::Info, "dialogue",
                        "starting npc=" + npc_id + " player_input=\"" + input + "\"");
 
-        auto handle = agent_pool_->acquire(npc_id);
-        handle->register_tools(*tool_registry_, npc_id);
-
         PromptBuilder::Budget budget{
             .max_memory_tokens = config_.max_memory_tokens,
             .max_world_tokens = config_.max_world_tokens,
@@ -422,14 +423,9 @@ void GameEngine::handle_dialogue(const std::string &npc_id, const std::string &i
         };
         PromptBuilder pb(budget);
 
-        std::string sys_prompt = pb.build_system_prompt(npc.identity, npc.state, world_);
-        handle->set_system_prompt(sys_prompt);
+        std::string dynamic_ctx = pb.build_dynamic_context(npc.identity, npc.state, world_);
+        std::string user_msg = pb.build_user_turn(input, world_.player, dynamic_ctx);
 
-        std::string user_msg = pb.build_user_turn(input, world_.player);
-
-        logging::write(logging::Level::Debug, "dialogue",
-                       "system_prompt npc=" + npc_id +
-                           " chars=" + std::to_string(sys_prompt.size()) + "\n" + sys_prompt);
         logging::write(logging::Level::Debug, "dialogue",
                        "user_turn npc=" + npc_id + " chars=" + std::to_string(user_msg.size()) +
                            "\n" + user_msg);
@@ -438,7 +434,7 @@ void GameEngine::handle_dialogue(const std::string &npc_id, const std::string &i
 
         bool streamed_any = false;
         auto poll = [this, &streamed_any]() { streamed_any = drain_token_queue() || streamed_any; };
-        auto result = handle->chat_streaming(
+        auto result = (*active_conversation_handle_)->chat_streaming(
             user_msg, [this](std::string_view t) { response_handler_->on_token(t); }, poll);
 
         poll();
@@ -458,8 +454,6 @@ void GameEngine::handle_dialogue(const std::string &npc_id, const std::string &i
         }
         renderer_->flush_dialogue();
 
-        // Always process mutations — tool lambdas validate and enqueue during inference,
-        // so mutations are valid even if the chat was cut short (e.g., iteration limit).
         process_pending_mutations();
 
         if (!result.success) {
@@ -551,7 +545,62 @@ std::optional<int> GameEngine::parse_slot(const std::string &slot_text) const {
     }
 }
 
+bool GameEngine::start_conversation(const std::string &npc_id) {
+    auto npc_it = world_.npcs.find(npc_id);
+    if (npc_it == world_.npcs.end()) {
+        renderer_->render_error("NPC not found.");
+        return false;
+    }
+
+    if (!agent_pool_) {
+        logging::write(logging::Level::Warning, "dialogue",
+                       "agent pool unavailable; conversation with " + npc_id +
+                           " will use stub dialogue");
+        phase_ = GamePhase::InConversation;
+        current_conversation_npc_id_ = npc_id;
+        renderer_->render_system("You are now talking to " +
+                                 npc_it->second.identity.name + ".");
+        return true;
+    }
+
+    try {
+        auto handle = agent_pool_->acquire(npc_id);
+        handle->register_tools(*tool_registry_, npc_id);
+
+        PromptBuilder::Budget budget{
+            .max_memory_tokens = config_.max_memory_tokens,
+            .max_world_tokens = config_.max_world_tokens,
+            .max_history_tokens = config_.max_history_tokens,
+        };
+        PromptBuilder pb(budget);
+
+        const auto &npc = npc_it->second;
+        std::string sys_prompt = pb.build_static_system_prompt(npc.identity, world_);
+        handle->set_system_prompt(sys_prompt);
+
+        logging::write(logging::Level::Debug, "dialogue",
+                       "static_system_prompt npc=" + npc_id +
+                           " chars=" + std::to_string(sys_prompt.size()) + "\n" + sys_prompt);
+
+        active_conversation_handle_ = std::move(handle);
+        phase_ = GamePhase::InConversation;
+        current_conversation_npc_id_ = npc_id;
+        renderer_->render_system("You are now talking to " + npc.identity.name + ".");
+
+        logging::write(logging::Level::Info, "dialogue",
+                       "conversation started npc=" + npc_id);
+        return true;
+
+    } catch (const std::exception &e) {
+        logging::write(logging::Level::Error, "dialogue",
+                       "start_conversation failed npc=" + npc_id + " error=" + e.what());
+        renderer_->render_error(std::string("Could not start conversation: ") + e.what());
+        return false;
+    }
+}
+
 void GameEngine::leave_conversation() {
+    active_conversation_handle_.reset();
     current_conversation_npc_id_.reset();
     phase_ = GamePhase::Playing;
     renderer_->render_system("You step out of the conversation.");

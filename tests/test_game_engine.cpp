@@ -51,9 +51,11 @@ class FakeDialogueAgent : public AgentInterface {
     std::string last_user_message;
     int clear_history_call_count = 0;
     int register_tools_call_count = 0;
+    int set_system_prompt_call_count = 0;
 
     void set_system_prompt(std::string_view prompt) override {
         last_system_prompt = std::string(prompt);
+        ++set_system_prompt_call_count;
     }
 
     void clear_history() override { ++clear_history_call_count; }
@@ -239,10 +241,84 @@ TEST_F(GameEngineTest, DialogueExitClearsConversation) {
 
 TEST_F(GameEngineTest, HandlesQuitCommand) {
     GameEngine engine(std::string(FIXTURES_DIR) + "/config.json", FIXTURES_DIR, std::move(mock_renderer));
-    
+
     ParsedCommand cmd;
     cmd.verb = CommandVerb::Quit;
     engine.handle_command(cmd);
-    
-    // The running flag becomes false. 
+
+    // The running flag becomes false.
+}
+
+TEST_F(GameEngineTest, TalkCommandInitializesAgent) {
+    auto renderer = std::make_unique<MockEngineRenderer>();
+    auto fake_agent = std::make_unique<FakeDialogueAgent>();
+    auto *fake_agent_ptr = fake_agent.get();
+    auto pool = std::make_unique<NpcAgentPool>(std::move(fake_agent));
+    GameEngine engine(std::string(CHRONICLE_SOURCE_DIR) + "/data/config.json",
+                      std::string(CHRONICLE_SOURCE_DIR) + "/data", std::move(renderer),
+                      std::move(pool));
+
+    ParsedCommand talk;
+    talk.verb = CommandVerb::Talk;
+    talk.primary_arg = "marcus";
+    engine.handle_command(talk);
+
+    EXPECT_EQ(engine.phase(), GamePhase::InConversation);
+    EXPECT_EQ(fake_agent_ptr->set_system_prompt_call_count, 1);
+    EXPECT_EQ(fake_agent_ptr->register_tools_call_count, 1);
+}
+
+TEST_F(GameEngineTest, MultiTurnDialogueDoesNotReacquireAgent) {
+    auto renderer = std::make_unique<MockEngineRenderer>();
+    auto fake_agent = std::make_unique<FakeDialogueAgent>();
+    auto *fake_agent_ptr = fake_agent.get();
+    auto pool = std::make_unique<NpcAgentPool>(std::move(fake_agent));
+    GameEngine engine(std::string(CHRONICLE_SOURCE_DIR) + "/data/config.json",
+                      std::string(CHRONICLE_SOURCE_DIR) + "/data", std::move(renderer),
+                      std::move(pool));
+
+    ParsedCommand talk;
+    talk.verb = CommandVerb::Talk;
+    talk.primary_arg = "marcus";
+    engine.handle_command(talk);
+
+    ParsedCommand d1;
+    d1.verb = CommandVerb::Dialogue;
+    d1.raw_input = "Hello Marcus";
+    d1.primary_arg = "Hello Marcus";
+    engine.handle_command(d1);
+
+    ParsedCommand d2;
+    d2.verb = CommandVerb::Dialogue;
+    d2.raw_input = "Tell me more";
+    d2.primary_arg = "Tell me more";
+    engine.handle_command(d2);
+
+    EXPECT_EQ(fake_agent_ptr->set_system_prompt_call_count, 1);
+    EXPECT_EQ(fake_agent_ptr->register_tools_call_count, 1);
+    EXPECT_EQ(fake_agent_ptr->clear_history_call_count, 1);
+}
+
+TEST_F(GameEngineTest, LeaveConversationReleasesAgent) {
+    auto renderer = std::make_unique<MockEngineRenderer>();
+    auto fake_agent = std::make_unique<FakeDialogueAgent>();
+    auto *fake_agent_ptr = fake_agent.get();
+    auto pool = std::make_unique<NpcAgentPool>(std::move(fake_agent));
+    GameEngine engine(std::string(CHRONICLE_SOURCE_DIR) + "/data/config.json",
+                      std::string(CHRONICLE_SOURCE_DIR) + "/data", std::move(renderer),
+                      std::move(pool));
+
+    ParsedCommand talk;
+    talk.verb = CommandVerb::Talk;
+    talk.primary_arg = "marcus";
+    engine.handle_command(talk);
+
+    ParsedCommand bye;
+    bye.verb = CommandVerb::Dialogue;
+    bye.raw_input = "bye";
+    bye.primary_arg = "bye";
+    engine.handle_command(bye);
+
+    EXPECT_EQ(fake_agent_ptr->clear_history_call_count, 2);
+    EXPECT_EQ(engine.phase(), GamePhase::Playing);
 }

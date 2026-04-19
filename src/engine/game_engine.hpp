@@ -139,6 +139,7 @@ class GameEngine {
     bool running_ = true;                              ///< Set to @c false to exit the game loop.
     GamePhase phase_ = GamePhase::Playing;             ///< Current game phase.
     std::optional<std::string> current_conversation_npc_id_; ///< NPC ID for active conversation.
+    std::optional<NpcAgentHandle> active_conversation_handle_; ///< Agent handle for active conversation.
 
     /// Re-render the current location scene.
     void render_current_scene();
@@ -184,6 +185,15 @@ class GameEngine {
 
     /// End the active conversation and return to the Playing phase.
     void leave_conversation();
+
+    /// @brief Initialize a conversation with an NPC.
+    ///
+    /// @details Acquires the agent from the pool, registers tools, builds and
+    /// sets the static system prompt, and transitions to @ref GamePhase::InConversation.
+    ///
+    /// @param npc_id The ID of the NPC to converse with.
+    /// @return @c true if the conversation was successfully started.
+    bool start_conversation(const std::string &npc_id);
 
     /// @brief Test whether the given input is a natural-language exit phrase.
     ///
