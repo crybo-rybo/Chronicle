@@ -10,8 +10,8 @@
  */
 
 #include "engine/mutations.hpp"
+#include "engine/parse_utils.hpp"
 #include <algorithm>
-#include <optional>
 
 namespace chronicle {
 
@@ -25,35 +25,29 @@ std::optional<std::string> get_param(const MutationRequest &mutation, const std:
     return it->second;
 }
 
-std::optional<int> parse_int(const std::string &value) {
-    try {
-        std::size_t parsed = 0;
-        int result = std::stoi(value, &parsed);
-        if (parsed != value.size()) {
-            return std::nullopt;
-        }
-        return result;
-    } catch (const std::exception &) {
-        return std::nullopt;
-    }
-}
-
-std::optional<bool> parse_bool(const std::string &value) {
-    if (value == "true" || value == "1") {
-        return true;
-    }
-    if (value == "false" || value == "0") {
-        return false;
-    }
-    return std::nullopt;
-}
-
 bool add_unique(std::vector<std::string> &values, const std::string &value) {
     if (std::ranges::contains(values, value)) {
         return false;
     }
     values.push_back(value);
     return true;
+}
+
+bool item_is_owned(const World &world, const std::string &item_id) {
+    if (std::ranges::contains(world.player.inventory, item_id)) {
+        return true;
+    }
+    for (const auto &[_, loc] : world.locations) {
+        if (std::ranges::contains(loc.items, item_id)) {
+            return true;
+        }
+    }
+    for (const auto &[_, npc] : world.npcs) {
+        if (std::ranges::contains(npc.state.inventory, item_id)) {
+            return true;
+        }
+    }
+    return false;
 }
 
 } // namespace
@@ -63,7 +57,7 @@ bool apply_give_item_to_player(World &world, const MutationRequest &mutation) {
     if (!item_id) {
         return false;
     }
-    auto npc_it = world.npcs.find(mutation.npc_id);
+    auto npc_it = world.npcs.find(mutation.actor_id);
     if (npc_it == world.npcs.end() || !world.items.contains(*item_id)) {
         return false;
     }
@@ -85,7 +79,7 @@ bool apply_take_item_from_player(World &world, const MutationRequest &mutation) 
     if (!item_id) {
         return false;
     }
-    auto npc_it = world.npcs.find(mutation.npc_id);
+    auto npc_it = world.npcs.find(mutation.actor_id);
     if (npc_it == world.npcs.end() || !world.items.contains(*item_id)) {
         return false;
     }
@@ -107,7 +101,7 @@ bool apply_update_npc_mood(World &world, const MutationRequest &mutation) {
     if (!mood) {
         return false;
     }
-    auto npc_it = world.npcs.find(mutation.npc_id);
+    auto npc_it = world.npcs.find(mutation.actor_id);
     if (npc_it == world.npcs.end()) {
         return false;
     }
@@ -124,7 +118,7 @@ bool apply_update_npc_trust(World &world, const MutationRequest &mutation) {
     if (!delta_param) {
         return false;
     }
-    auto npc_it = world.npcs.find(mutation.npc_id);
+    auto npc_it = world.npcs.find(mutation.actor_id);
     if (npc_it == world.npcs.end()) {
         return false;
     }
@@ -146,13 +140,13 @@ bool apply_move_npc(World &world, const MutationRequest &mutation) {
     if (!location_id) {
         return false;
     }
-    auto npc_it = world.npcs.find(mutation.npc_id);
+    auto npc_it = world.npcs.find(mutation.actor_id);
     auto new_loc_it = world.locations.find(*location_id);
     if (npc_it == world.npcs.end() || new_loc_it == world.locations.end()) {
         return false;
     }
 
-    const auto &npc_id = mutation.npc_id;
+    const auto &npc_id = mutation.actor_id;
     auto &npc_state = npc_it->second.state;
     if (npc_state.current_location == *location_id &&
         std::ranges::contains(new_loc_it->second.npcs, npc_id)) {
@@ -176,7 +170,7 @@ bool apply_move_npc(World &world, const MutationRequest &mutation) {
 
 bool apply_reveal_knowledge(World &world, const MutationRequest &mutation) {
     auto fact_id = get_param(mutation, "fact_id");
-    if (!fact_id || !world.npcs.contains(mutation.npc_id)) {
+    if (!fact_id || !world.npcs.contains(mutation.actor_id)) {
         return false;
     }
     return add_unique(world.player.known_facts, *fact_id);
@@ -188,7 +182,7 @@ bool apply_add_memory(World &world, const MutationRequest &mutation) {
     if (!summary || !importance_param) {
         return false;
     }
-    auto npc_it = world.npcs.find(mutation.npc_id);
+    auto npc_it = world.npcs.find(mutation.actor_id);
     if (npc_it == world.npcs.end()) {
         return false;
     }
@@ -228,6 +222,67 @@ bool apply_set_flag(World &world, const MutationRequest &mutation) {
     return true;
 }
 
+bool apply_player_move(World &world, const MutationRequest &mutation) {
+    auto location_id = get_param(mutation, "location_id");
+    if (!location_id || !world.locations.contains(*location_id)) {
+        return false;
+    }
+    world.player.current_location = *location_id;
+    return true;
+}
+
+bool apply_player_take(World &world, const MutationRequest &mutation) {
+    auto item_id = get_param(mutation, "item_id");
+    if (!item_id || !world.items.contains(*item_id)) {
+        return false;
+    }
+    auto loc_it = world.locations.find(world.player.current_location);
+    if (loc_it == world.locations.end()) {
+        return false;
+    }
+    auto &items = loc_it->second.items;
+    auto it = std::ranges::find(items, *item_id);
+    if (it == items.end()) {
+        return false;
+    }
+    items.erase(it);
+    add_unique(world.player.inventory, *item_id);
+    return true;
+}
+
+bool apply_player_drop(World &world, const MutationRequest &mutation) {
+    auto item_id = get_param(mutation, "item_id");
+    if (!item_id || !world.items.contains(*item_id)) {
+        return false;
+    }
+    auto &inv = world.player.inventory;
+    auto it = std::ranges::find(inv, *item_id);
+    if (it == inv.end()) {
+        return false;
+    }
+    inv.erase(it);
+    auto loc_it = world.locations.find(world.player.current_location);
+    if (loc_it != world.locations.end()) {
+        add_unique(loc_it->second.items, *item_id);
+    }
+    return true;
+}
+
+bool apply_spawn_item(World &world, const MutationRequest &mutation) {
+    auto item_id = get_param(mutation, "item_id");
+    auto location_id = get_param(mutation, "location_id");
+    if (!item_id || !location_id) {
+        return false;
+    }
+    auto loc_it = world.locations.find(*location_id);
+    if (loc_it == world.locations.end() || !world.items.contains(*item_id) ||
+        item_is_owned(world, *item_id)) {
+        return false;
+    }
+    add_unique(loc_it->second.items, *item_id);
+    return true;
+}
+
 bool apply_mutation(World &world, const MutationRequest &mutation) {
     switch (mutation.type) {
     case MutationRequest::Type::GiveItemToPlayer:
@@ -246,6 +301,14 @@ bool apply_mutation(World &world, const MutationRequest &mutation) {
         return apply_add_memory(world, mutation);
     case MutationRequest::Type::SetFlag:
         return apply_set_flag(world, mutation);
+    case MutationRequest::Type::PlayerMove:
+        return apply_player_move(world, mutation);
+    case MutationRequest::Type::PlayerTake:
+        return apply_player_take(world, mutation);
+    case MutationRequest::Type::PlayerDrop:
+        return apply_player_drop(world, mutation);
+    case MutationRequest::Type::SpawnItem:
+        return apply_spawn_item(world, mutation);
     }
     return false;
 }

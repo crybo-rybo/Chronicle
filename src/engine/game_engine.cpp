@@ -9,9 +9,10 @@
 
 #include "engine/game_engine.hpp"
 #include "ai/prompt_builder.hpp"
+#include "engine/mutation_gate.hpp"
 #include "engine/mutations.hpp"
-#include "entities/world_loader.hpp"
 #include "engine/text_utils.hpp"
+#include "entities/world_loader.hpp"
 #include "rendering/terminal_renderer.hpp"
 #include <algorithm>
 #include <iostream>
@@ -19,11 +20,8 @@
 namespace chronicle {
 
 GameEngine::GameEngine(const std::string &config_path, const std::string &data_dir,
-                       std::unique_ptr<Renderer> renderer,
-                       std::unique_ptr<NpcAgentPool> agent_pool)
-    : config_(Config::load(config_path)),
-      world_(load_world(data_dir)),
-      parser_(config_path),
+                       std::unique_ptr<Renderer> renderer, std::unique_ptr<NpcAgentPool> agent_pool)
+    : config_(Config::load(config_path)), world_(load_world(data_dir)), parser_(config_path),
       renderer_(std::move(renderer)),
       save_system_(config_.save_directory.empty() ? "saves" : config_.save_directory),
       agent_pool_(std::move(agent_pool)) {
@@ -32,14 +30,16 @@ GameEngine::GameEngine(const std::string &config_path, const std::string &data_d
         renderer_ = std::make_unique<TerminalRenderer>();
     }
 
-    tool_registry_ = std::make_unique<ToolRegistry>(world_);
+    tool_registry_ = std::make_unique<ToolRegistry>(
+        world_, [this](MutationRequest req) { pending_mutations_.push_back(std::move(req)); });
     response_handler_ = std::make_unique<ResponseHandler>(
-        *renderer_, token_queue_, world_, config_.mutation_narration_templates);
-    
+        [this](std::string_view narration) { renderer_->render_action(narration); }, token_queue_,
+        world_, config_.mutation_narration_templates);
+
     if (!agent_pool_ && !config_.model_path.empty()) {
         try {
             agent_pool_ = std::make_unique<NpcAgentPool>(NpcAgentPool::from_config(config_));
-        } catch (const std::exception& e) {
+        } catch (const std::exception &e) {
             std::cerr << "Failed to initialize Agent Pool: " << e.what() << "\n";
         }
     }
@@ -47,7 +47,7 @@ GameEngine::GameEngine(const std::string &config_path, const std::string &data_d
 
 void GameEngine::run() {
     render_current_scene();
-    
+
     while (running_) {
         // Stream any dialogue tokens
         drain_token_queue();
@@ -56,7 +56,7 @@ void GameEngine::run() {
         if (phase_ == GamePhase::InConversation) {
             prompt = "(Conversation) > ";
         }
-        
+
         std::string input = renderer_->get_player_input(prompt);
         if (input.empty()) {
             continue;
@@ -64,7 +64,7 @@ void GameEngine::run() {
 
         auto cmd = parser_.parse(input, phase_);
         handle_command(cmd);
-        
+
         process_pending_mutations();
     }
 }
@@ -94,7 +94,7 @@ void GameEngine::handle_command(const ParsedCommand &cmd) {
         renderer_->render_error("I don't understand that command.");
         return;
     }
-    
+
     if (cmd.verb == CommandVerb::Dialogue) {
         if (is_conversation_exit(cmd.raw_input)) {
             leave_conversation();
@@ -122,19 +122,19 @@ void GameEngine::handle_command(const ParsedCommand &cmd) {
     }
 
     if (cmd.verb == CommandVerb::Go) {
-        auto dir = cmd.primary_arg;
-        auto loc_it = world_.locations.find(world_.player.current_location);
-        if (loc_it != world_.locations.end()) {
-            auto exit_it = loc_it->second.exits.find(dir);
-            if (exit_it != loc_it->second.exits.end()) {
-                world_.player.current_location = exit_it->second;
-                auto dest_it = world_.locations.find(exit_it->second);
-                std::string name = dest_it != world_.locations.end() ? dest_it->second.name : exit_it->second;
-                renderer_->render_move(dir, name);
-                render_current_scene();
-            } else {
-                renderer_->render_error("You can't go that way.");
-            }
+        auto result = validate_player_move(world_, cmd.primary_arg);
+        if (auto *error = std::get_if<std::string>(&result)) {
+            renderer_->render_error(*error);
+        } else {
+            auto &req = std::get<MutationRequest>(result);
+            auto dir = req.params.at("direction");
+            auto dest_id = req.params.at("location_id");
+            pending_mutations_.push_back(std::move(req));
+            process_pending_mutations();
+            auto dest_it = world_.locations.find(dest_id);
+            std::string name = dest_it != world_.locations.end() ? dest_it->second.name : dest_id;
+            renderer_->render_move(dir, name);
+            render_current_scene();
         }
         return;
     }
@@ -150,57 +150,33 @@ void GameEngine::handle_command(const ParsedCommand &cmd) {
     }
 
     if (cmd.verb == CommandVerb::Take) {
-        std::string item_name = cmd.primary_arg;
-        auto loc_it = world_.locations.find(world_.player.current_location);
-        if (loc_it != world_.locations.end()) {
-            auto &items = loc_it->second.items;
-            // Search items in location
-            auto item_it = std::ranges::find_if(items, [&](const std::string &id) {
-                auto w_it = world_.items.find(id);
-                if (w_it != world_.items.end()) {
-                    return !w_it->second.hidden && w_it->second.takeable &&
-                           (text::contains_normalized(w_it->second.name, item_name) ||
-                            text::contains_normalized(id, item_name));
-                }
-                return false;
-            });
-            if (item_it != items.end()) {
-                world_.player.inventory.push_back(*item_it);
-                auto w_it = world_.items.find(*item_it);
-                renderer_->render_action("You take the " + (w_it != world_.items.end() ? w_it->second.name : *item_it) + ".");
-                items.erase(item_it);
-            } else {
-                renderer_->render_error("You don't see that here.");
-            }
+        auto result = validate_player_take(world_, cmd.primary_arg);
+        if (auto *error = std::get_if<std::string>(&result)) {
+            renderer_->render_error(*error);
+        } else {
+            auto &req = std::get<MutationRequest>(result);
+            auto item_id = req.params.at("item_id");
+            pending_mutations_.push_back(std::move(req));
+            process_pending_mutations();
+            auto w_it = world_.items.find(item_id);
+            renderer_->render_action(
+                "You take the " + (w_it != world_.items.end() ? w_it->second.name : item_id) + ".");
         }
         return;
     }
 
     if (cmd.verb == CommandVerb::Drop) {
-        std::string item_name = cmd.primary_arg;
-        auto &inv = world_.player.inventory;
-        auto item_it = std::ranges::find_if(inv, [&](const std::string &id) {
-            auto w_it = world_.items.find(id);
-            if (w_it != world_.items.end()) {
-                return text::contains_normalized(w_it->second.name, item_name) ||
-                       text::contains_normalized(id, item_name);
-            }
-            return false;
-        });
-        if (item_it != inv.end()) {
-            auto w_it = world_.items.find(*item_it);
-            if (w_it != world_.items.end() && w_it->second.key_item) {
-                renderer_->render_error("You can't drop that — it's too important to leave behind.");
-                return;
-            }
-            auto loc_it = world_.locations.find(world_.player.current_location);
-            if (loc_it != world_.locations.end()) {
-                loc_it->second.items.push_back(*item_it);
-            }
-            renderer_->render_action("You drop the " + (w_it != world_.items.end() ? w_it->second.name : *item_it) + ".");
-            inv.erase(item_it);
+        auto result = validate_player_drop(world_, cmd.primary_arg);
+        if (auto *error = std::get_if<std::string>(&result)) {
+            renderer_->render_error(*error);
         } else {
-            renderer_->render_error("You aren't carrying that.");
+            auto &req = std::get<MutationRequest>(result);
+            auto item_id = req.params.at("item_id");
+            pending_mutations_.push_back(std::move(req));
+            process_pending_mutations();
+            auto w_it = world_.items.find(item_id);
+            renderer_->render_action(
+                "You drop the " + (w_it != world_.items.end() ? w_it->second.name : item_id) + ".");
         }
         return;
     }
@@ -243,13 +219,14 @@ void GameEngine::handle_command(const ParsedCommand &cmd) {
         world_ = std::move(save_data->world);
         current_conversation_npc_id_.reset();
         phase_ = GamePhase::Playing;
+        pending_mutations_.clear();
         tool_registry_->clear_all();
         token_queue_.reset();
         renderer_->render_system("Loaded game from slot " + std::to_string(*slot) + ".");
         render_current_scene();
         return;
     }
-    
+
     if (cmd.verb == CommandVerb::Talk) {
         // Find NPC locally
         if (auto npc_id = find_visible_npc_id(cmd.primary_arg)) {
@@ -267,33 +244,32 @@ void GameEngine::handle_command(const ParsedCommand &cmd) {
 }
 
 void GameEngine::process_pending_mutations() {
-    const auto &mutations = tool_registry_->pending_mutations();
-    if (!mutations.empty()) {
-        std::vector<MutationRequest> applied;
-        applied.reserve(mutations.size());
-        for (const auto &m : mutations) {
-            if (apply_mutation(world_, m)) {
-                applied.push_back(m);
+    if (pending_mutations_.empty()) {
+        return;
+    }
+
+    std::vector<MutationRequest> applied;
+    applied.reserve(pending_mutations_.size());
+    for (const auto &m : pending_mutations_) {
+        if (apply_mutation(world_, m)) {
+            applied.push_back(m);
+        }
+    }
+    pending_mutations_.clear();
+
+    for (const auto &mutation : applied) {
+        std::string actor_name = mutation.actor_id;
+        if (!mutation.actor_id.empty()) {
+            if (auto it = world_.npcs.find(mutation.actor_id); it != world_.npcs.end()) {
+                actor_name = it->second.identity.name;
             }
         }
+        response_handler_->narrate_mutation(mutation, actor_name);
+    }
 
-        // Group applied mutations by NPC to batch narration and avoid
-        // per-mutation temporary vector allocation in narrate_mutations.
-        for (const auto &mutation : applied) {
-            std::string npc_name = mutation.npc_id;
-            if (!mutation.npc_id.empty()) {
-                if (auto it = world_.npcs.find(mutation.npc_id); it != world_.npcs.end()) {
-                    npc_name = it->second.identity.name;
-                }
-            }
-            response_handler_->narrate_mutation(mutation, npc_name);
-        }
-        tool_registry_->clear_pending();
-
-        if (current_conversation_npc_id_ && !player_can_see_npc(*current_conversation_npc_id_)) {
-            current_conversation_npc_id_.reset();
-            phase_ = GamePhase::Playing;
-        }
+    if (current_conversation_npc_id_ && !player_can_see_npc(*current_conversation_npc_id_)) {
+        current_conversation_npc_id_.reset();
+        phase_ = GamePhase::Playing;
     }
 }
 
@@ -308,36 +284,35 @@ void GameEngine::handle_dialogue(const std::string &npc_id, const std::string &i
         renderer_->render_error("NPC not found.");
         return;
     }
-    
-    const auto& npc = npc_it->second;
-    
+
+    const auto &npc = npc_it->second;
+
     try {
+        pending_mutations_.clear();
         tool_registry_->clear_all();
         token_queue_.reset();
 
         auto handle = agent_pool_->acquire(npc_id);
         handle->register_tools(*tool_registry_, npc_id);
-        
+
         PromptBuilder::Budget budget{
             .max_memory_tokens = config_.max_memory_tokens,
             .max_world_tokens = config_.max_world_tokens,
             .max_history_tokens = config_.max_history_tokens,
         };
         PromptBuilder pb(budget);
-        
+
         std::string sys_prompt = pb.build_system_prompt(npc.identity, npc.state, world_);
         handle->set_system_prompt(sys_prompt);
-        
+
         std::string user_msg = pb.build_user_turn(input, world_.player);
-        
+
         renderer_->begin_npc_dialogue(npc.identity.name);
-        
+
         bool streamed_any = false;
         auto poll = [this, &streamed_any]() { streamed_any = drain_token_queue() || streamed_any; };
         auto result = handle->chat_streaming(
-            user_msg,
-            [this](std::string_view t) { response_handler_->on_token(t); },
-            poll);
+            user_msg, [this](std::string_view t) { response_handler_->on_token(t); }, poll);
 
         poll();
 
@@ -358,8 +333,8 @@ void GameEngine::handle_dialogue(const std::string &npc_id, const std::string &i
         if (!result.success) {
             renderer_->render_error("Agent chat failed: " + result.error_message);
         }
-        
-    } catch (const std::exception& e) {
+
+    } catch (const std::exception &e) {
         renderer_->render_error(std::string("Dialogue error: ") + e.what());
     }
 }

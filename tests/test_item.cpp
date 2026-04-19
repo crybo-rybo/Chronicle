@@ -60,7 +60,7 @@ TEST(ItemTest, PropertiesMapRoundtrip) {
     item.name = "Crumpled Note";
     item.properties = {
         {"readable", "true"},
-        {"read_text", "Don't trust the innkeeper."},
+        {"text", "Don't trust the innkeeper."},
     };
 
     nlohmann::json j;
@@ -71,7 +71,7 @@ TEST(ItemTest, PropertiesMapRoundtrip) {
 
     ASSERT_EQ(restored.properties.size(), 2u);
     EXPECT_EQ(restored.properties.at("readable"), "true");
-    EXPECT_EQ(restored.properties.at("read_text"), "Don't trust the innkeeper.");
+    EXPECT_EQ(restored.properties.at("text"), "Don't trust the innkeeper.");
 }
 
 // ---------------------------------------------------------------------------

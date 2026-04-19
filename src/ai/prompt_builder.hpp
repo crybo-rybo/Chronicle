@@ -4,8 +4,13 @@
  *
  * @details @ref PromptBuilder is the single point responsible for transforming
  * structured game data into the text that reaches the language model.  It
- * enforces a token budget so prompts remain within the context window regardless
- * of how much history or world state has accumulated.
+ * enforces a token budget for the NPC memory section so that memories remain
+ * within a bounded context allocation.
+ *
+ * @note Only @c max_memory_tokens is currently enforced.  The world-context
+ * and conversation-history budgets are reserved but not yet trimmed —
+ * implementing @c select_world_context and @c select_history helpers is a
+ * Sprint 4 TODO.
  *
  * ### System prompt structure
  * Each NPC system prompt is built from the following sections, in order:

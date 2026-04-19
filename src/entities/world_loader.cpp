@@ -9,6 +9,9 @@
  */
 
 #include "entities/world_loader.hpp"
+#include "entities/fact.hpp"
+#include "entities/flag.hpp"
+#include "entities/world_validator.hpp"
 #include <filesystem>
 #include <fstream>
 #include <nlohmann/json.hpp>
@@ -58,7 +61,57 @@ World load_world(const std::filesystem::path &data_dir) {
     }
 
     // -----------------------------------------------------------------------
-    // 2. Parse npcs.json — NPCs and cross-reference with locations
+    // 2. Parse flags.json — narrative flag declarations
+    // -----------------------------------------------------------------------
+    {
+        auto path = data_dir / "flags.json";
+        std::ifstream file(path);
+        if (file.is_open()) {
+            nlohmann::json j_flags;
+            try {
+                j_flags = nlohmann::json::parse(file);
+            } catch (const nlohmann::json::parse_error &e) {
+                throw std::runtime_error("load_world: failed to parse " + path.string() + ": " +
+                                         e.what());
+            }
+            if (j_flags.contains("flags")) {
+                for (auto &[key, value] : j_flags.at("flags").items()) {
+                    Flag flag = value.get<Flag>();
+                    flag.id = key;
+                    world.flags[key] = flag.default_value;
+                }
+            }
+        }
+        // flags.json is optional — a missing file just means no authored flags.
+    }
+
+    // -----------------------------------------------------------------------
+    // 3. Parse facts.json — authored fact registry
+    // -----------------------------------------------------------------------
+    {
+        auto path = data_dir / "facts.json";
+        std::ifstream file(path);
+        if (file.is_open()) {
+            nlohmann::json j_facts;
+            try {
+                j_facts = nlohmann::json::parse(file);
+            } catch (const nlohmann::json::parse_error &e) {
+                throw std::runtime_error("load_world: failed to parse " + path.string() + ": " +
+                                         e.what());
+            }
+            if (j_facts.contains("facts")) {
+                for (auto &[key, value] : j_facts.at("facts").items()) {
+                    Fact fact = value.get<Fact>();
+                    fact.id = key;
+                    world.facts[key] = std::move(fact);
+                }
+            }
+        }
+        // facts.json is optional — a missing file just means no authored facts.
+    }
+
+    // -----------------------------------------------------------------------
+    // 4. Parse npcs.json — NPCs and cross-reference with locations
     // -----------------------------------------------------------------------
     {
         auto path = data_dir / "npcs.json";
@@ -91,7 +144,7 @@ World load_world(const std::filesystem::path &data_dir) {
     }
 
     // -----------------------------------------------------------------------
-    // 3. Parse events.json — event triggers
+    // 5. Parse events.json — event triggers
     // -----------------------------------------------------------------------
     {
         auto path = data_dir / "events.json";
@@ -116,7 +169,19 @@ World load_world(const std::filesystem::path &data_dir) {
         }
     }
 
-    // 4. Clock is default-constructed (Day 1, Morning) — nothing to do.
+    // 6. Clock is default-constructed (Day 1, Morning) — nothing to do.
+
+    // -----------------------------------------------------------------------
+    // 7. Validate world integrity
+    // -----------------------------------------------------------------------
+    auto report = validate_world(world);
+    if (!report.ok) {
+        std::string msg = "load_world: validation failed:\n";
+        for (const auto &e : report.errors) {
+            msg += "  - " + e + "\n";
+        }
+        throw std::runtime_error(msg);
+    }
 
     return world;
 }

@@ -8,7 +8,7 @@ namespace chronicle {
 // ---------------------------------------------------------------------------
 
 class ToolRegistryTest : public ::testing::Test {
-protected:
+  protected:
     World world;
 
     void SetUp() override {
@@ -77,7 +77,7 @@ TEST_F(ToolRegistryTest, GiveItemAccepted_NpcHasItem) {
     ASSERT_TRUE(std::holds_alternative<MutationRequest>(result));
     auto &req = std::get<MutationRequest>(result);
     EXPECT_EQ(req.type, MutationRequest::Type::GiveItemToPlayer);
-    EXPECT_EQ(req.npc_id, "marcus");
+    EXPECT_EQ(req.actor_id, "marcus");
     EXPECT_EQ(req.params.at("item_id"), "cargo_manifest");
 }
 
@@ -113,7 +113,7 @@ TEST_F(ToolRegistryTest, TakeItemAccepted_NonKeyItem) {
     ASSERT_TRUE(std::holds_alternative<MutationRequest>(result));
     auto &req = std::get<MutationRequest>(result);
     EXPECT_EQ(req.type, MutationRequest::Type::TakeItemFromPlayer);
-    EXPECT_EQ(req.npc_id, "marcus");
+    EXPECT_EQ(req.actor_id, "marcus");
     EXPECT_EQ(req.params.at("item_id"), "crumpled_note");
 }
 
@@ -253,7 +253,7 @@ TEST_F(ToolRegistryTest, SetFlagAccepted_Known) {
     ASSERT_TRUE(std::holds_alternative<MutationRequest>(result));
     auto &req = std::get<MutationRequest>(result);
     EXPECT_EQ(req.type, MutationRequest::Type::SetFlag);
-    EXPECT_TRUE(req.npc_id.empty());
+    EXPECT_TRUE(req.actor_id.empty());
     EXPECT_EQ(req.params.at("flag_id"), "intro_complete");
     EXPECT_EQ(req.params.at("value"), "false");
 }
@@ -366,6 +366,19 @@ TEST_F(ToolRegistryTest, RegisterMultipleToolTypes) {
     EXPECT_EQ(reg.pending_mutations()[1].type, MutationRequest::Type::UpdateNpcTrust);
     EXPECT_EQ(reg.pending_mutations()[2].type, MutationRequest::Type::MoveNpc);
     EXPECT_EQ(reg.pending_mutations()[3].type, MutationRequest::Type::SetFlag);
+}
+
+// ---------------------------------------------------------------------------
+// Strict bool parsing (set_flag tool lambda)
+// ---------------------------------------------------------------------------
+
+TEST_F(ToolRegistryTest, SetFlagStrictBoolRejectsGarbage) {
+    ToolRegistry reg(world);
+
+    auto result = reg.handle_set_flag_tool("intro_complete", "maybe");
+
+    EXPECT_NE(result.find("Error:"), std::string::npos);
+    EXPECT_TRUE(reg.pending_mutations().empty());
 }
 
 } // namespace chronicle

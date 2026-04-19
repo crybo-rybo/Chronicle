@@ -17,7 +17,7 @@
  */
 
 #pragma once
-#include "ai/tool_registry.hpp"
+#include "engine/mutation_request.hpp"
 #include "entities/world.hpp"
 
 namespace chronicle {
@@ -109,6 +109,18 @@ bool apply_add_memory(World &world, const MutationRequest &mutation);
 ///                 @c params["value"] equal to @c "true" or @c "false".
 /// @return @c true if the flag value changed.
 bool apply_set_flag(World &world, const MutationRequest &mutation);
+
+/// @brief Move the player to a connected location.
+bool apply_player_move(World &world, const MutationRequest &mutation);
+
+/// @brief Take an item from the current location into the player's inventory.
+bool apply_player_take(World &world, const MutationRequest &mutation);
+
+/// @brief Drop an item from the player's inventory into the current location.
+bool apply_player_drop(World &world, const MutationRequest &mutation);
+
+/// @brief Place an item into a location (system/event use).
+bool apply_spawn_item(World &world, const MutationRequest &mutation);
 
 /// @brief Dispatch a @ref MutationRequest to the appropriate apply function.
 ///

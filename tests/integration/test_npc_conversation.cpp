@@ -155,7 +155,7 @@ TEST(NpcConversationIntegrationTest, RealAgentQueuesGiveItemMutation) {
     });
 
     ASSERT_NE(give_it, mutations.end()) << response->text;
-    EXPECT_EQ(give_it->npc_id, "marcus");
+    EXPECT_EQ(give_it->actor_id, "marcus");
     EXPECT_TRUE(std::ranges::all_of(mutations, [](const MutationRequest &mutation) {
         return mutation.type == MutationRequest::Type::GiveItemToPlayer;
     }));

@@ -12,8 +12,17 @@ if(CHRONICLE_WERROR)
     list(APPEND CHRONICLE_WARNING_FLAGS -Werror)
 endif()
 
-# Zoo-Keeper via FetchContent
+# nlohmann/json — fetched before Zoo-Keeper so chronicle_domain can link it
+# without pulling the full LLM stack.  Zoo-Keeper's FetchDependencies.cmake
+# uses the same FetchContent name ("json"), so this satisfies both.
 include(FetchContent)
+FetchContent_Declare(
+    json
+    URL https://github.com/nlohmann/json/releases/download/v3.11.3/json.tar.xz
+)
+FetchContent_MakeAvailable(json)
+
+# Zoo-Keeper via FetchContent
 FetchContent_Declare(
     zoo-keeper
     GIT_REPOSITORY https://github.com/crybo-rybo/zoo-keeper.git

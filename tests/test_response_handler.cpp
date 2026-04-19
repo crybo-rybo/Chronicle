@@ -1,5 +1,4 @@
 #include "ai/response_handler.hpp"
-#include "ai/tool_registry.hpp"
 #include "engine/token_queue.hpp"
 #include "entities/world.hpp"
 #include "rendering/renderer.hpp"
@@ -16,17 +15,15 @@ class MockRenderer : public Renderer {
     void render_move(const std::string &, const std::string &) override {}
     void render_npc_intro(std::string_view, std::string_view) override {}
     void begin_npc_dialogue(std::string_view) override {}
-    
-    void stream_token(std::string_view token) override {
-        tokens.push_back(std::string(token));
-    }
-    
+
+    void stream_token(std::string_view token) override { tokens.push_back(std::string(token)); }
+
     void flush_dialogue() override {}
-    
+
     void render_action(std::string_view narration) override {
         actions.push_back(std::string(narration));
     }
-    
+
     void render_inventory(const Player &, const World &) override {}
     void render_item_examine(const Item &) override {}
     void render_error(std::string_view) override {}
@@ -38,10 +35,9 @@ class MockRenderer : public Renderer {
 };
 
 TEST(ResponseHandlerTest, OnTokenPushesToQueue) {
-    MockRenderer renderer;
     TokenQueue queue;
     World world;
-    ResponseHandler handler(renderer, queue, world);
+    ResponseHandler handler([](std::string_view) {}, queue, world);
 
     handler.on_token("hello");
     handler.on_token(" ");
@@ -56,7 +52,7 @@ TEST(ResponseHandlerTest, NarrateMutationsUsesTemplatesForVisibleAndSilentMutati
     MockRenderer renderer;
     TokenQueue queue;
     World world;
-    
+
     Item sword;
     sword.id = "sword";
     sword.name = "Iron Sword";
@@ -73,17 +69,26 @@ TEST(ResponseHandlerTest, NarrateMutationsUsesTemplatesForVisibleAndSilentMutati
         {"set_flag", ""},
     };
 
-    ResponseHandler handler(renderer, queue, world, templates);
+    ResponseHandler handler([&](std::string_view narration) { renderer.render_action(narration); },
+                            queue, world, templates);
 
+    using Source = MutationRequest::Source;
     std::vector<MutationRequest> mutations;
-    mutations.push_back({MutationRequest::Type::GiveItemToPlayer, "marcus", {{"item_id", "sword"}}});
-    mutations.push_back({MutationRequest::Type::TakeItemFromPlayer, "marcus", {{"item_id", "sword"}}});
-    mutations.push_back({MutationRequest::Type::UpdateNpcMood, "marcus", {{"mood", "angry"}}});
-    mutations.push_back({MutationRequest::Type::MoveNpc, "marcus", {{"location_id", "market"}}});
-    mutations.push_back({MutationRequest::Type::RevealKnowledge, "marcus", {{"fact_id", "test"}}});
-    mutations.push_back({MutationRequest::Type::UpdateNpcTrust, "marcus", {{"delta", "5"}}});
-    mutations.push_back({MutationRequest::Type::AddMemory, "marcus", {{"summary", "test"}}});
-    mutations.push_back({MutationRequest::Type::SetFlag, "marcus", {{"flag_id", "test"}}});
+    mutations.push_back(
+        {MutationRequest::Type::GiveItemToPlayer, Source::Npc, "marcus", {{"item_id", "sword"}}});
+    mutations.push_back(
+        {MutationRequest::Type::TakeItemFromPlayer, Source::Npc, "marcus", {{"item_id", "sword"}}});
+    mutations.push_back(
+        {MutationRequest::Type::UpdateNpcMood, Source::Npc, "marcus", {{"mood", "angry"}}});
+    mutations.push_back(
+        {MutationRequest::Type::MoveNpc, Source::Npc, "marcus", {{"location_id", "market"}}});
+    mutations.push_back(
+        {MutationRequest::Type::RevealKnowledge, Source::Npc, "marcus", {{"fact_id", "test"}}});
+    mutations.push_back(
+        {MutationRequest::Type::UpdateNpcTrust, Source::Npc, "marcus", {{"delta", "5"}}});
+    mutations.push_back(
+        {MutationRequest::Type::AddMemory, Source::Npc, "marcus", {{"summary", "test"}}});
+    mutations.push_back({MutationRequest::Type::SetFlag, Source::Npc, "", {{"flag_id", "test"}}});
 
     handler.narrate_mutations(mutations, "Marcus");
 
