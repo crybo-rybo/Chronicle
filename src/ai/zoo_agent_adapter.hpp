@@ -39,6 +39,9 @@ public:
     /// @brief Set the system prompt on the underlying @c zoo::Agent.
     void set_system_prompt(std::string_view prompt) override;
 
+    /// @brief Inject a mid-conversation system message via @c zoo::Agent::add_system_message.
+    void add_system_message(std::string_view message) override;
+
     /// @brief Clear the conversation history on the underlying @c zoo::Agent.
     void clear_history() override;
 

@@ -56,6 +56,8 @@ class FakeDialogueAgent : public AgentInterface {
         ++set_system_prompt_call_count;
     }
 
+    void add_system_message(std::string_view) override {}
+
     void clear_history() override { ++clear_history_call_count; }
 
     bool is_running() const noexcept override { return false; }

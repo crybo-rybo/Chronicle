@@ -59,6 +59,17 @@ public:
     /// @param prompt The new system prompt text.
     virtual void set_system_prompt(std::string_view prompt) = 0;
 
+    /// @brief Inject a mid-conversation system message into the agent's history.
+    ///
+    /// @details Inserts @p message under the @c system role so the model sees
+    /// it as authoritative context rather than user/assistant content.  Used to
+    /// deliver the per-turn dynamic state block (@c [Current state]) without
+    /// polluting the user/assistant alternation pattern that can trigger
+    /// hallucinated turn continuations.
+    ///
+    /// @param message The system context text to inject.
+    virtual void add_system_message(std::string_view message) = 0;
+
     /// @brief Clear the agent's conversation history.
     ///
     /// @details Called by @ref NpcAgentPool before and after each interaction

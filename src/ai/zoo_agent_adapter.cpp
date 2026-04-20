@@ -29,6 +29,12 @@ void ZooAgentAdapter::set_system_prompt(std::string_view prompt) {
     agent_->set_system_prompt(prompt);
 }
 
+void ZooAgentAdapter::add_system_message(std::string_view message) {
+    logging::write(logging::Level::Debug, "ai",
+                   "injecting system message chars=" + std::to_string(message.size()));
+    (void)agent_->add_system_message(message);
+}
+
 void ZooAgentAdapter::clear_history() {
     logging::write(logging::Level::Debug, "ai", "clearing zoo agent history");
     agent_->clear_history();
