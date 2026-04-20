@@ -1,6 +1,6 @@
 /**
  * @file prompt_builder.cpp
- * @brief Implementation of @ref PromptBuilder — system prompt and user turn assembly.
+ * @brief Implementation of @ref PromptBuilder — prompt and user turn assembly.
  *
  * @details Implements the structured prompt template, the two-phase memory
  * selection algorithm, and the token estimation heuristic.
