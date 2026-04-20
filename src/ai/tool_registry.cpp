@@ -293,6 +293,26 @@ std::optional<std::string> ToolRegistry::register_set_flag(const std::string &fl
     return std::nullopt;
 }
 
+std::string ToolRegistry::handle_take_item_tool(const std::string &npc_id,
+                                                const std::string &item_id) {
+    if (auto err = register_take_item(npc_id, item_id)) {
+        return *err;
+    }
+    return "OK. You received: " + format_item_details(item_id);
+}
+
+std::string ToolRegistry::handle_inspect_item_tool(const std::string &npc_id,
+                                                   const std::string &item_id) {
+    if (!item_exists(item_id))
+        return "Error: Item '" + item_id + "' does not exist.";
+    if (!npc_has_item(npc_id, item_id)) {
+        const auto &inv = world_.npcs.at(npc_id).state.inventory;
+        return "Error: You do not have item '" + item_id +
+               "'. Your inventory: " + format_inventory(inv);
+    }
+    return format_item_details(item_id);
+}
+
 std::string ToolRegistry::handle_set_flag_tool(const std::string &flag_id,
                                                const std::string &value_str) {
     auto value = parse_bool(value_str);
@@ -339,6 +359,20 @@ void ToolRegistry::set_active_npc_id(std::string npc_id) {
     active_npc_id_ = std::move(npc_id);
 }
 
+std::string ToolRegistry::format_item_details(const std::string &item_id) const {
+    const auto &item = world_.items.at(item_id);
+    std::string details = item.name + ": " + item.description;
+
+    auto readable_it = item.properties.find("readable");
+    if (readable_it != item.properties.end() && readable_it->second == "true") {
+        auto text_it = item.properties.find("text");
+        if (text_it != item.properties.end()) {
+            details += " It reads: \"" + text_it->second + "\"";
+        }
+    }
+    return details;
+}
+
 void ToolRegistry::register_tools(zoo::Agent &agent, const std::string &npc_id) {
     set_active_npc_id(npc_id);
     logging::write(logging::Level::Info, "tools", "registering tools npc=" + npc_id);
@@ -359,12 +393,9 @@ void ToolRegistry::register_tools(zoo::Agent &agent, const std::string &npc_id) 
     auto take_item_func = [this](std::string item_id) -> std::string {
         logging::write(logging::Level::Info, "tools",
                        "tool=take_item npc=" + active_npc_id_ + " item_id=" + item_id);
-        if (auto err = this->register_take_item(active_npc_id_, item_id)) {
-            log_tool_result("take_item", *err);
-            return *err;
-        }
-        log_tool_result("take_item", "OK");
-        return "OK";
+        auto result = this->handle_take_item_tool(active_npc_id_, item_id);
+        log_tool_result("take_item", result);
+        return result;
     };
     (void)agent.register_tool("take_item", "Take an item from the player", {"item_id"},
                               std::move(take_item_func));
@@ -459,6 +490,16 @@ void ToolRegistry::register_tools(zoo::Agent &agent, const std::string &npc_id) 
     };
     (void)agent.register_tool("set_flag", "Set or update a world narrative flag",
                               {"flag_id", "value"}, std::move(set_flag_func));
+
+    auto inspect_item_func = [this](std::string item_id) -> std::string {
+        logging::write(logging::Level::Info, "tools",
+                       "tool=inspect_item npc=" + active_npc_id_ + " item_id=" + item_id);
+        auto result = this->handle_inspect_item_tool(active_npc_id_, item_id);
+        log_tool_result("inspect_item", result);
+        return result;
+    };
+    (void)agent.register_tool("inspect_item", "Examine an item in your inventory", {"item_id"},
+                              std::move(inspect_item_func));
 }
 
 } // namespace chronicle

@@ -190,6 +190,26 @@ class ToolRegistry {
     /// @return "OK" on success, or an error string on validation failure.
     std::string handle_set_flag_tool(const std::string &flag_id, const std::string &value_str);
 
+    /// @brief Handle the inspect_item tool path without requiring a zoo::Agent.
+    ///
+    /// @details Validates that the NPC has the item, then returns a formatted
+    /// description including readable text if present.
+    ///
+    /// @param npc_id  The NPC inspecting the item.
+    /// @param item_id The item to inspect.
+    /// @return Item details on success, or an error string on failure.
+    std::string handle_inspect_item_tool(const std::string &npc_id, const std::string &item_id);
+
+    /// @brief Handle the take_item tool path without requiring a zoo::Agent.
+    ///
+    /// @details Validates and enqueues the take_item mutation, then returns
+    /// a result string that includes item details (with readable text if present).
+    ///
+    /// @param npc_id  The NPC taking the item.
+    /// @param item_id The item to take from the player.
+    /// @return Item details prefixed with "OK." on success, or an error string.
+    std::string handle_take_item_tool(const std::string &npc_id, const std::string &item_id);
+
     // -----------------------------------------------------------------------
     // Dialogue capture (non-mutating)
     // -----------------------------------------------------------------------
@@ -264,6 +284,16 @@ class ToolRegistry {
 
     /// @brief Enqueue a mutation via the sink or the internal fallback vector.
     void emit(MutationRequest req);
+
+    /// @brief Format an item's details for tool results.
+    ///
+    /// @details Returns a human-readable summary of the item including its name,
+    /// description, and readable text (if any).  Used by take_item (automatic
+    /// feedback on readable items) and inspect_item.
+    ///
+    /// @param item_id The item to describe.
+    /// @return Formatted string with item details.
+    std::string format_item_details(const std::string &item_id) const;
 
     // Private validation helpers
     bool npc_exists(const std::string &npc_id) const;

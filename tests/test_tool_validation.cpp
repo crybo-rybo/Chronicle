@@ -30,14 +30,18 @@ class ToolRegistryTest : public ::testing::Test {
 
         Item manifest;
         manifest.id = "cargo_manifest";
-        manifest.name = "cargo manifest";
+        manifest.name = "Cargo Manifest";
+        manifest.description = "A detailed list of goods.";
         manifest.key_item = false;
+        manifest.properties = {{"readable", "true"},
+                               {"text", "Shipment 47: 12 bolts silk, 1 sealed chest."}};
         world.items["cargo_manifest"] = manifest;
 
         Item note;
         note.id = "crumpled_note";
         note.name = "crumpled note";
         note.key_item = false;
+        note.properties = {{"readable", "true"}, {"text", "Don't trust the innkeeper."}};
         world.items["crumpled_note"] = note;
 
         // Player at tavern with crumpled_note
@@ -378,6 +382,88 @@ TEST_F(ToolRegistryTest, SetFlagStrictBoolRejectsGarbage) {
     auto result = reg.handle_set_flag_tool("intro_complete", "maybe");
 
     EXPECT_NE(result.find("Error:"), std::string::npos);
+    EXPECT_TRUE(reg.pending_mutations().empty());
+}
+
+// ---------------------------------------------------------------------------
+// TakeItem readable feedback tests
+// ---------------------------------------------------------------------------
+
+TEST_F(ToolRegistryTest, TakeItemReturnsReadableText) {
+    ToolRegistry reg(world);
+    auto result = reg.handle_take_item_tool("marcus", "crumpled_note");
+    EXPECT_NE(result.find("OK."), std::string::npos);
+    EXPECT_NE(result.find("crumpled note"), std::string::npos);
+    EXPECT_NE(result.find("Don't trust the innkeeper."), std::string::npos);
+}
+
+TEST_F(ToolRegistryTest, TakeItemReturnsNonReadableDetails) {
+    // Add a non-readable item to the player's inventory
+    Item potion;
+    potion.id = "health_potion";
+    potion.name = "Health Potion";
+    potion.description = "A bubbling red liquid.";
+    world.items["health_potion"] = potion;
+    world.player.inventory.push_back("health_potion");
+
+    ToolRegistry reg(world);
+    auto result = reg.handle_take_item_tool("marcus", "health_potion");
+    EXPECT_NE(result.find("OK."), std::string::npos);
+    EXPECT_NE(result.find("Health Potion"), std::string::npos);
+    EXPECT_NE(result.find("A bubbling red liquid."), std::string::npos);
+    EXPECT_EQ(result.find("It reads:"), std::string::npos);
+}
+
+TEST_F(ToolRegistryTest, TakeItemToolReturnsErrorOnFailure) {
+    ToolRegistry reg(world);
+    auto result = reg.handle_take_item_tool("marcus", "cargo_manifest");
+    EXPECT_NE(result.find("Error:"), std::string::npos);
+}
+
+// ---------------------------------------------------------------------------
+// InspectItem tests (read-only tool, no mutations)
+// ---------------------------------------------------------------------------
+
+TEST_F(ToolRegistryTest, InspectItemReturnsReadableText) {
+    ToolRegistry reg(world);
+    auto result = reg.handle_inspect_item_tool("marcus", "cargo_manifest");
+    EXPECT_NE(result.find("Cargo Manifest"), std::string::npos);
+}
+
+TEST_F(ToolRegistryTest, InspectItemReadableIncludesText) {
+    // Give marcus the crumpled_note so he can inspect it
+    world.npcs["marcus"].state.inventory.push_back("crumpled_note");
+
+    ToolRegistry reg(world);
+    auto result = reg.handle_inspect_item_tool("marcus", "crumpled_note");
+    EXPECT_NE(result.find("crumpled note"), std::string::npos);
+    EXPECT_NE(result.find("Don't trust the innkeeper."), std::string::npos);
+    EXPECT_NE(result.find("It reads:"), std::string::npos);
+}
+
+TEST_F(ToolRegistryTest, InspectItemNonReadableOmitsText) {
+    ToolRegistry reg(world);
+    auto result = reg.handle_inspect_item_tool("marcus", "tavern_key");
+    EXPECT_NE(result.find("tavern key"), std::string::npos);
+    EXPECT_EQ(result.find("It reads:"), std::string::npos);
+}
+
+TEST_F(ToolRegistryTest, InspectItemRejected_NpcLacksItem) {
+    ToolRegistry reg(world);
+    auto result = reg.handle_inspect_item_tool("marcus", "crumpled_note");
+    EXPECT_NE(result.find("Error:"), std::string::npos);
+    EXPECT_NE(result.find("do not have"), std::string::npos);
+}
+
+TEST_F(ToolRegistryTest, InspectItemRejected_ItemNotExist) {
+    ToolRegistry reg(world);
+    auto result = reg.handle_inspect_item_tool("marcus", "nonexistent");
+    EXPECT_NE(result.find("Error:"), std::string::npos);
+}
+
+TEST_F(ToolRegistryTest, InspectItemDoesNotEnqueue) {
+    ToolRegistry reg(world);
+    reg.handle_inspect_item_tool("marcus", "cargo_manifest");
     EXPECT_TRUE(reg.pending_mutations().empty());
 }
 
