@@ -21,6 +21,7 @@ class FailureMockAgent : public AgentInterface {
     Mode mode = Mode::StreamEmpty;
 
     void set_system_prompt(std::string_view) override {}
+    void add_system_message(std::string_view) override {}
     void clear_history() override {}
     bool is_running() const noexcept override { return false; }
     void register_tools(ToolRegistry &tool_registry, const std::string &npc_id) override {

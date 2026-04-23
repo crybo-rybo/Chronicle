@@ -18,6 +18,8 @@ public:
         last_system_prompt = std::string(prompt);
     }
 
+    void add_system_message(std::string_view) override {}
+
     void clear_history() override { ++clear_history_call_count; }
 
     bool is_running() const noexcept override { return running; }

@@ -46,7 +46,9 @@ class FakeDialogueAgent : public AgentInterface {
     ToolRegistry *registry = nullptr;
     std::string active_npc_id;
     std::string last_system_prompt;
+    std::vector<std::string> system_messages;
     std::string last_user_message;
+    std::vector<std::string> user_messages;
     int clear_history_call_count = 0;
     int register_tools_call_count = 0;
     int set_system_prompt_call_count = 0;
@@ -54,6 +56,10 @@ class FakeDialogueAgent : public AgentInterface {
     void set_system_prompt(std::string_view prompt) override {
         last_system_prompt = std::string(prompt);
         ++set_system_prompt_call_count;
+    }
+
+    void add_system_message(std::string_view message) override {
+        system_messages.emplace_back(message);
     }
 
     void clear_history() override { ++clear_history_call_count; }
@@ -70,6 +76,7 @@ class FakeDialogueAgent : public AgentInterface {
                                    AgentInterface::TokenCallback on_token,
                                    AgentInterface::PollCallback poll) override {
         last_user_message = std::string(user_message);
+        user_messages.push_back(last_user_message);
         on_token("Take ");
         poll();
         on_token("this.");
@@ -219,6 +226,38 @@ TEST_F(GameEngineTest, DialogueUsesCurrentConversationNpcAndStreamsTokens) {
     EXPECT_EQ(renderer_ptr->actions.back(), "Marcus hands you the Cargo Manifest.");
 }
 
+TEST_F(GameEngineTest, DialogueInjectsDynamicContextAsSystemMessageAndKeepsUserTurnClean) {
+    auto renderer = std::make_unique<MockEngineRenderer>();
+    auto fake_agent = std::make_unique<FakeDialogueAgent>();
+    auto *fake_agent_ptr = fake_agent.get();
+    auto pool = std::make_unique<NpcAgentPool>(std::move(fake_agent));
+    GameEngine engine(std::string(CHRONICLE_SOURCE_DIR) + "/data/config.json",
+                      std::string(CHRONICLE_SOURCE_DIR) + "/data", std::move(renderer),
+                      std::move(pool));
+
+    ParsedCommand talk;
+    talk.verb = CommandVerb::Talk;
+    talk.primary_arg = "marcus";
+    engine.handle_command(talk);
+
+    ParsedCommand dialogue;
+    dialogue.verb = CommandVerb::Dialogue;
+    dialogue.raw_input = "Can I see the manifest?";
+    dialogue.primary_arg = "Can I see the manifest?";
+    engine.handle_command(dialogue);
+
+    ASSERT_EQ(fake_agent_ptr->system_messages.size(), 1u);
+    EXPECT_NE(fake_agent_ptr->system_messages.back().find("[Current state]"), std::string::npos);
+    EXPECT_NE(fake_agent_ptr->system_messages.back().find("Current mood:"), std::string::npos);
+    EXPECT_NE(fake_agent_ptr->system_messages.back().find("Trust toward the player:"),
+              std::string::npos);
+
+    EXPECT_EQ(fake_agent_ptr->last_user_message.find("[Current state]"), std::string::npos);
+    EXPECT_NE(
+        fake_agent_ptr->last_user_message.find("The player says: \"Can I see the manifest?\""),
+        std::string::npos);
+}
+
 TEST_F(GameEngineTest, DialogueExitClearsConversation) {
     auto *renderer = mock_renderer.get();
     GameEngine engine(std::string(CHRONICLE_SOURCE_DIR) + "/data/config.json",
@@ -299,6 +338,10 @@ TEST_F(GameEngineTest, MultiTurnDialogueDoesNotReacquireAgent) {
     EXPECT_EQ(fake_agent_ptr->set_system_prompt_call_count, 1);
     EXPECT_EQ(fake_agent_ptr->register_tools_call_count, 1);
     EXPECT_EQ(fake_agent_ptr->clear_history_call_count, 1);
+    EXPECT_EQ(fake_agent_ptr->system_messages.size(), 2u);
+    ASSERT_EQ(fake_agent_ptr->user_messages.size(), 2u);
+    EXPECT_EQ(fake_agent_ptr->user_messages[0].find("[Current state]"), std::string::npos);
+    EXPECT_EQ(fake_agent_ptr->user_messages[1].find("[Current state]"), std::string::npos);
 }
 
 TEST_F(GameEngineTest, LeaveConversationReleasesAgent) {

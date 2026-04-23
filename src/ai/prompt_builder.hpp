@@ -12,17 +12,17 @@
  * implementing @c select_world_context and @c select_history helpers is a
  * Sprint 4 TODO.
  *
- * ### System prompt structure
- * Each NPC system prompt is built from the following sections, in order:
+ * ### Prompt structure
+ * Each NPC conversation starts with a static system prompt built from the
+ * following sections, in order:
  * 1. **Identity** — name, role, personality summary.
  * 2. **Background** — backstory (if non-empty).
- * 3. **Secret** — revealed only when trust meets the threshold.
- * 4. **Goals** — the NPC's active objectives.
- * 5. **Knowledge** — facts the NPC knows.
- * 6. **Current state** — mood and trust level.
- * 7. **Memories** — selected within @ref Budget::max_memory_tokens.
- * 8. **World context** — time, location, other characters present, visible items.
- * 9. **Rules** — in-character behaviour constraints.
+ * 3. **Goals** — the NPC's active objectives.
+ * 4. **Knowledge** — facts the NPC knows.
+ * 5. **Rules** — in-character behaviour constraints.
+ *
+ * Per-turn dynamic context is built separately and injected by the engine as a
+ * mid-conversation system message before the player's next dialogue turn.
  *
  * ### Memory selection algorithm
  * Memories are selected in two phases:
@@ -98,9 +98,9 @@ class PromptBuilder {
     ///
     /// @details Produces the state that may change between turns: mood, trust,
     /// secret (if trust threshold met), memories, and world context (time,
-    /// location, NPCs present, visible items).  This block is prepended to the
-    /// user message rather than included in the system prompt, so the system
-    /// prompt can remain fixed for the conversation lifetime.
+    /// location, NPCs present, visible items).  The engine injects this block as
+    /// a mid-conversation system message so the user/assistant history remains
+    /// natural dialogue.
     ///
     /// @param identity  NPC identity (used for secret text and threshold).
     /// @param state     Current NPC state (mood, trust, memories, location).
@@ -111,9 +111,11 @@ class PromptBuilder {
 
     /// @brief Assemble the user-turn message for a single dialogue exchange.
     ///
-    /// @details Optionally prepends a dynamic context block before the player's
-    /// input.  The player's raw input is JSON-encoded to prevent prompt injection,
-    /// then a summary of the player's current inventory is appended.
+    /// @details Formats the player's raw input after JSON-encoding it to prevent
+    /// prompt injection, then appends a summary of the player's current
+    /// inventory.  The optional dynamic context parameter is retained for helper
+    /// callers; the game dialogue path injects dynamic context separately as a
+    /// system message.
     ///
     /// @param player_input    The raw dialogue text typed by the player.
     /// @param player          The player's current state, used for inventory context.

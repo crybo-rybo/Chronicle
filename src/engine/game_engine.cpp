@@ -424,7 +424,9 @@ void GameEngine::handle_dialogue(const std::string &npc_id, const std::string &i
         PromptBuilder pb(budget);
 
         std::string dynamic_ctx = pb.build_dynamic_context(npc.identity, npc.state, world_);
-        std::string user_msg = pb.build_user_turn(input, world_.player, dynamic_ctx);
+        (*active_conversation_handle_)->add_system_message(dynamic_ctx);
+
+        std::string user_msg = pb.build_user_turn(input, world_.player);
 
         logging::write(logging::Level::Debug, "dialogue",
                        "user_turn npc=" + npc_id + " chars=" + std::to_string(user_msg.size()) +
