@@ -1,0 +1,75 @@
+{
+  "events": {
+    "evening_chapel_vigil": {
+      "conditions": [
+        {"type": "clock_is", "args": ["evening"]},
+        {"type": "player_at", "args": ["cliffside_chapel"]}
+      ],
+      "actions": [
+        {
+          "type": "narrate",
+          "params": {
+            "text": "The wind shifts and the chapel's votive candles all bend at once toward the sea. For a moment the sound of the surf carries something that could be a name."
+          }
+        }
+      ],
+      "once": true,
+      "fired": false
+    },
+    "widow_opens_up": {
+      "conditions": [
+        {"type": "npc_trust_ge", "args": ["irene", "50"]},
+        {"type": "player_at", "args": ["keepers_cottage"]},
+        {"type": "turn_ge", "args": ["3"]}
+      ],
+      "actions": [
+        {
+          "type": "set_flag",
+          "params": {
+            "flag_id": "widow_grieves_openly",
+            "value": "true"
+          }
+        },
+        {
+          "type": "narrate",
+          "params": {
+            "text": "Irene sets down the cup she has been holding and lets her hands rest, finally still. The composure she has worn like a shawl slips. She does not weep, but she does not look away."
+          }
+        }
+      ],
+      "once": true,
+      "fired": false
+    },
+    "constable_issues_writ": {
+      "conditions": [
+        {"type": "flag_set", "args": ["widow_grieves_openly", "true"]},
+        {"type": "npc_at", "args": ["tomas", "village_square"]},
+        {"type": "item_in_player_inv", "args": ["keepers_journal"]}
+      ],
+      "actions": [
+        {
+          "type": "set_flag",
+          "params": {
+            "flag_id": "dock_warrant_obtained",
+            "value": "true"
+          }
+        },
+        {
+          "type": "spawn_item",
+          "params": {
+            "item_id": "constable_writ",
+            "location_id": "village_square"
+          }
+        },
+        {
+          "type": "narrate",
+          "params": {
+            "text": "Tomas reads the journal entry twice, then a third time. He folds a writ from his coat, presses it with his seal, and lays it on the notice board. 'Bring me what's in that chest,' he says, 'and we'll see where it leads.'"
+          }
+        }
+      ],
+      "once": true,
+      "fired": false
+    }
+  }
+}

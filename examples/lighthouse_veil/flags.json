@@ -1,0 +1,16 @@
+{
+  "flags": {
+    "widow_grieves_openly": {
+      "default": false,
+      "description": "Set when Irene has visibly trusted the player enough to grieve openly. Gates later sympathy-driven beats."
+    },
+    "dock_warrant_obtained": {
+      "default": false,
+      "description": "Set when Tomas formally hands over the constable's writ allowing access to the tide-gate pier."
+    },
+    "smuggler_pact_admitted": {
+      "default": false,
+      "description": "Set when Maeve admits to the smuggling pact. Used by downstream events and authoring tools."
+    }
+  }
+}

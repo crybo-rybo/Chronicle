@@ -1,0 +1,18 @@
+{
+  "id": "lighthouse_veil",
+  "name": "Veil of the Lighthouse",
+  "version": "0.1.0",
+  "chronicle_schema_version": 1,
+  "files": {
+    "config": "config.json",
+    "world": "world.json",
+    "npcs": "npcs.json",
+    "facts": "facts.json",
+    "flags": "flags.json",
+    "events": "events.json"
+  },
+  "metadata": {
+    "description": "A coastal mystery social-sim reference package. Exercises distinct NPC tool policies, locked exits with key items, declared flags, chained event conditions, and trust-gated facts.",
+    "genre": "mystery"
+  }
+}
