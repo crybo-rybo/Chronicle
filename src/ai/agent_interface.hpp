@@ -23,9 +23,14 @@ namespace chronicle {
 class ToolRegistry;
 
 /// @brief Result of a single @ref AgentInterface::chat_streaming call.
+///
+/// @details A failed result may still follow partial token delivery; callers
+/// must treat streamed text as display-only until validated mutations have
+/// been applied by the engine.  Implementations should prefer returning
+/// @c success == false over throwing for recoverable inference errors.
 struct AgentChatResult {
-    bool success = false;        ///< @c true if inference completed without error.
-    std::string error_message;   ///< Human-readable error description; empty on success.
+    bool success = false;      ///< @c true if inference completed without error.
+    std::string error_message; ///< Human-readable error description; empty on success.
 };
 
 /// @brief Thin abstract base class exposing the agent lifecycle methods Chronicle requires.
@@ -34,7 +39,7 @@ struct AgentChatResult {
 /// calls into the underlying framework's API.  The interface intentionally
 /// exposes only the subset of functionality the game needs.
 class AgentInterface {
-public:
+  public:
     /// @brief Callback invoked on the inference thread for each generated token.
     ///
     /// @details Implementations should be non-blocking.  The callback receives
@@ -94,14 +99,17 @@ public:
     ///
     /// @details Blocks (with periodic @p poll callbacks) until inference
     /// completes.  Each generated token is delivered to @p on_token on the
-    /// inference thread.
+    /// inference thread.  Tool calls may enqueue validated mutations through
+    /// @ref ToolRegistry, but no agent implementation may directly write to
+    /// @ref World.
     ///
     /// @param user_message The player's message to send to the agent.
     /// @param on_token     Called on the inference thread for each token.
     /// @param poll         Called periodically on the calling thread while waiting.
-    /// @return An @ref AgentChatResult indicating success or failure.
-    virtual AgentChatResult chat_streaming(std::string_view user_message,
-                                           TokenCallback on_token,
+    /// @return An @ref AgentChatResult indicating success or failure.  On
+    ///         failure, callers should keep non-LLM gameplay usable and avoid
+    ///         applying unvalidated partial state.
+    virtual AgentChatResult chat_streaming(std::string_view user_message, TokenCallback on_token,
                                            PollCallback poll) = 0;
 };
 

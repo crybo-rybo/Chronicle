@@ -74,8 +74,8 @@ class GameEngine {
 
     /// @brief Drain the pending mutation queue and apply all validated changes.
     ///
-    /// @details Iterates @ref ToolRegistry::pending_mutations, applies each
-    /// via @ref apply_mutation, then narrates the successful mutations via
+    /// @details Iterates the engine-owned pending queue, applies each request
+    /// via @ref apply_mutation, then narrates successful mutations via
     /// @ref ResponseHandler.  Also detects if the active conversation NPC has
     /// left the current location and ends the conversation if so.
     ///
@@ -92,10 +92,10 @@ class GameEngine {
 
     /// @brief Execute a single dialogue turn with the active NPC.
     ///
-    /// @details Builds the system prompt and user message, invokes the agent
-    /// via @ref NpcAgentPool::acquire, streams tokens through the renderer,
-    /// and calls @ref process_pending_mutations after inference completes.
-    /// If the agent pool is not initialised, a stub message is rendered instead.
+    /// @details Injects fresh dynamic context, builds the user turn, streams
+    /// the agent response through the renderer, and calls
+    /// @ref process_pending_mutations after inference completes.  If the agent
+    /// pool is not initialised, a stub message is rendered instead.
     ///
     /// @param npc_id The ID of the NPC to converse with.
     /// @param input  The player's dialogue text.

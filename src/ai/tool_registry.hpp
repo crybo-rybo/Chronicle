@@ -20,11 +20,14 @@
  * ### Tool call flow
  * During inference, the Zoo-Keeper agent invokes registered tool lambdas on the
  * inference thread.  Each lambda calls the corresponding @c register_* method,
- * which validates against a **snapshot** of the world (the @c const @c World&
- * captured at construction time) and either enqueues a mutation or returns an
- * error string.  Tool results are returned synchronously to Zoo-Keeper so the
- * model can react before generating its next token.  The actual world mutation
- * happens later, on the main thread, after inference completes.
+ * which validates against the current @ref World through a @c const reference
+ * and either enqueues a mutation or returns an error string.  Tool results are
+ * returned synchronously to Zoo-Keeper so the model can react before generating
+ * its next token.  The actual world mutation happens later, on the main thread,
+ * after inference completes.
+ *
+ * This class is not a broad concurrent data structure.  It assumes the engine
+ * does not mutate @ref World while an inference turn is actively calling tools.
  *
  * @note @ref ToolRegistry holds a @c const reference to the @ref World.  It
  * reads world state for validation but never writes to it.
@@ -295,25 +298,55 @@ class ToolRegistry {
     /// @return Formatted string with item details.
     std::string format_item_details(const std::string &item_id) const;
 
+    /// @brief Return a policy error if the NPC is forbidden from calling a tool.
+    ///
+    /// @details Missing @c tool_policy defaults are expanded during load.
+    /// An empty @c allowed_tools list means no tool permissions.
     std::optional<std::string> policy_tool_error(const std::string &npc_id,
                                                  std::string_view tool_name) const;
+
+    /// @brief Return a policy error if an item ID is outside the NPC's scope.
+    ///
+    /// @details Empty scoped ID lists mean unrestricted within that scope.
+    /// Policy failures are reported separately from missing world references so
+    /// creators can distinguish permissions from typos.
     std::optional<std::string> policy_item_error(const std::string &npc_id,
                                                  const std::string &item_id) const;
+
+    /// @brief Return a policy error if a fact ID is outside the NPC's scope.
     std::optional<std::string> policy_fact_error(const std::string &npc_id,
                                                  const std::string &fact_id) const;
+
+    /// @brief Return a policy error if a flag ID is outside the NPC's scope.
     std::optional<std::string> policy_flag_error(const std::string &npc_id,
                                                  const std::string &flag_id) const;
+
+    /// @brief Return a policy error if a location ID is outside the NPC's scope.
     std::optional<std::string> policy_location_error(const std::string &npc_id,
                                                      const std::string &location_id) const;
 
-    // Private validation helpers
+    /// @brief Test whether an NPC ID exists in the world.
     bool npc_exists(const std::string &npc_id) const;
+
+    /// @brief Test whether an NPC currently holds an item.
     bool npc_has_item(const std::string &npc_id, const std::string &item_id) const;
+
+    /// @brief Test whether the player currently holds an item.
     bool player_has_item(const std::string &item_id) const;
+
+    /// @brief Test whether an item exists and is marked as key-item protected.
     bool is_key_item(const std::string &item_id) const;
+
+    /// @brief Test whether an item ID exists in the world registry.
     bool item_exists(const std::string &item_id) const;
+
+    /// @brief Test whether a location ID exists in the world.
     bool location_exists(const std::string &location_id) const;
+
+    /// @brief Test whether a flag ID exists in the world.
     bool flag_exists(const std::string &flag_id) const;
+
+    /// @brief Test whether a mood belongs to the canonical NPC mood vocabulary.
     bool is_valid_mood(const std::string &mood) const;
 };
 

@@ -23,15 +23,38 @@
 namespace chronicle {
 
 /// @brief Explicit set of world data files in a scenario package.
+///
+/// @details Paths are resolved and safety-checked by the scenario package
+/// layer before they reach @ref load_world.  This struct intentionally excludes
+/// @c config.json, which is loaded separately by @ref Config.
 struct WorldFileSet {
+    /// Location graph, item registry, and player start location.
     std::filesystem::path world;
+
+    /// NPC identity, initial state, and tool policies.
     std::filesystem::path npcs;
+
+    /// Authored fact registry.
     std::filesystem::path facts;
+
+    /// Declared narrative flag defaults.
     std::filesystem::path flags;
+
+    /// Deterministic scripted event triggers.
     std::filesystem::path events;
 };
 
 /// @brief Load a complete @ref World from explicit scenario data files.
+///
+/// @details Loads files in deterministic order: world, flags, facts, NPCs,
+/// and events.  Entity IDs are injected from JSON map keys, NPCs are inserted
+/// into their starting locations, the clock is default-constructed, and
+/// @ref validate_world runs before the result is returned.
+///
+/// @param files Resolved data-file paths for a scenario package.
+/// @return A fully populated and structurally validated world.
+/// @throws std::runtime_error if any file cannot be opened, contains malformed
+///         JSON, omits required fields, or fails world validation.
 World load_world(const WorldFileSet &files);
 
 } // namespace chronicle

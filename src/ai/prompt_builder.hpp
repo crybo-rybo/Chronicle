@@ -8,9 +8,8 @@
  * within a bounded context allocation.
  *
  * @note Only @c max_memory_tokens is currently enforced.  The world-context
- * and conversation-history budgets are reserved but not yet trimmed —
- * implementing @c select_world_context and @c select_history helpers is a
- * Sprint 4 TODO.
+ * and conversation-history budgets are reserved for a future prompt-budgeting
+ * pass.
  *
  * ### Prompt structure
  * Each NPC conversation starts with a static system prompt built from the
@@ -111,11 +110,11 @@ class PromptBuilder {
 
     /// @brief Assemble the user-turn message for a single dialogue exchange.
     ///
-    /// @details Formats the player's raw input after JSON-encoding it to prevent
-    /// prompt injection, then appends a summary of the player's current
-    /// inventory.  The optional dynamic context parameter is retained for helper
-    /// callers; the game dialogue path injects dynamic context separately as a
-    /// system message.
+    /// @details Formats the player's raw input after JSON-encoding it so
+    /// delimiter characters and quotes are represented unambiguously, then
+    /// appends a summary of the player's current inventory.  The optional
+    /// dynamic context parameter is retained for helper callers; the game
+    /// dialogue path injects dynamic context separately as a system message.
     ///
     /// @param player_input    The raw dialogue text typed by the player.
     /// @param player          The player's current state, used for inventory context.

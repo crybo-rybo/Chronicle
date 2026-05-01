@@ -39,41 +39,48 @@ class NpcAgentPool;
 /// @ref NpcAgentPool.  The destructor calls @ref NpcAgentPool::release,
 /// which clears conversation history and marks the agent as available.
 class NpcAgentHandle {
-public:
+  public:
     /// @brief Construct a handle that owns the agent for @p npc_id.
     ///
     /// @param agent   Pointer to the agent to borrow (must not be @c nullptr).
     /// @param pool    Owning pool; @c release() is called on destruction.
     /// @param npc_id  ID of the NPC this handle was acquired for.
-    NpcAgentHandle(AgentInterface* agent, NpcAgentPool* pool, std::string npc_id);
+    NpcAgentHandle(AgentInterface *agent, NpcAgentPool *pool, std::string npc_id);
 
     /// Releases the agent back to the pool by calling @ref NpcAgentPool::release.
     ~NpcAgentHandle();
 
     /// @brief Move constructor.  Transfers ownership; source becomes null.
-    NpcAgentHandle(NpcAgentHandle&& other) noexcept;
+    NpcAgentHandle(NpcAgentHandle &&other) noexcept;
 
     /// @brief Move assignment.  Releases any current ownership before acquiring the new one.
-    NpcAgentHandle& operator=(NpcAgentHandle&& other) noexcept;
+    NpcAgentHandle &operator=(NpcAgentHandle &&other) noexcept;
 
-    NpcAgentHandle(const NpcAgentHandle&) = delete;
-    NpcAgentHandle& operator=(const NpcAgentHandle&) = delete;
+    NpcAgentHandle(const NpcAgentHandle &) = delete;
+    NpcAgentHandle &operator=(const NpcAgentHandle &) = delete;
 
-    /// Pointer-like access to the underlying @ref AgentInterface.
-    AgentInterface* operator->() { return agent_; }
-    /// Pointer-like access to the underlying @ref AgentInterface.
-    AgentInterface& operator*() { return *agent_; }
+    /// @brief Pointer-like access to the underlying @ref AgentInterface.
+    ///
+    /// @pre This handle has not been moved from.
+    AgentInterface *operator->() { return agent_; }
+
+    /// @brief Reference access to the underlying @ref AgentInterface.
+    ///
+    /// @pre This handle has not been moved from.
+    AgentInterface &operator*() { return *agent_; }
+
     /// @overload
-    const AgentInterface* operator->() const { return agent_; }
+    const AgentInterface *operator->() const { return agent_; }
+
     /// @overload
-    const AgentInterface& operator*() const { return *agent_; }
+    const AgentInterface &operator*() const { return *agent_; }
 
     /// @return The NPC ID this handle was acquired for.
-    const std::string& npc_id() const { return npc_id_; }
+    const std::string &npc_id() const { return npc_id_; }
 
-private:
-    AgentInterface* agent_ = nullptr; ///< Borrowed pointer; not owned.
-    NpcAgentPool* pool_ = nullptr;    ///< Pool to release back to.
+  private:
+    AgentInterface *agent_ = nullptr; ///< Borrowed pointer; not owned.
+    NpcAgentPool *pool_ = nullptr;    ///< Pool to release back to.
     std::string npc_id_;              ///< NPC context for this borrow.
 };
 
@@ -88,7 +95,7 @@ private:
 /// @ref NpcAgentPool(std::unique_ptr<AgentInterface>) constructor accepts a
 /// mock implementation.
 class NpcAgentPool {
-public:
+  public:
     /// @brief Test-injection constructor: takes a pre-built agent.
     ///
     /// @param agent The @ref AgentInterface implementation to manage.
@@ -114,9 +121,9 @@ public:
     /// @param npc_id The ID of the NPC about to converse with the player.
     /// @return An @ref NpcAgentHandle that exclusively borrows the agent.
     /// @throws std::runtime_error if the agent is already in use.
-    NpcAgentHandle acquire(const std::string& npc_id);
+    NpcAgentHandle acquire(const std::string &npc_id);
 
-private:
+  private:
     std::unique_ptr<AgentInterface> agent_; ///< The owned agent instance.
     bool in_use_ = false;                   ///< Whether a handle is currently active.
 
