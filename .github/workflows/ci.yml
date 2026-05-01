@@ -28,3 +28,6 @@ jobs:
 
       - name: Test
         run: ctest --test-dir build --output-on-failure
+
+      - name: Validate bundled scenario
+        run: ./build/src/chronicle validate --scenario data

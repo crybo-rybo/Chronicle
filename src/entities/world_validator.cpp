@@ -6,6 +6,7 @@
 #include "entities/world_validator.hpp"
 #include "engine/parse_utils.hpp"
 #include "entities/clock.hpp"
+#include <algorithm>
 #include <unordered_map>
 
 namespace chronicle {
@@ -111,6 +112,37 @@ ValidationReport validate_world(const World &world) {
             if (!world.facts.contains(fact_id)) {
                 error("NPC '" + npc_id + "' knowledge references fact '" + fact_id +
                       "' which does not exist in world.facts");
+            }
+        }
+
+        for (const auto &tool : npc.identity.tool_policy.allowed_tools) {
+            if (!is_valid_npc_tool(tool)) {
+                error("NPC '" + npc_id + "' tool_policy references unknown tool '" + tool + "'");
+            }
+        }
+        for (const auto &item_id : npc.identity.tool_policy.allowed_items) {
+            if (!world.items.contains(item_id)) {
+                error("NPC '" + npc_id + "' tool_policy allowed_items references missing item '" +
+                      item_id + "'");
+            }
+        }
+        for (const auto &fact_id : npc.identity.tool_policy.allowed_facts) {
+            if (!world.facts.contains(fact_id)) {
+                error("NPC '" + npc_id + "' tool_policy allowed_facts references missing fact '" +
+                      fact_id + "'");
+            }
+        }
+        for (const auto &flag_id : npc.identity.tool_policy.allowed_flags) {
+            if (!world.flags.contains(flag_id)) {
+                error("NPC '" + npc_id + "' tool_policy allowed_flags references missing flag '" +
+                      flag_id + "'");
+            }
+        }
+        for (const auto &location_id : npc.identity.tool_policy.allowed_locations) {
+            if (!world.locations.contains(location_id)) {
+                error("NPC '" + npc_id +
+                      "' tool_policy allowed_locations references missing location '" +
+                      location_id + "'");
             }
         }
     }

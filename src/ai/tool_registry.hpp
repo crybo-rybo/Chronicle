@@ -295,6 +295,17 @@ class ToolRegistry {
     /// @return Formatted string with item details.
     std::string format_item_details(const std::string &item_id) const;
 
+    std::optional<std::string> policy_tool_error(const std::string &npc_id,
+                                                 std::string_view tool_name) const;
+    std::optional<std::string> policy_item_error(const std::string &npc_id,
+                                                 const std::string &item_id) const;
+    std::optional<std::string> policy_fact_error(const std::string &npc_id,
+                                                 const std::string &fact_id) const;
+    std::optional<std::string> policy_flag_error(const std::string &npc_id,
+                                                 const std::string &flag_id) const;
+    std::optional<std::string> policy_location_error(const std::string &npc_id,
+                                                     const std::string &location_id) const;
+
     // Private validation helpers
     bool npc_exists(const std::string &npc_id) const;
     bool npc_has_item(const std::string &npc_id, const std::string &item_id) const;

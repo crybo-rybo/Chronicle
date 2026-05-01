@@ -127,4 +127,30 @@ TEST(WorldValidatorTest, RejectsInvalidEventActions) {
     EXPECT_TRUE(has_error_containing(report, "non-empty 'text'"));
 }
 
+TEST(WorldValidatorTest, RejectsUnknownNpcToolPolicyTool) {
+    auto world = make_valid_world();
+    world.npcs.at("marcus").identity.tool_policy.allowed_tools = {"give_item", "invent_magic"};
+
+    auto report = validate_world(world);
+
+    EXPECT_FALSE(report.ok);
+    EXPECT_TRUE(has_error_containing(report, "unknown tool 'invent_magic'"));
+}
+
+TEST(WorldValidatorTest, RejectsDanglingNpcToolPolicyScopes) {
+    auto world = make_valid_world();
+    world.npcs.at("marcus").identity.tool_policy.allowed_items = {"missing_item"};
+    world.npcs.at("marcus").identity.tool_policy.allowed_facts = {"missing_fact"};
+    world.npcs.at("marcus").identity.tool_policy.allowed_flags = {"missing_flag"};
+    world.npcs.at("marcus").identity.tool_policy.allowed_locations = {"missing_location"};
+
+    auto report = validate_world(world);
+
+    EXPECT_FALSE(report.ok);
+    EXPECT_TRUE(has_error_containing(report, "allowed_items references missing item"));
+    EXPECT_TRUE(has_error_containing(report, "allowed_facts references missing fact"));
+    EXPECT_TRUE(has_error_containing(report, "allowed_flags references missing flag"));
+    EXPECT_TRUE(has_error_containing(report, "allowed_locations references missing location"));
+}
+
 } // namespace chronicle

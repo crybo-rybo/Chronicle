@@ -2,9 +2,27 @@
 #include "engine/game_engine.hpp"
 #include "mocks/mock_agent.hpp"
 #include "rendering/renderer.hpp"
+#include <filesystem>
 #include <gtest/gtest.h>
 
 namespace chronicle {
+
+namespace {
+
+std::filesystem::path fixture_root() {
+    return std::filesystem::path(FIXTURES_DIR);
+}
+
+WorldFileSet fixture_world_files() {
+    auto root = fixture_root();
+    return WorldFileSet{.world = root / "world.json",
+                        .npcs = root / "npcs.json",
+                        .facts = root / "facts.json",
+                        .flags = root / "flags.json",
+                        .events = root / "events.json"};
+}
+
+} // namespace
 
 // ---------------------------------------------------------------------------
 // Test renderer that captures errors
@@ -49,8 +67,9 @@ class AgentFailureTest : public ::testing::Test {
         auto renderer = std::make_unique<ErrorCapturingRenderer>();
         renderer_ptr = renderer.get();
 
-        engine = std::make_unique<GameEngine>(std::string(FIXTURES_DIR) + "/config.json",
-                                              FIXTURES_DIR, std::move(renderer), std::move(pool));
+        engine = std::make_unique<GameEngine>((fixture_root() / "config.json").string(),
+                                              fixture_world_files(), std::move(renderer),
+                                              std::move(pool));
     }
 
     void start_conversation() {

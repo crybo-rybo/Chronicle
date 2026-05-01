@@ -106,15 +106,15 @@ std::string format_params(const std::map<std::string, std::string> &params) {
 
 } // namespace
 
-GameEngine::GameEngine(const std::string &config_path, const std::string &data_dir,
+GameEngine::GameEngine(const std::string &config_path, const WorldFileSet &world_files,
                        std::unique_ptr<Renderer> renderer, std::unique_ptr<NpcAgentPool> agent_pool)
-    : config_(Config::load(config_path)), world_(load_world(data_dir)), parser_(config_path),
+    : config_(Config::load(config_path)), world_(load_world(world_files)), parser_(config_path),
       renderer_(std::move(renderer)),
       save_system_(config_.save_directory.empty() ? "saves" : config_.save_directory),
       agent_pool_(std::move(agent_pool)) {
 
     logging::write(logging::Level::Info, "engine",
-                   "loaded config=" + config_path + " data_dir=" + data_dir +
+                   "loaded config=" + config_path + " world=" + world_files.world.string() +
                        " locations=" + std::to_string(world_.locations.size()) +
                        " npcs=" + std::to_string(world_.npcs.size()) +
                        " items=" + std::to_string(world_.items.size()));

@@ -1,4 +1,5 @@
 #include "entities/world_loader.hpp"
+#include <filesystem>
 #include <gtest/gtest.h>
 
 namespace chronicle {
@@ -7,8 +8,17 @@ namespace chronicle {
 // Shared fixture load (used by most tests)
 // ---------------------------------------------------------------------------
 
+static WorldFileSet fixture_file_set() {
+    auto root = std::filesystem::path(FIXTURES_DIR);
+    return WorldFileSet{.world = root / "world.json",
+                        .npcs = root / "npcs.json",
+                        .facts = root / "facts.json",
+                        .flags = root / "flags.json",
+                        .events = root / "events.json"};
+}
+
 static World load_test_world() {
-    return load_world(FIXTURES_DIR);
+    return load_world(fixture_file_set());
 }
 
 // ---------------------------------------------------------------------------
@@ -81,7 +91,24 @@ TEST(WorldLoaderTest, ClockInitializedToDefaults) {
 // ---------------------------------------------------------------------------
 
 TEST(WorldLoaderTest, MissingFileThrows) {
-    EXPECT_THROW(load_world("/nonexistent/path"), std::runtime_error);
+    auto files = fixture_file_set();
+    files.world = std::filesystem::path(FIXTURES_DIR) / "missing_world.json";
+
+    EXPECT_THROW(load_world(files), std::runtime_error);
+}
+
+TEST(WorldLoaderTest, MissingFactsFileThrows) {
+    auto files = fixture_file_set();
+    files.facts = std::filesystem::path(FIXTURES_DIR) / "missing_facts.json";
+
+    EXPECT_THROW(load_world(files), std::runtime_error);
+}
+
+TEST(WorldLoaderTest, MissingFlagsFileThrows) {
+    auto files = fixture_file_set();
+    files.flags = std::filesystem::path(FIXTURES_DIR) / "missing_flags.json";
+
+    EXPECT_THROW(load_world(files), std::runtime_error);
 }
 
 } // namespace chronicle

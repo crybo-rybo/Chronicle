@@ -1,18 +1,19 @@
 # Chronicle
 
-Chronicle is a single-player, terminal-based text adventure game written in C++23 where every NPC interaction is driven by a local LLM through the Zoo-Keeper framework. NPCs reason about the world, remember past encounters, form opinions, and take actions through tool calling. The game runs entirely offline with zero cloud dependency.
+Chronicle is a bounded scenario SDK/runtime for offline, LLM-driven NPC mystery and social-sim text adventures written in C++23. Creators author JSON scenario packages; Chronicle supplies the runtime, local Zoo-Keeper integration, validation, prompt assembly, save/load, and strict tool/mutation pipeline.
 
 ## Vision
 
-A portfolio piece demonstrating systems-level C++ design, applied LLM integration, and complete application architecture.
+A portfolio piece and open-source framework demonstrating systems-level C++ design, applied LLM integration, deterministic state management, and a small but useful authoring surface for AI-driven text adventure scenarios.
 
 ## Architecture Overview
 
-- **Engine layer** (`src/engine/`): GameEngine orchestrator, command parser, world state, clock, event system
+- **Engine layer** (`src/engine/`): CLI parser, GameEngine orchestrator, command parser, world state, clock, event system
 - **Entity layer** (`src/entities/`): NPC, Player, Item, Location data structures
 - **AI layer** (`src/ai/`): Zoo-Keeper agent wrapper, prompt builder, tool registry, response handler, memory extractor
 - **Rendering layer** (`src/rendering/`): Abstract renderer interface, terminal renderer (MVP), TUI renderer (stretch goal)
 - **Persistence layer** (`src/persistence/`): Save/load system with versioned schemas
+- **Scenario package layer** (`data/`, `scenario.json`): Author-facing JSON package format and validation
 
 ### Key Design Invariants
 
@@ -20,6 +21,7 @@ A portfolio piece demonstrating systems-level C++ design, applied LLM integratio
 2. **AI layer reads-only**: AI reads World to build prompts but never directly mutates it.
 3. **Deterministic state, emergent behavior**: World is typed C++ structs; LLM influences only through validated tool calls.
 4. **Graceful degradation**: If inference fails/hangs, game remains playable; NPCs fall back to idle behavior.
+5. **Bounded framework surface**: V1 public API is CLI + scenario schema, not stable C++ APIs.
 
 ## Tech Stack
 
@@ -34,12 +36,12 @@ A portfolio piece demonstrating systems-level C++ design, applied LLM integratio
 
 Full design documents are stored outside this repository. See `.secret/local_paths.md` for their location on your local machine. The `.secret/` directory is gitignored and contains machine-specific paths.
 
-The design docs cover:
+The historical design docs cover:
 - Foundation design (game mechanics, core gameplay loop, setting)
 - Deep technical detail (all data structures, AI integration, threading model)
 - Sprint-by-sprint implementation roadmap (8+ sprints)
 
-When starting a new session, please start by reading the design documents.
+When starting a new session, read the design documents and `docs/chronicle-scenario-sdk-pivot.md`. The pivot doc supersedes older language that described Chronicle as only a single game.
 
 ## Development Conventions
 

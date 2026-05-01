@@ -75,9 +75,22 @@ class IntegrationRenderer : public Renderer {
     void clear_input_line() override {}
 };
 
+std::filesystem::path sample_root() {
+    return std::filesystem::path(CHRONICLE_SOURCE_DIR) / "data";
+}
+
+WorldFileSet sample_world_files() {
+    auto root = sample_root();
+    return WorldFileSet{.world = root / "world.json",
+                        .npcs = root / "npcs.json",
+                        .facts = root / "facts.json",
+                        .flags = root / "flags.json",
+                        .events = root / "events.json"};
+}
+
 std::filesystem::path write_integration_config(std::string_view model_path) {
-    debug_log("write_integration_config: loading base data/config.json");
-    Config config = Config::load(std::string(CHRONICLE_SOURCE_DIR) + "/data/config.json");
+    debug_log("write_integration_config: loading base scenario config.json");
+    Config config = Config::load(sample_root() / "config.json");
     config.model_path = std::string(model_path);
     config.n_gpu_layers = -1;
     config.max_response_tokens = 64;
@@ -111,7 +124,7 @@ TEST(NpcConversationIntegrationTest, RealAgentQueuesGiveItemMutation) {
     debug_log("RealAgentQueuesGiveItemMutation: loading temp config");
     Config config = Config::load(config_path);
     debug_log("RealAgentQueuesGiveItemMutation: loading world");
-    auto world = load_world(std::string(CHRONICLE_SOURCE_DIR) + "/data");
+    auto world = load_world(sample_world_files());
 
     debug_log("RealAgentQueuesGiveItemMutation: before zoo::Agent::create");
     zoo::ModelConfig model_config;
@@ -129,17 +142,16 @@ TEST(NpcConversationIntegrationTest, RealAgentQueuesGiveItemMutation) {
     registry.register_tools(**result, "marcus");
     debug_log("RealAgentQueuesGiveItemMutation: after ToolRegistry::register_tools");
 
-    std::string prompt =
-        "You are Marcus. Call the give_item tool with item_id cargo_manifest. "
-        "Do not call any other mutation tool.";
+    std::string prompt = "You are Marcus. Call the give_item tool with item_id cargo_manifest. "
+                         "Do not call any other mutation tool.";
     debug_log("RealAgentQueuesGiveItemMutation: before agent->chat");
     std::size_t token_callbacks = 0;
     auto handle = (*result)->chat(prompt, {}, [&](std::string_view token) {
         ++token_callbacks;
         if (token_callbacks <= 5 || token_callbacks % 16 == 0) {
             debug_log("RealAgentQueuesGiveItemMutation: streaming callback token count=" +
-                      std::to_string(token_callbacks) + ", fragment_size=" +
-                      std::to_string(token.size()));
+                      std::to_string(token_callbacks) +
+                      ", fragment_size=" + std::to_string(token.size()));
         }
     });
     debug_log("RealAgentQueuesGiveItemMutation: chat queued, awaiting result");
@@ -176,8 +188,7 @@ TEST(NpcConversationIntegrationTest, RealGameEngineDialogueAppliesGiveItemMutati
     auto renderer = std::make_unique<IntegrationRenderer>();
     auto *renderer_ptr = renderer.get();
     debug_log("RealGameEngineDialogueAppliesGiveItemMutation: before GameEngine ctor");
-    GameEngine engine(config_path.string(), std::string(CHRONICLE_SOURCE_DIR) + "/data",
-                      std::move(renderer));
+    GameEngine engine(config_path.string(), sample_world_files(), std::move(renderer));
     debug_log("RealGameEngineDialogueAppliesGiveItemMutation: after GameEngine ctor");
 
     ParsedCommand talk;
@@ -191,9 +202,8 @@ TEST(NpcConversationIntegrationTest, RealGameEngineDialogueAppliesGiveItemMutati
 
     ParsedCommand dialogue;
     dialogue.verb = CommandVerb::Dialogue;
-    dialogue.raw_input =
-        "For this integration test, call exactly one tool: give_item with item_id "
-        "cargo_manifest. Do not call any other mutation tool.";
+    dialogue.raw_input = "For this integration test, call exactly one tool: give_item with item_id "
+                         "cargo_manifest. Do not call any other mutation tool.";
     dialogue.primary_arg = dialogue.raw_input;
     debug_log("RealGameEngineDialogueAppliesGiveItemMutation: before dialogue command");
     engine.handle_command(dialogue);
@@ -201,8 +211,7 @@ TEST(NpcConversationIntegrationTest, RealGameEngineDialogueAppliesGiveItemMutati
 
     const auto &world = engine.world();
     EXPECT_TRUE(std::ranges::contains(world.player.inventory, "cargo_manifest"));
-    EXPECT_FALSE(std::ranges::contains(world.npcs.at("marcus").state.inventory,
-                                       "cargo_manifest"));
+    EXPECT_FALSE(std::ranges::contains(world.npcs.at("marcus").state.inventory, "cargo_manifest"));
     // The model may hit Zoo-Keeper's tool iteration limit if it calls extra tools
     // beyond give_item. The critical assertion is that give_item was applied.
     for (const auto &err : renderer_ptr->errors) {

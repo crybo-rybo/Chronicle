@@ -467,4 +467,73 @@ TEST_F(ToolRegistryTest, InspectItemDoesNotEnqueue) {
     EXPECT_TRUE(reg.pending_mutations().empty());
 }
 
+// ---------------------------------------------------------------------------
+// Per-NPC tool policy tests
+// ---------------------------------------------------------------------------
+
+TEST_F(ToolRegistryTest, ToolPolicyRejectsDisallowedToolBeforeWorldValidation) {
+    world.npcs.at("marcus").identity.tool_policy.allowed_tools = {"take_item"};
+
+    ToolRegistry reg(world);
+    auto result = reg.validate_give_item("marcus", "cargo_manifest");
+
+    ASSERT_TRUE(std::holds_alternative<std::string>(result));
+    EXPECT_NE(std::get<std::string>(result).find("not allowed"), std::string::npos);
+}
+
+TEST_F(ToolRegistryTest, ToolPolicyAllowsListedTool) {
+    world.npcs.at("marcus").identity.tool_policy.allowed_tools = {"give_item"};
+
+    ToolRegistry reg(world);
+    auto result = reg.validate_give_item("marcus", "cargo_manifest");
+
+    ASSERT_TRUE(std::holds_alternative<MutationRequest>(result));
+}
+
+TEST_F(ToolRegistryTest, ToolPolicyRejectsItemOutsideScope) {
+    world.npcs.at("marcus").identity.tool_policy.allowed_tools = {"give_item"};
+    world.npcs.at("marcus").identity.tool_policy.allowed_items = {"cargo_manifest"};
+
+    ToolRegistry reg(world);
+    auto result = reg.validate_give_item("marcus", "tavern_key");
+
+    ASSERT_TRUE(std::holds_alternative<std::string>(result));
+    EXPECT_NE(std::get<std::string>(result).find("not allowed to use item"), std::string::npos);
+}
+
+TEST_F(ToolRegistryTest, ToolPolicyRejectsFactOutsideScope) {
+    world.npcs.at("marcus").identity.tool_policy.allowed_tools = {"reveal_knowledge"};
+    world.npcs.at("marcus").identity.tool_policy.allowed_facts = {"fact_stolen_cargo"};
+
+    ToolRegistry reg(world);
+    auto result = reg.validate_reveal_knowledge("marcus", "fact_thief_identity");
+
+    ASSERT_TRUE(std::holds_alternative<std::string>(result));
+    EXPECT_NE(std::get<std::string>(result).find("not allowed to use fact"), std::string::npos);
+}
+
+TEST_F(ToolRegistryTest, ToolPolicyRejectsLocationOutsideScope) {
+    world.npcs.at("marcus").identity.tool_policy.allowed_tools = {"move_self"};
+    world.npcs.at("marcus").identity.tool_policy.allowed_locations = {"tavern"};
+
+    ToolRegistry reg(world);
+    auto result = reg.validate_move_npc("marcus", "market_square");
+
+    ASSERT_TRUE(std::holds_alternative<std::string>(result));
+    EXPECT_NE(std::get<std::string>(result).find("not allowed to use location"), std::string::npos);
+}
+
+TEST_F(ToolRegistryTest, ToolPolicyRejectsFlagOutsideScopeOnToolPath) {
+    world.flags["secret_opened"] = false;
+    world.npcs.at("marcus").identity.tool_policy.allowed_tools = {"set_flag"};
+    world.npcs.at("marcus").identity.tool_policy.allowed_flags = {"secret_opened"};
+
+    ToolRegistry reg(world);
+    reg.set_active_npc_id("marcus");
+    auto result = reg.handle_set_flag_tool("intro_complete", "false");
+
+    EXPECT_NE(result.find("not allowed to use flag"), std::string::npos);
+    EXPECT_TRUE(reg.pending_mutations().empty());
+}
+
 } // namespace chronicle
