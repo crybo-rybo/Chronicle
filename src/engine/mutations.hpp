@@ -111,15 +111,55 @@ bool apply_add_memory(World &world, const MutationRequest &mutation);
 bool apply_set_flag(World &world, const MutationRequest &mutation);
 
 /// @brief Move the player to a connected location.
+///
+/// @details Updates @ref Player::current_location.  The validator supplies
+/// both @c location_id and @c direction; only @c location_id is required for
+/// application.  Returns @c false if the destination no longer exists.
+///
+/// @param world    The world to mutate.
+/// @param mutation Must have @c type == @c PlayerMove and
+///                 @c params["location_id"] set to an existing location ID.
+/// @return @c true if the player's location was updated.
 bool apply_player_move(World &world, const MutationRequest &mutation);
 
 /// @brief Take an item from the current location into the player's inventory.
+///
+/// @details Removes @c item_id from the current location's item list and adds
+/// it to @ref Player::inventory.  Returns @c false if the player is no longer
+/// in a valid location, the item no longer exists, or another mutation already
+/// removed the item from the room.
+///
+/// @param world    The world to mutate.
+/// @param mutation Must have @c type == @c PlayerTake and
+///                 @c params["item_id"] set to an existing item ID.
+/// @return @c true if ownership changed.
 bool apply_player_take(World &world, const MutationRequest &mutation);
 
 /// @brief Drop an item from the player's inventory into the current location.
+///
+/// @details Removes @c item_id from @ref Player::inventory and places it in
+/// the current location if the location still exists.  Key-item restrictions
+/// are enforced by the validator; this function still returns @c false if the
+/// player no longer owns the item.
+///
+/// @param world    The world to mutate.
+/// @param mutation Must have @c type == @c PlayerDrop and
+///                 @c params["item_id"] set to an existing item ID.
+/// @return @c true if the item left the player's inventory.
 bool apply_player_drop(World &world, const MutationRequest &mutation);
 
 /// @brief Place an item into a location (system/event use).
+///
+/// @details Places an existing registry item into a location only when that
+/// item is currently unowned by the player, all NPCs, and all locations.  This
+/// keeps @ref World::items as the canonical registry while preserving the
+/// single-owner invariant.
+///
+/// @param world    The world to mutate.
+/// @param mutation Must have @c type == @c SpawnItem,
+///                 @c params["item_id"] set to an existing item ID, and
+///                 @c params["location_id"] set to an existing location ID.
+/// @return @c true if the item was placed in the location.
 bool apply_spawn_item(World &world, const MutationRequest &mutation);
 
 /// @brief Dispatch a @ref MutationRequest to the appropriate apply function.

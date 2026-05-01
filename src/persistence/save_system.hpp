@@ -23,8 +23,10 @@
  * are rejected and @c std::nullopt is returned.
  *
  * ### What is NOT saved
- * Zoo-Keeper agent state (KV cache) is intentionally not saved.  Agents are
- * re-created fresh on load; the NPC memory system (which IS saved as part of
+ * Runtime-only objects are intentionally excluded: Zoo-Keeper agents and KV
+ * cache, agent history, active conversation handles, pending mutation queues,
+ * token queues, renderer state, and open input streams.  Agents are re-created
+ * fresh on load; the NPC memory system (which IS saved as part of
  * @ref NpcState) provides conversation continuity.
  */
 
@@ -46,13 +48,13 @@ struct SaveData {
     static constexpr int kCurrentSchemaVersion = 1;
 
     int schema_version = kCurrentSchemaVersion; ///< Version read from the file.
-    World world;                                 ///< The deserialised world state.
+    World world;                                ///< The deserialised world state.
 };
 
 /// @brief Metadata about a single save slot, used for listing saves.
 struct SaveSlotInfo {
-    int slot;                ///< Slot number.
-    std::string timestamp;   ///< ISO-8601 timestamp string from the save metadata.
+    int slot;                  ///< Slot number.
+    std::string timestamp;     ///< ISO-8601 timestamp string from the save metadata.
     std::string location_name; ///< Display name of the player's location at save time.
     std::string clock_display; ///< Formatted clock string at save time (e.g. "Afternoon, Day 2").
 };
@@ -80,7 +82,10 @@ class SaveSystem {
     ///
     /// @details Returns @c std::nullopt if the slot file does not exist, cannot
     /// be opened, fails to parse as JSON, or has a schema version that does not
-    /// match @ref SaveData::kCurrentSchemaVersion.
+    /// match @ref SaveData::kCurrentSchemaVersion.  This function only
+    /// deserializes durable data; @ref GameEngine is responsible for clearing
+    /// runtime-only state such as active conversations, token queues, and
+    /// pending mutations after replacing its world.
     ///
     /// @param slot The slot number to load from.
     /// @return The loaded @ref SaveData, or @c std::nullopt on any failure.

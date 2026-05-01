@@ -76,8 +76,14 @@ void from_json(const nlohmann::json &j, Condition &c);
 /// the event system itself.  The event system only evaluates conditions and
 /// returns the list of actions that should run.
 ///
-/// Common action types: @c "move_npc", @c "set_flag", @c "spawn_item",
-/// @c "narrate", @c "end_game".  Parameters are action-type-specific.
+/// Supported action types and parameters:
+/// - @c "move_npc": @c npc_id, @c location_id.
+/// - @c "set_flag": @c flag_id, @c value (@c "true" or @c "false").
+/// - @c "spawn_item": @c item_id, @c location_id.
+/// - @c "narrate": @c text.
+/// - @c "end_game": no required parameters.
+///
+/// The validator checks action names and required references before gameplay.
 struct EventAction {
     /// Identifies which action to perform (e.g. @c "move_npc").
     std::string type;

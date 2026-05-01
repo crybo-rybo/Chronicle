@@ -41,8 +41,8 @@ Automated integration tests that need a model use the separate
 
 ### Local Model Paths
 
-The tracked `config/default.json` keeps `model_path` empty. Machine-local model
-paths belong in one of:
+The bundled sample scenario keeps `data/config.json` with `model_path` empty.
+Machine-local model paths belong in one of:
 
 - `.secret/` (gitignored) — e.g. `.secret/local_config.json`
 - Environment variables: `ZOO_MODEL_PATH` / `ZOO_INTEGRATION_MODEL`
