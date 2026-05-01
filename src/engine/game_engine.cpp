@@ -106,11 +106,6 @@ std::string format_params(const std::map<std::string, std::string> &params) {
 
 } // namespace
 
-GameEngine::GameEngine(const std::string &config_path, const std::string &data_dir,
-                       std::unique_ptr<Renderer> renderer, std::unique_ptr<NpcAgentPool> agent_pool)
-    : GameEngine(config_path, default_world_file_set(data_dir), std::move(renderer),
-                 std::move(agent_pool)) {}
-
 GameEngine::GameEngine(const std::string &config_path, const WorldFileSet &world_files,
                        std::unique_ptr<Renderer> renderer, std::unique_ptr<NpcAgentPool> agent_pool)
     : config_(Config::load(config_path)), world_(load_world(world_files)), parser_(config_path),

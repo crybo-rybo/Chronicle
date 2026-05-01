@@ -73,6 +73,8 @@ A scenario package is a directory containing `scenario.json` plus JSON files for
 }
 ```
 
+Manifest file paths must be relative paths that stay inside the package directory. Chronicle v1 treats all six files as required package inputs.
+
 NPCs may declare per-character tool policies in `npcs.json`. `allowed_tools` is the fixed v1 tool palette; scoped lists restrict which authored IDs the NPC may touch. Empty scoped lists mean no additional ID restriction.
 
 Supported NPC tools: `say`, `give_item`, `take_item`, `update_mood`, `update_trust`, `move_self`, `reveal_knowledge`, `remember`, `set_flag`, `inspect_item`.

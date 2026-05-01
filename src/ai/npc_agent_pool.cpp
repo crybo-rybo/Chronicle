@@ -93,7 +93,7 @@ NpcAgentPool NpcAgentPool::from_config(const Config &config) {
     if (config.model_path.empty()) {
         throw std::runtime_error(
             "NpcAgentPool::from_config: model_path is empty. "
-            "Set model_path in config/default.json to a valid GGUF model file.");
+            "Set model_path in the scenario config file to a valid GGUF model file.");
     }
 
     install_zoo_log_bridge_if_enabled();

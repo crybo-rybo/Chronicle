@@ -164,8 +164,6 @@ bool is_direction_word(const std::string &word) {
 
 } // namespace
 
-CommandParser::CommandParser() : CommandParser("config/default.json") {}
-
 CommandParser::CommandParser(std::filesystem::path config_path)
     : verb_table_(load_verb_table(config_path)) {}
 

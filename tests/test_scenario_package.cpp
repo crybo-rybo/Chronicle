@@ -27,8 +27,9 @@ void copy_fixture_files(const std::filesystem::path &dir) {
 }
 
 void write_manifest(const std::filesystem::path &dir, int schema_version = 1,
-                    std::string_view missing_file = "") {
-    std::string world_file = missing_file.empty() ? "world.json" : std::string(missing_file);
+                    std::string_view world_file_override = "") {
+    std::string world_file =
+        world_file_override.empty() ? "world.json" : std::string(world_file_override);
     write_file(dir / "scenario.json", "{\n"
                                       "  \"id\": \"test_scenario\",\n"
                                       "  \"name\": \"Test Scenario\",\n"
@@ -107,6 +108,28 @@ TEST(ScenarioPackageTest, ValidationReportsMissingReferencedFile) {
 
     EXPECT_FALSE(report.ok);
     EXPECT_TRUE(has_error_containing(report, "missing_world.json"));
+}
+
+TEST(ScenarioPackageTest, ValidationRejectsAbsoluteManifestPaths) {
+    auto dir = make_temp_scenario_dir("absolute_manifest_path");
+    copy_fixture_files(dir);
+    write_manifest(dir, 1, (dir / "world.json").string());
+
+    auto report = validate_scenario_package(dir);
+
+    EXPECT_FALSE(report.ok);
+    EXPECT_TRUE(has_error_containing(report, "relative"));
+}
+
+TEST(ScenarioPackageTest, ValidationRejectsManifestPathsOutsidePackage) {
+    auto dir = make_temp_scenario_dir("escaped_manifest_path");
+    copy_fixture_files(dir);
+    write_manifest(dir, 1, "../world.json");
+
+    auto report = validate_scenario_package(dir);
+
+    EXPECT_FALSE(report.ok);
+    EXPECT_TRUE(has_error_containing(report, "package"));
 }
 
 TEST(ScenarioPackageTest, ValidatesBundledSampleScenario) {

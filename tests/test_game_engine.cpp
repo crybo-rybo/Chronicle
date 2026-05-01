@@ -86,6 +86,36 @@ class FakeDialogueAgent : public AgentInterface {
     }
 };
 
+namespace {
+
+std::filesystem::path fixture_root() {
+    return std::filesystem::path(FIXTURES_DIR);
+}
+
+WorldFileSet fixture_world_files() {
+    auto root = fixture_root();
+    return WorldFileSet{.world = root / "world.json",
+                        .npcs = root / "npcs.json",
+                        .facts = root / "facts.json",
+                        .flags = root / "flags.json",
+                        .events = root / "events.json"};
+}
+
+std::filesystem::path sample_root() {
+    return std::filesystem::path(CHRONICLE_SOURCE_DIR) / "data";
+}
+
+WorldFileSet sample_world_files() {
+    auto root = sample_root();
+    return WorldFileSet{.world = root / "world.json",
+                        .npcs = root / "npcs.json",
+                        .facts = root / "facts.json",
+                        .flags = root / "flags.json",
+                        .events = root / "events.json"};
+}
+
+} // namespace
+
 class GameEngineTest : public ::testing::Test {
   protected:
     std::unique_ptr<MockEngineRenderer> mock_renderer;
@@ -94,8 +124,8 @@ class GameEngineTest : public ::testing::Test {
 };
 
 TEST_F(GameEngineTest, HandlesGoCommandValid) {
-    GameEngine engine(std::string(CHRONICLE_SOURCE_DIR) + "/data/config.json",
-                      std::string(CHRONICLE_SOURCE_DIR) + "/data", std::move(mock_renderer));
+    GameEngine engine((sample_root() / "config.json").string(), sample_world_files(),
+                      std::move(mock_renderer));
 
     ParsedCommand cmd;
     cmd.verb = CommandVerb::Go;
@@ -108,7 +138,7 @@ TEST_F(GameEngineTest, HandlesGoCommandValid) {
 
 TEST_F(GameEngineTest, GoInvalidExitRendersError) {
     auto *renderer = mock_renderer.get();
-    GameEngine engine(std::string(FIXTURES_DIR) + "/config.json", FIXTURES_DIR,
+    GameEngine engine((fixture_root() / "config.json").string(), fixture_world_files(),
                       std::move(mock_renderer));
 
     ParsedCommand cmd;
@@ -122,7 +152,7 @@ TEST_F(GameEngineTest, GoInvalidExitRendersError) {
 
 TEST_F(GameEngineTest, TakeAddsItemToInventoryAndRemovesFromLocation) {
     auto *renderer = mock_renderer.get();
-    GameEngine engine(std::string(FIXTURES_DIR) + "/config.json", FIXTURES_DIR,
+    GameEngine engine((fixture_root() / "config.json").string(), fixture_world_files(),
                       std::move(mock_renderer));
 
     ParsedCommand cmd;
@@ -136,7 +166,7 @@ TEST_F(GameEngineTest, TakeAddsItemToInventoryAndRemovesFromLocation) {
 }
 
 TEST_F(GameEngineTest, DropMovesItemFromInventoryBackToLocation) {
-    GameEngine engine(std::string(FIXTURES_DIR) + "/config.json", FIXTURES_DIR,
+    GameEngine engine((fixture_root() / "config.json").string(), fixture_world_files(),
                       std::move(mock_renderer));
 
     ParsedCommand take;
@@ -155,7 +185,7 @@ TEST_F(GameEngineTest, DropMovesItemFromInventoryBackToLocation) {
 
 TEST_F(GameEngineTest, ExamineVisibleLocationItemRendersItem) {
     auto *renderer = mock_renderer.get();
-    GameEngine engine(std::string(FIXTURES_DIR) + "/config.json", FIXTURES_DIR,
+    GameEngine engine((fixture_root() / "config.json").string(), fixture_world_files(),
                       std::move(mock_renderer));
 
     ParsedCommand cmd;
@@ -171,7 +201,7 @@ TEST_F(GameEngineTest, SaveAndLoadDefaultSlotRoundtripsWorld) {
     auto save_dir = std::filesystem::path("/tmp/chronicle_saves");
     std::filesystem::remove(save_dir / "slot_1.json");
 
-    GameEngine engine(std::string(FIXTURES_DIR) + "/config.json", FIXTURES_DIR,
+    GameEngine engine((fixture_root() / "config.json").string(), fixture_world_files(),
                       std::move(mock_renderer));
 
     ParsedCommand take;
@@ -202,9 +232,8 @@ TEST_F(GameEngineTest, DialogueUsesCurrentConversationNpcAndStreamsTokens) {
     auto fake_agent = std::make_unique<FakeDialogueAgent>();
     auto *fake_agent_ptr = fake_agent.get();
     auto pool = std::make_unique<NpcAgentPool>(std::move(fake_agent));
-    GameEngine engine(std::string(CHRONICLE_SOURCE_DIR) + "/data/config.json",
-                      std::string(CHRONICLE_SOURCE_DIR) + "/data", std::move(renderer),
-                      std::move(pool));
+    GameEngine engine((sample_root() / "config.json").string(), sample_world_files(),
+                      std::move(renderer), std::move(pool));
 
     ParsedCommand talk;
     talk.verb = CommandVerb::Talk;
@@ -231,9 +260,8 @@ TEST_F(GameEngineTest, DialogueInjectsDynamicContextAsSystemMessageAndKeepsUserT
     auto fake_agent = std::make_unique<FakeDialogueAgent>();
     auto *fake_agent_ptr = fake_agent.get();
     auto pool = std::make_unique<NpcAgentPool>(std::move(fake_agent));
-    GameEngine engine(std::string(CHRONICLE_SOURCE_DIR) + "/data/config.json",
-                      std::string(CHRONICLE_SOURCE_DIR) + "/data", std::move(renderer),
-                      std::move(pool));
+    GameEngine engine((sample_root() / "config.json").string(), sample_world_files(),
+                      std::move(renderer), std::move(pool));
 
     ParsedCommand talk;
     talk.verb = CommandVerb::Talk;
@@ -260,8 +288,8 @@ TEST_F(GameEngineTest, DialogueInjectsDynamicContextAsSystemMessageAndKeepsUserT
 
 TEST_F(GameEngineTest, DialogueExitClearsConversation) {
     auto *renderer = mock_renderer.get();
-    GameEngine engine(std::string(CHRONICLE_SOURCE_DIR) + "/data/config.json",
-                      std::string(CHRONICLE_SOURCE_DIR) + "/data", std::move(mock_renderer));
+    GameEngine engine((sample_root() / "config.json").string(), sample_world_files(),
+                      std::move(mock_renderer));
 
     ParsedCommand talk;
     talk.verb = CommandVerb::Talk;
@@ -280,7 +308,7 @@ TEST_F(GameEngineTest, DialogueExitClearsConversation) {
 }
 
 TEST_F(GameEngineTest, HandlesQuitCommand) {
-    GameEngine engine(std::string(FIXTURES_DIR) + "/config.json", FIXTURES_DIR,
+    GameEngine engine((fixture_root() / "config.json").string(), fixture_world_files(),
                       std::move(mock_renderer));
 
     ParsedCommand cmd;
@@ -295,9 +323,8 @@ TEST_F(GameEngineTest, TalkCommandInitializesAgent) {
     auto fake_agent = std::make_unique<FakeDialogueAgent>();
     auto *fake_agent_ptr = fake_agent.get();
     auto pool = std::make_unique<NpcAgentPool>(std::move(fake_agent));
-    GameEngine engine(std::string(CHRONICLE_SOURCE_DIR) + "/data/config.json",
-                      std::string(CHRONICLE_SOURCE_DIR) + "/data", std::move(renderer),
-                      std::move(pool));
+    GameEngine engine((sample_root() / "config.json").string(), sample_world_files(),
+                      std::move(renderer), std::move(pool));
 
     ParsedCommand talk;
     talk.verb = CommandVerb::Talk;
@@ -314,9 +341,8 @@ TEST_F(GameEngineTest, MultiTurnDialogueDoesNotReacquireAgent) {
     auto fake_agent = std::make_unique<FakeDialogueAgent>();
     auto *fake_agent_ptr = fake_agent.get();
     auto pool = std::make_unique<NpcAgentPool>(std::move(fake_agent));
-    GameEngine engine(std::string(CHRONICLE_SOURCE_DIR) + "/data/config.json",
-                      std::string(CHRONICLE_SOURCE_DIR) + "/data", std::move(renderer),
-                      std::move(pool));
+    GameEngine engine((sample_root() / "config.json").string(), sample_world_files(),
+                      std::move(renderer), std::move(pool));
 
     ParsedCommand talk;
     talk.verb = CommandVerb::Talk;
@@ -349,9 +375,8 @@ TEST_F(GameEngineTest, LeaveConversationReleasesAgent) {
     auto fake_agent = std::make_unique<FakeDialogueAgent>();
     auto *fake_agent_ptr = fake_agent.get();
     auto pool = std::make_unique<NpcAgentPool>(std::move(fake_agent));
-    GameEngine engine(std::string(CHRONICLE_SOURCE_DIR) + "/data/config.json",
-                      std::string(CHRONICLE_SOURCE_DIR) + "/data", std::move(renderer),
-                      std::move(pool));
+    GameEngine engine((sample_root() / "config.json").string(), sample_world_files(),
+                      std::move(renderer), std::move(pool));
 
     ParsedCommand talk;
     talk.verb = CommandVerb::Talk;

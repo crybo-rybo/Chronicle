@@ -23,7 +23,7 @@ A package directory contains `scenario.json`, plus JSON files for config, world,
 - `files.config`, `files.world`, `files.npcs`, `files.facts`, `files.flags`, and `files.events`
 - optional string metadata
 
-All file paths are resolved relative to the package directory unless absolute.
+All file paths are relative to the package directory and must stay inside it. Chronicle v1 treats the config, world, NPC, facts, flags, and events files as required package inputs.
 
 ## Tool Policy
 

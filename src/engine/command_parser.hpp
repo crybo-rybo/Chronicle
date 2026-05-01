@@ -75,11 +75,6 @@ struct ParsedCommand {
 /// receives special handling to extract @c "item on target" syntax.
 class CommandParser {
   public:
-    /// @brief Default constructor.  Loads the alias table from @c config/default.json.
-    ///
-    /// If the file does not exist, the built-in fallback alias table is used.
-    CommandParser();
-
     /// @brief Construct with an explicit path to the config JSON file.
     ///
     /// @param config_path Path to the config file containing a @c verb_aliases

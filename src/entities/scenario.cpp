@@ -24,13 +24,32 @@ nlohmann::json parse_json_file(const std::filesystem::path &path) {
     }
 }
 
+bool path_is_within(const std::filesystem::path &root, const std::filesystem::path &candidate) {
+    auto root_it = root.begin();
+    auto candidate_it = candidate.begin();
+    for (; root_it != root.end(); ++root_it, ++candidate_it) {
+        if (candidate_it == candidate.end() || *root_it != *candidate_it) {
+            return false;
+        }
+    }
+    return true;
+}
+
 std::filesystem::path resolve_package_path(const std::filesystem::path &root,
-                                           const std::string &path_text) {
+                                           std::string_view label, const std::string &path_text) {
     std::filesystem::path path(path_text);
     if (path.is_absolute()) {
-        return path.lexically_normal();
+        throw std::runtime_error("scenario manifest " + std::string(label) +
+                                 " path must be relative: " + path_text);
     }
-    return (root / path).lexically_normal();
+
+    auto normalized_root = std::filesystem::absolute(root).lexically_normal();
+    auto resolved = (normalized_root / path).lexically_normal();
+    if (!path_is_within(normalized_root, resolved)) {
+        throw std::runtime_error("scenario manifest " + std::string(label) +
+                                 " path must stay inside package: " + path_text);
+    }
+    return resolved;
 }
 
 void add_error(ValidationReport &report, std::string message) {
@@ -68,18 +87,20 @@ ScenarioManifest load_scenario_manifest(const std::filesystem::path &scenario_di
 
 ScenarioPackage load_scenario_package(const std::filesystem::path &scenario_dir) {
     ScenarioPackage package;
-    package.root_dir = scenario_dir.lexically_normal();
+    package.root_dir = std::filesystem::absolute(scenario_dir).lexically_normal();
     package.manifest = load_scenario_manifest(package.root_dir);
-    package.config_path = resolve_package_path(package.root_dir, package.manifest.files.config);
+    package.config_path =
+        resolve_package_path(package.root_dir, "config", package.manifest.files.config);
     package.world_files.world =
-        resolve_package_path(package.root_dir, package.manifest.files.world);
-    package.world_files.npcs = resolve_package_path(package.root_dir, package.manifest.files.npcs);
+        resolve_package_path(package.root_dir, "world", package.manifest.files.world);
+    package.world_files.npcs =
+        resolve_package_path(package.root_dir, "npcs", package.manifest.files.npcs);
     package.world_files.facts =
-        resolve_package_path(package.root_dir, package.manifest.files.facts);
+        resolve_package_path(package.root_dir, "facts", package.manifest.files.facts);
     package.world_files.flags =
-        resolve_package_path(package.root_dir, package.manifest.files.flags);
+        resolve_package_path(package.root_dir, "flags", package.manifest.files.flags);
     package.world_files.events =
-        resolve_package_path(package.root_dir, package.manifest.files.events);
+        resolve_package_path(package.root_dir, "events", package.manifest.files.events);
     return package;
 }
 

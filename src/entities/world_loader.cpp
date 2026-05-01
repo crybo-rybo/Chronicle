@@ -3,7 +3,8 @@
  * @brief Implementation of @ref load_world — assembles a @ref World from JSON data files.
  *
  * @details Reads @c world.json (locations, items, start position), @c npcs.json
- * (NPC identity and initial state), and @c events.json (scripted triggers).
+ * (NPC identity and initial state), @c facts.json, @c flags.json, and
+ * @c events.json (scripted triggers).
  * Entity IDs are injected from JSON map keys before deserialisation, and NPCs
  * are cross-referenced into their starting location NPC lists.
  */
@@ -18,18 +19,6 @@
 #include <stdexcept>
 
 namespace chronicle {
-
-WorldFileSet default_world_file_set(const std::filesystem::path &data_dir) {
-    return WorldFileSet{.world = data_dir / "world.json",
-                        .npcs = data_dir / "npcs.json",
-                        .facts = data_dir / "facts.json",
-                        .flags = data_dir / "flags.json",
-                        .events = data_dir / "events.json"};
-}
-
-World load_world(const std::filesystem::path &data_dir) {
-    return load_world(default_world_file_set(data_dir));
-}
 
 World load_world(const WorldFileSet &files) {
     World world;
@@ -78,23 +67,24 @@ World load_world(const WorldFileSet &files) {
     {
         auto path = files.flags;
         std::ifstream file(path);
-        if (file.is_open()) {
-            nlohmann::json j_flags;
-            try {
-                j_flags = nlohmann::json::parse(file);
-            } catch (const nlohmann::json::parse_error &e) {
-                throw std::runtime_error("load_world: failed to parse " + path.string() + ": " +
-                                         e.what());
-            }
-            if (j_flags.contains("flags")) {
-                for (auto &[key, value] : j_flags.at("flags").items()) {
-                    Flag flag = value.get<Flag>();
-                    flag.id = key;
-                    world.flags[key] = flag.default_value;
-                }
+        if (!file.is_open()) {
+            throw std::runtime_error("load_world: cannot open " + path.string());
+        }
+
+        nlohmann::json j_flags;
+        try {
+            j_flags = nlohmann::json::parse(file);
+        } catch (const nlohmann::json::parse_error &e) {
+            throw std::runtime_error("load_world: failed to parse " + path.string() + ": " +
+                                     e.what());
+        }
+        if (j_flags.contains("flags")) {
+            for (auto &[key, value] : j_flags.at("flags").items()) {
+                Flag flag = value.get<Flag>();
+                flag.id = key;
+                world.flags[key] = flag.default_value;
             }
         }
-        // flags.json is optional — a missing file just means no authored flags.
     }
 
     // -----------------------------------------------------------------------
@@ -103,23 +93,24 @@ World load_world(const WorldFileSet &files) {
     {
         auto path = files.facts;
         std::ifstream file(path);
-        if (file.is_open()) {
-            nlohmann::json j_facts;
-            try {
-                j_facts = nlohmann::json::parse(file);
-            } catch (const nlohmann::json::parse_error &e) {
-                throw std::runtime_error("load_world: failed to parse " + path.string() + ": " +
-                                         e.what());
-            }
-            if (j_facts.contains("facts")) {
-                for (auto &[key, value] : j_facts.at("facts").items()) {
-                    Fact fact = value.get<Fact>();
-                    fact.id = key;
-                    world.facts[key] = std::move(fact);
-                }
+        if (!file.is_open()) {
+            throw std::runtime_error("load_world: cannot open " + path.string());
+        }
+
+        nlohmann::json j_facts;
+        try {
+            j_facts = nlohmann::json::parse(file);
+        } catch (const nlohmann::json::parse_error &e) {
+            throw std::runtime_error("load_world: failed to parse " + path.string() + ": " +
+                                     e.what());
+        }
+        if (j_facts.contains("facts")) {
+            for (auto &[key, value] : j_facts.at("facts").items()) {
+                Fact fact = value.get<Fact>();
+                fact.id = key;
+                world.facts[key] = std::move(fact);
             }
         }
-        // facts.json is optional — a missing file just means no authored facts.
     }
 
     // -----------------------------------------------------------------------

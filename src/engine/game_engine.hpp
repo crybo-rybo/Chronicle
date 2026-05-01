@@ -53,30 +53,6 @@ namespace chronicle {
 /// is intentionally not copyable or movable after construction.
 class GameEngine {
   public:
-    /// @brief Construct and initialise all subsystems.
-    ///
-    /// @details Loads @ref Config from @p config_path and the @ref World from
-    /// @p data_dir, then wires together the renderer, save system, tool
-    /// registry, response handler, and (optionally) the agent pool.
-    ///
-    /// If @p renderer is @c nullptr, a @ref TerminalRenderer is created with
-    /// default settings.  If @p agent_pool is @c nullptr and
-    /// @ref Config::model_path is non-empty, an @ref NpcAgentPool is
-    /// constructed from the config; if model creation fails, the engine falls
-    /// back to stub dialogue output.
-    ///
-    /// @param config_path Path to the JSON configuration file.
-    /// @param data_dir    Directory containing @c world.json, @c npcs.json,
-    ///                    and @c events.json.
-    /// @param renderer    Renderer to use.  Pass @c nullptr for the default
-    ///                    terminal renderer.
-    /// @param agent_pool  Optional pre-built agent pool (used in tests to
-    ///                    inject a mock).  Pass @c nullptr to create from config.
-    /// @throws std::runtime_error if the config or world data cannot be loaded.
-    GameEngine(const std::string &config_path, const std::string &data_dir,
-               std::unique_ptr<Renderer> renderer,
-               std::unique_ptr<NpcAgentPool> agent_pool = nullptr);
-
     /// @brief Construct from explicit scenario world file paths.
     GameEngine(const std::string &config_path, const WorldFileSet &world_files,
                std::unique_ptr<Renderer> renderer,

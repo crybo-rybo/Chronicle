@@ -1,11 +1,10 @@
 /**
  * @file main.cpp
- * @brief Entry point for the Chronicle text adventure game.
+ * @brief Entry point for the Chronicle scenario runtime.
  *
  * @details Bootstraps the runtime and launches the @ref GameEngine.
- * Configuration is loaded from @c config/default.json and world data
- * from the @c data/ directory, both resolved relative to the working
- * directory.  If either path is missing or malformed, the error is
+ * Scenario packages are loaded from @c scenario.json manifests.  If the
+ * manifest, config, or world data is missing or malformed, the error is
  * reported and the process exits with a non-zero status.
  */
 
