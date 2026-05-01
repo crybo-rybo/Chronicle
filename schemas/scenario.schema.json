@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://chronicle.dev/schemas/scenario.schema.json",
+  "title": "Chronicle Scenario Manifest",
+  "description": "Author-facing scenario manifest loaded from scenario.json. Mirrors ScenarioManifest in src/entities/scenario.hpp.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["id", "name", "version", "chronicle_schema_version", "files"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Stable scenario package ID, chosen by the package author.",
+      "minLength": 1
+    },
+    "name": {
+      "type": "string",
+      "description": "Human-readable scenario name.",
+      "minLength": 1
+    },
+    "version": {
+      "type": "string",
+      "description": "Scenario content version, independent of Chronicle's schema version.",
+      "minLength": 1
+    },
+    "chronicle_schema_version": {
+      "type": "integer",
+      "description": "Must match Chronicle's kCurrentScenarioSchemaVersion (currently 1).",
+      "const": 1
+    },
+    "files": {
+      "type": "object",
+      "description": "Relative paths to all package data files. Paths must stay inside the package directory.",
+      "additionalProperties": true,
+      "properties": {
+        "config": { "type": "string", "default": "config.json" },
+        "world": { "type": "string", "default": "world.json" },
+        "npcs": { "type": "string", "default": "npcs.json" },
+        "facts": { "type": "string", "default": "facts.json" },
+        "flags": { "type": "string", "default": "flags.json" },
+        "events": { "type": "string", "default": "events.json" }
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Optional string-to-string metadata such as description, author, or license.",
+      "additionalProperties": { "type": "string" }
+    }
+  }
+}

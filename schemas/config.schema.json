@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://chronicle.dev/schemas/config.schema.json",
+  "title": "Chronicle Runtime Config",
+  "description": "Runtime configuration loaded from config.json. Mirrors Config in src/entities/config.hpp. All fields are optional; missing fields receive struct defaults.",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "model_path": {
+      "type": "string",
+      "description": "Path to the GGUF model file. Empty string disables AI dialogue and falls back to stub output."
+    },
+    "context_size": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 4096
+    },
+    "n_gpu_layers": {
+      "type": "integer",
+      "description": "Number of model layers to offload to GPU. -1 means all layers; 0 forces CPU-only.",
+      "default": -1
+    },
+    "temperature": {
+      "type": "number",
+      "minimum": 0,
+      "default": 0.7
+    },
+    "max_response_tokens": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 512
+    },
+    "turns_per_period": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 5
+    },
+    "total_periods": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 12
+    },
+    "max_memory_tokens": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 800
+    },
+    "max_world_tokens": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 400
+    },
+    "max_history_tokens": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 600
+    },
+    "save_directory": {
+      "type": "string",
+      "description": "Directory where save files are written. Empty string defaults to 'saves' relative to cwd."
+    },
+    "use_tui": {
+      "type": "boolean",
+      "default": false
+    },
+    "use_color": {
+      "type": "boolean",
+      "default": true
+    },
+    "max_tool_iterations": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 5
+    },
+    "mutation_narration_templates": {
+      "type": "object",
+      "description": "Per-mutation narration templates. Keys are MutationRequest::Type strings; values may use {npc}, {item}, {mood}, {location} placeholders. Empty value suppresses narration.",
+      "additionalProperties": { "type": "string" }
+    }
+  }
+}
