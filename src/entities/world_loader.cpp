@@ -19,14 +19,26 @@
 
 namespace chronicle {
 
+WorldFileSet default_world_file_set(const std::filesystem::path &data_dir) {
+    return WorldFileSet{.world = data_dir / "world.json",
+                        .npcs = data_dir / "npcs.json",
+                        .facts = data_dir / "facts.json",
+                        .flags = data_dir / "flags.json",
+                        .events = data_dir / "events.json"};
+}
+
 World load_world(const std::filesystem::path &data_dir) {
+    return load_world(default_world_file_set(data_dir));
+}
+
+World load_world(const WorldFileSet &files) {
     World world;
 
     // -----------------------------------------------------------------------
     // 1. Parse world.json — locations, items, player start
     // -----------------------------------------------------------------------
     {
-        auto path = data_dir / "world.json";
+        auto path = files.world;
         std::ifstream file(path);
         if (!file.is_open()) {
             throw std::runtime_error("load_world: cannot open " + path.string());
@@ -64,7 +76,7 @@ World load_world(const std::filesystem::path &data_dir) {
     // 2. Parse flags.json — narrative flag declarations
     // -----------------------------------------------------------------------
     {
-        auto path = data_dir / "flags.json";
+        auto path = files.flags;
         std::ifstream file(path);
         if (file.is_open()) {
             nlohmann::json j_flags;
@@ -89,7 +101,7 @@ World load_world(const std::filesystem::path &data_dir) {
     // 3. Parse facts.json — authored fact registry
     // -----------------------------------------------------------------------
     {
-        auto path = data_dir / "facts.json";
+        auto path = files.facts;
         std::ifstream file(path);
         if (file.is_open()) {
             nlohmann::json j_facts;
@@ -114,7 +126,7 @@ World load_world(const std::filesystem::path &data_dir) {
     // 4. Parse npcs.json — NPCs and cross-reference with locations
     // -----------------------------------------------------------------------
     {
-        auto path = data_dir / "npcs.json";
+        auto path = files.npcs;
         std::ifstream file(path);
         if (!file.is_open()) {
             throw std::runtime_error("load_world: cannot open " + path.string());
@@ -147,7 +159,7 @@ World load_world(const std::filesystem::path &data_dir) {
     // 5. Parse events.json — event triggers
     // -----------------------------------------------------------------------
     {
-        auto path = data_dir / "events.json";
+        auto path = files.events;
         std::ifstream file(path);
         if (!file.is_open()) {
             throw std::runtime_error("load_world: cannot open " + path.string());

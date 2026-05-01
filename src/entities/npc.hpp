@@ -35,7 +35,12 @@ namespace chronicle {
 /// Uses a sorted constexpr array of string_view to avoid heap allocation at static init
 /// and enable binary search for O(log n) lookup without hashing overhead.
 inline constexpr std::array<std::string_view, 6> kValidMoods = {{
-    "fearful", "friendly", "grieving", "hostile", "neutral", "suspicious",
+    "fearful",
+    "friendly",
+    "grieving",
+    "hostile",
+    "neutral",
+    "suspicious",
 }};
 
 /// @brief Test whether a mood string is in the valid mood vocabulary.
@@ -46,6 +51,53 @@ inline bool is_valid_mood(std::string_view mood) {
     auto it = std::lower_bound(kValidMoods.begin(), kValidMoods.end(), mood);
     return it != kValidMoods.end() && *it == mood;
 }
+
+/// @brief Stable v1 NPC tool palette exposed to scenario authors.
+inline constexpr std::array<std::string_view, 10> kValidNpcTools = {{
+    "give_item",
+    "inspect_item",
+    "move_self",
+    "remember",
+    "reveal_knowledge",
+    "say",
+    "set_flag",
+    "take_item",
+    "update_mood",
+    "update_trust",
+}};
+
+/// @brief Return the default allowlist for an NPC with no explicit tool policy.
+inline std::vector<std::string> default_allowed_npc_tools() {
+    std::vector<std::string> tools;
+    tools.reserve(kValidNpcTools.size());
+    for (auto tool : kValidNpcTools) {
+        tools.emplace_back(tool);
+    }
+    return tools;
+}
+
+/// @brief Test whether a tool string belongs to the built-in v1 NPC tool palette.
+inline bool is_valid_npc_tool(std::string_view tool) {
+    auto it = std::lower_bound(kValidNpcTools.begin(), kValidNpcTools.end(), tool);
+    return it != kValidNpcTools.end() && *it == tool;
+}
+
+/// @brief Per-NPC allowlist controlling which framework tools and IDs the LLM may use.
+///
+/// @details Empty scoped ID lists mean "no additional restriction."  An empty
+/// @c allowed_tools list means the NPC has no tool permissions.
+struct NpcToolPolicy {
+    std::vector<std::string> allowed_tools = default_allowed_npc_tools();
+    std::vector<std::string> allowed_items;
+    std::vector<std::string> allowed_facts;
+    std::vector<std::string> allowed_flags;
+    std::vector<std::string> allowed_locations;
+};
+
+/// @cond INTERNAL
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(NpcToolPolicy, allowed_tools, allowed_items,
+                                                allowed_facts, allowed_flags, allowed_locations)
+/// @endcond
 
 /// @brief Immutable identity data for a single NPC.
 ///
@@ -92,12 +144,15 @@ struct NpcIdentity {
     ///
     /// Defaults to 70 (out of 100).
     int trust_reveal_threshold = 70;
+
+    /// @brief Scenario-authored tool permissions for this NPC.
+    NpcToolPolicy tool_policy;
 };
 
 /// @cond INTERNAL
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(NpcIdentity, id, name, role, personality_summary,
                                                 backstory, secret, goals, knowledge,
-                                                trust_reveal_threshold)
+                                                trust_reveal_threshold, tool_policy)
 /// @endcond
 
 /// @brief Mutable runtime state for a single NPC.
@@ -136,7 +191,7 @@ struct NpcState {
     /// @brief Test whether this NPC currently holds a specific item.
     /// @param item_id The item ID to search for.
     /// @return @c true if @p item_id appears in @c inventory.
-    bool has_item(const std::string& item_id) const;
+    bool has_item(const std::string &item_id) const;
 
     /// @brief Append a new memory to the end of the memory list.
     /// @param entry The memory entry to add.
@@ -168,8 +223,8 @@ struct Npc {
 };
 
 /// @cond INTERNAL
-void to_json(nlohmann::json& j, const Npc& npc);
-void from_json(const nlohmann::json& j, Npc& npc);
+void to_json(nlohmann::json &j, const Npc &npc);
+void from_json(const nlohmann::json &j, Npc &npc);
 /// @endcond
 
 } // namespace chronicle

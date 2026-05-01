@@ -92,6 +92,57 @@ static std::string format_inventory(const std::vector<std::string> &inv) {
     return oss.str();
 }
 
+static bool scope_allows(const std::vector<std::string> &scope, const std::string &id) {
+    return scope.empty() || std::ranges::contains(scope, id);
+}
+
+std::optional<std::string> ToolRegistry::policy_tool_error(const std::string &npc_id,
+                                                           std::string_view tool_name) const {
+    const auto &policy = world_.npcs.at(npc_id).identity.tool_policy;
+    if (!std::ranges::contains(policy.allowed_tools, std::string(tool_name))) {
+        return "Error: NPC '" + npc_id + "' is not allowed to use tool '" + std::string(tool_name) +
+               "'.";
+    }
+    return std::nullopt;
+}
+
+std::optional<std::string> ToolRegistry::policy_item_error(const std::string &npc_id,
+                                                           const std::string &item_id) const {
+    const auto &policy = world_.npcs.at(npc_id).identity.tool_policy;
+    if (!scope_allows(policy.allowed_items, item_id)) {
+        return "Error: NPC '" + npc_id + "' is not allowed to use item '" + item_id + "'.";
+    }
+    return std::nullopt;
+}
+
+std::optional<std::string> ToolRegistry::policy_fact_error(const std::string &npc_id,
+                                                           const std::string &fact_id) const {
+    const auto &policy = world_.npcs.at(npc_id).identity.tool_policy;
+    if (!scope_allows(policy.allowed_facts, fact_id)) {
+        return "Error: NPC '" + npc_id + "' is not allowed to use fact '" + fact_id + "'.";
+    }
+    return std::nullopt;
+}
+
+std::optional<std::string> ToolRegistry::policy_flag_error(const std::string &npc_id,
+                                                           const std::string &flag_id) const {
+    const auto &policy = world_.npcs.at(npc_id).identity.tool_policy;
+    if (!scope_allows(policy.allowed_flags, flag_id)) {
+        return "Error: NPC '" + npc_id + "' is not allowed to use flag '" + flag_id + "'.";
+    }
+    return std::nullopt;
+}
+
+std::optional<std::string>
+ToolRegistry::policy_location_error(const std::string &npc_id,
+                                    const std::string &location_id) const {
+    const auto &policy = world_.npcs.at(npc_id).identity.tool_policy;
+    if (!scope_allows(policy.allowed_locations, location_id)) {
+        return "Error: NPC '" + npc_id + "' is not allowed to use location '" + location_id + "'.";
+    }
+    return std::nullopt;
+}
+
 // ---------------------------------------------------------------------------
 // Validation methods
 // ---------------------------------------------------------------------------
@@ -101,6 +152,10 @@ ToolRegistry::ValidationResult ToolRegistry::validate_give_item(const std::strin
     auto npc_it = world_.npcs.find(npc_id);
     if (npc_it == world_.npcs.end())
         return "Error: NPC '" + npc_id + "' does not exist.";
+    if (auto err = policy_tool_error(npc_id, "give_item"))
+        return *err;
+    if (auto err = policy_item_error(npc_id, item_id))
+        return *err;
     if (!item_exists(item_id))
         return "Error: Item '" + item_id + "' does not exist.";
     const auto &inv = npc_it->second.state.inventory;
@@ -118,6 +173,10 @@ ToolRegistry::ValidationResult ToolRegistry::validate_take_item(const std::strin
                                                                 const std::string &item_id) const {
     if (!npc_exists(npc_id))
         return "Error: NPC '" + npc_id + "' does not exist.";
+    if (auto err = policy_tool_error(npc_id, "take_item"))
+        return *err;
+    if (auto err = policy_item_error(npc_id, item_id))
+        return *err;
     if (!item_exists(item_id))
         return "Error: Item '" + item_id + "' does not exist.";
     if (!player_has_item(item_id)) {
@@ -137,6 +196,8 @@ ToolRegistry::ValidationResult ToolRegistry::validate_update_mood(const std::str
                                                                   const std::string &mood) const {
     if (!npc_exists(npc_id))
         return "Error: NPC '" + npc_id + "' does not exist.";
+    if (auto err = policy_tool_error(npc_id, "update_mood"))
+        return *err;
     if (!is_valid_mood(mood))
         return "Error: '" + mood +
                "' is not a valid mood. Valid moods: neutral, suspicious, friendly, hostile, "
@@ -152,6 +213,8 @@ ToolRegistry::ValidationResult ToolRegistry::validate_update_trust(const std::st
     auto npc_it = world_.npcs.find(npc_id);
     if (npc_it == world_.npcs.end())
         return "Error: NPC '" + npc_id + "' does not exist.";
+    if (auto err = policy_tool_error(npc_id, "update_trust"))
+        return *err;
 
     int current = npc_it->second.state.trust_toward_player;
     int new_trust = std::clamp(current + delta, -100, 100);
@@ -167,6 +230,10 @@ ToolRegistry::ValidationResult
 ToolRegistry::validate_move_npc(const std::string &npc_id, const std::string &location_id) const {
     if (!npc_exists(npc_id))
         return "Error: NPC '" + npc_id + "' does not exist.";
+    if (auto err = policy_tool_error(npc_id, "move_self"))
+        return *err;
+    if (auto err = policy_location_error(npc_id, location_id))
+        return *err;
     if (!location_exists(location_id))
         return "Error: Location '" + location_id + "' does not exist.";
     return MutationRequest{MutationRequest::Type::MoveNpc,
@@ -181,6 +248,10 @@ ToolRegistry::validate_reveal_knowledge(const std::string &npc_id,
     auto npc_it = world_.npcs.find(npc_id);
     if (npc_it == world_.npcs.end())
         return "Error: NPC '" + npc_id + "' does not exist.";
+    if (auto err = policy_tool_error(npc_id, "reveal_knowledge"))
+        return *err;
+    if (auto err = policy_fact_error(npc_id, fact_id))
+        return *err;
 
     const auto &knowledge = npc_it->second.identity.knowledge;
     if (!std::ranges::contains(knowledge, fact_id))
@@ -197,6 +268,8 @@ ToolRegistry::ValidationResult ToolRegistry::validate_add_memory(const std::stri
                                                                  int importance) const {
     if (!npc_exists(npc_id))
         return "Error: NPC '" + npc_id + "' does not exist.";
+    if (auto err = policy_tool_error(npc_id, "remember"))
+        return *err;
     if (summary.empty())
         return "Error: Memory summary must not be empty.";
 
@@ -305,6 +378,10 @@ std::string ToolRegistry::handle_inspect_item_tool(const std::string &npc_id,
                                                    const std::string &item_id) {
     if (!item_exists(item_id))
         return "Error: Item '" + item_id + "' does not exist.";
+    if (auto err = policy_tool_error(npc_id, "inspect_item"))
+        return *err;
+    if (auto err = policy_item_error(npc_id, item_id))
+        return *err;
     if (!npc_has_item(npc_id, item_id)) {
         const auto &inv = world_.npcs.at(npc_id).state.inventory;
         return "Error: You do not have item '" + item_id +
@@ -319,6 +396,14 @@ std::string ToolRegistry::handle_set_flag_tool(const std::string &flag_id,
     if (!value) {
         return "Error: flag value must be 'true', 'false', '1', or '0', got '" + value_str + "'.";
     }
+    if (!active_npc_id_.empty()) {
+        if (auto err = policy_tool_error(active_npc_id_, "set_flag")) {
+            return *err;
+        }
+        if (auto err = policy_flag_error(active_npc_id_, flag_id)) {
+            return *err;
+        }
+    }
     if (auto err = register_set_flag(flag_id, *value)) {
         return *err;
     }
@@ -326,6 +411,12 @@ std::string ToolRegistry::handle_set_flag_tool(const std::string &flag_id,
 }
 
 void ToolRegistry::register_say(const std::string &npc_id, const std::string &dialogue) {
+    if (npc_exists(npc_id)) {
+        if (auto err = policy_tool_error(npc_id, "say")) {
+            logging::write(logging::Level::Warning, "tools", *err);
+            return;
+        }
+    }
     logging::write(logging::Level::Info, "tools",
                    "tool=say npc=" + npc_id + " dialogue=\"" + dialogue + "\"");
     dialogue_log_.emplace_back(npc_id, dialogue);

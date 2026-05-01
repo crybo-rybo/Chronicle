@@ -20,6 +20,18 @@
 
 namespace chronicle {
 
+/// @brief Explicit set of world data files in a scenario package.
+struct WorldFileSet {
+    std::filesystem::path world;
+    std::filesystem::path npcs;
+    std::filesystem::path facts;
+    std::filesystem::path flags;
+    std::filesystem::path events;
+};
+
+/// @brief Build the default legacy file set rooted at @p data_dir.
+WorldFileSet default_world_file_set(const std::filesystem::path &data_dir);
+
 /// @brief Load a complete @ref World from the scenario data directory.
 ///
 /// @details Reads and parses @c world.json, @c npcs.json, and @c events.json
@@ -33,5 +45,8 @@ namespace chronicle {
 /// @throws std::runtime_error if any required file is missing, cannot be
 ///         opened, or contains invalid JSON.
 World load_world(const std::filesystem::path &data_dir);
+
+/// @brief Load a complete @ref World from explicit scenario data files.
+World load_world(const WorldFileSet &files);
 
 } // namespace chronicle

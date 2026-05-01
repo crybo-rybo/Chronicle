@@ -10,7 +10,25 @@
         "secret": "He helped the thief escape in exchange for coin.",
         "goals": ["Protect his daughter Elena", "Avoid implicating himself", "Keep the tavern running"],
         "knowledge": ["fact_stolen_cargo", "fact_thief_identity"],
-        "trust_reveal_threshold": 65
+        "trust_reveal_threshold": 65,
+        "tool_policy": {
+          "allowed_tools": [
+            "say",
+            "give_item",
+            "take_item",
+            "update_mood",
+            "update_trust",
+            "move_self",
+            "reveal_knowledge",
+            "remember",
+            "set_flag",
+            "inspect_item"
+          ],
+          "allowed_items": ["tavern_key", "cargo_manifest", "crumpled_note"],
+          "allowed_facts": ["fact_stolen_cargo", "fact_thief_identity"],
+          "allowed_flags": [],
+          "allowed_locations": ["tavern", "market_square"]
+        }
       },
       "state": {
         "current_location": "tavern",

@@ -1,6 +1,8 @@
 # Chronicle
 
-An LLM-driven text adventure game written in C++23. Chronicle uses local language models via [Zoo-Keeper](https://github.com/crybo-rybo/zoo-keeper) to power dynamic NPC conversations, emergent narrative, and world simulation — all running on your own hardware.
+Chronicle is a bounded scenario SDK/runtime for offline, LLM-driven NPC mystery and social-sim text adventures. Creators author JSON scenario packages; Chronicle provides the C++23 runtime, local [Zoo-Keeper](https://github.com/crybo-rybo/zoo-keeper) integration, prompt assembly, save/load, validation, and a strict tool/mutation pipeline.
+
+The v1 public contract is the command-line runner plus the scenario package schema. C++ internals are still allowed to evolve.
 
 ## Prerequisites
 
@@ -24,8 +26,22 @@ cmake --build --preset debug-logging
 
 ## Running
 
+Run the bundled sample scenario:
+
 ```bash
 ./build/src/chronicle
+```
+
+Run a scenario package explicitly:
+
+```bash
+./build/src/chronicle --scenario data
+```
+
+Validate a scenario package without starting play:
+
+```bash
+./build/src/chronicle validate --scenario data
 ```
 
 Logging builds default to stderr. To keep the terminal UI clean, send logs to a file:
@@ -33,6 +49,33 @@ Logging builds default to stderr. To keep the terminal UI clean, send logs to a 
 ```bash
 CHRONICLE_LOG_FILE=chronicle.log ./build-logging/src/chronicle
 ```
+
+## Scenario Packages
+
+A scenario package is a directory containing `scenario.json` plus JSON files for config, world, NPCs, facts, flags, and events. The bundled `data/` directory is the canonical small sample package.
+
+`scenario.json` declares package metadata and file paths:
+
+```json
+{
+  "id": "broken_wheel_sample",
+  "name": "Broken Wheel Sample",
+  "version": "0.1.0",
+  "chronicle_schema_version": 1,
+  "files": {
+    "config": "config.json",
+    "world": "world.json",
+    "npcs": "npcs.json",
+    "facts": "facts.json",
+    "flags": "flags.json",
+    "events": "events.json"
+  }
+}
+```
+
+NPCs may declare per-character tool policies in `npcs.json`. `allowed_tools` is the fixed v1 tool palette; scoped lists restrict which authored IDs the NPC may touch. Empty scoped lists mean no additional ID restriction.
+
+Supported NPC tools: `say`, `give_item`, `take_item`, `update_mood`, `update_trust`, `move_self`, `reveal_knowledge`, `remember`, `set_flag`, `inspect_item`.
 
 ## Testing
 
@@ -44,8 +87,7 @@ ctest --test-dir build --output-on-failure
 
 ```
 src/           C++ source code (engine, entities, AI, rendering, persistence)
-data/          Scenario data files (JSON)
+data/          Bundled sample scenario package (JSON)
 tests/         Unit and integration tests
-extern/        Third-party dependencies (Zoo-Keeper submodule)
 docs/          Design documents and specifications
 ```

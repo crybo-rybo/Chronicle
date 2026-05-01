@@ -37,6 +37,7 @@
 #include "engine/token_queue.hpp"
 #include "entities/config.hpp"
 #include "entities/world.hpp"
+#include "entities/world_loader.hpp"
 #include "persistence/save_system.hpp"
 #include "rendering/renderer.hpp"
 
@@ -73,6 +74,11 @@ class GameEngine {
     ///                    inject a mock).  Pass @c nullptr to create from config.
     /// @throws std::runtime_error if the config or world data cannot be loaded.
     GameEngine(const std::string &config_path, const std::string &data_dir,
+               std::unique_ptr<Renderer> renderer,
+               std::unique_ptr<NpcAgentPool> agent_pool = nullptr);
+
+    /// @brief Construct from explicit scenario world file paths.
+    GameEngine(const std::string &config_path, const WorldFileSet &world_files,
                std::unique_ptr<Renderer> renderer,
                std::unique_ptr<NpcAgentPool> agent_pool = nullptr);
 
