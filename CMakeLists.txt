@@ -32,7 +32,7 @@ FetchContent_MakeAvailable(json)
 FetchContent_Declare(
     zoo-keeper
     GIT_REPOSITORY https://github.com/crybo-rybo/zoo-keeper.git
-    GIT_TAG v1.1.2
+    GIT_TAG v1.1.3
 )
 FetchContent_MakeAvailable(zoo-keeper)
 
