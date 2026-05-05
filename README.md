@@ -93,7 +93,7 @@ NPCs may declare per-character tool policies in `npcs.json`. `allowed_tools` is 
 
 Supported NPC tools: `say`, `give_item`, `take_item`, `update_mood`, `update_trust`, `move_self`, `reveal_knowledge`, `remember`, `set_flag`, `inspect_item`.
 
-For the short public-contract statement, see [`docs/chronicle-scenario-sdk-pivot.md`](docs/chronicle-scenario-sdk-pivot.md). For authoring guidance, see [`docs/scenario-authoring-guide.md`](docs/scenario-authoring-guide.md). JSON Schema files for editor integration live under [`schemas/`](schemas).
+For the short public-contract statement, see [`docs/chronicle-scenario-sdk-pivot.md`](docs/chronicle-scenario-sdk-pivot.md). For the field-by-field package reference, see [`docs/scenario-package-schema.md`](docs/scenario-package-schema.md). For authoring guidance, see [`docs/scenario-authoring-guide.md`](docs/scenario-authoring-guide.md). JSON Schema files for editor integration live under [`schemas/`](schemas).
 
 ## Testing
 

@@ -11,6 +11,9 @@ The C++ sources can help explain current implementation behavior, but the
 author-facing contract is the CLI, this guide, the JSON schemas, and validator
 diagnostics.
 
+For a concise field-by-field reference, see
+[`docs/scenario-package-schema.md`](scenario-package-schema.md).
+
 ## 1. Overview
 
 A **scenario package** is a directory of JSON files that fully describes one
@@ -560,6 +563,8 @@ config).
   event chains.
 - [`schemas/`](../schemas) — JSON Schema files for each scenario file, useful
   for editor integration.
+- [`docs/scenario-package-schema.md`](scenario-package-schema.md) — concise
+  field-by-field package contract reference.
 - [`src/entities/`](../src/entities) — implementation code for the current
   loader and validator. Treat it as explanatory, not as a stable public API.
 - [`src/entities/world_validator.cpp`](../src/entities/world_validator.cpp) —
