@@ -1,0 +1,32 @@
+{
+  "npcs": {
+    "warden": {
+      "identity": {
+        "name": "Warden",
+        "role": "Caretaker",
+        "personality_summary": "Patient, observant, and precise.",
+        "backstory": "The warden keeps records for every visitor.",
+        "secret": "",
+        "goals": ["Keep the house orderly"],
+        "knowledge": ["fact_guest_arrived"],
+        "trust_reveal_threshold": 70,
+        "tool_policy": {
+          "allowed_tools": ["say", "invent_magic"],
+          "allowed_items": [],
+          "allowed_facts": [],
+          "allowed_flags": [],
+          "allowed_locations": []
+        }
+      },
+      "state": {
+        "current_location": "foyer",
+        "mood": "neutral",
+        "trust_toward_player": 0,
+        "inventory": [],
+        "memories": [],
+        "has_met_player": false,
+        "secret_revealed": false
+      }
+    }
+  }
+}

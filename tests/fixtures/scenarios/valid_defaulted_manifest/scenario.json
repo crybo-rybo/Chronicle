@@ -1,0 +1,9 @@
+{
+  "id": "valid_defaulted_manifest",
+  "name": "Valid Defaulted Manifest",
+  "version": "0.1.0",
+  "chronicle_schema_version": 1,
+  "metadata": {
+    "description": "Uses default manifest file names."
+  }
+}

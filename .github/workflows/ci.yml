@@ -31,3 +31,6 @@ jobs:
 
       - name: Validate bundled scenario
         run: ./build/src/chronicle validate --scenario data
+
+      - name: Validate lighthouse example
+        run: ./build/src/chronicle validate --scenario examples/lighthouse_veil

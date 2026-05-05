@@ -1,0 +1,17 @@
+{
+  "id": "valid_minimal",
+  "name": "Valid Minimal",
+  "version": "0.1.0",
+  "chronicle_schema_version": 1,
+  "files": {
+    "config": "config.json",
+    "world": "world.json",
+    "npcs": "npcs.json",
+    "facts": "facts.json",
+    "flags": "flags.json",
+    "events": "events.json"
+  },
+  "metadata": {
+    "description": "A minimal two-room Chronicle scenario fixture."
+  }
+}

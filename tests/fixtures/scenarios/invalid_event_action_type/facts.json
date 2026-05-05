@@ -1,0 +1,9 @@
+{
+  "facts": {
+    "fact_guest_arrived": {
+      "text": "A guest signed the ledger shortly before midnight.",
+      "category": "clue",
+      "revealed_by_default": false
+    }
+  }
+}

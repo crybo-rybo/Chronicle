@@ -1,8 +1,12 @@
+#include "ai/tool_registry.hpp"
 #include "entities/scenario.hpp"
+#include "entities/world_loader.hpp"
 #include <array>
 #include <filesystem>
 #include <fstream>
 #include <gtest/gtest.h>
+#include <string>
+#include <vector>
 
 namespace chronicle {
 namespace {
@@ -74,6 +78,20 @@ bool has_warning_containing(const ValidationReport &report, std::string_view nee
     return false;
 }
 
+std::filesystem::path scenario_fixture_path(std::string_view name) {
+    return std::filesystem::path(CHRONICLE_SOURCE_DIR) / "tests" / "fixtures" / "scenarios" /
+           std::string(name);
+}
+
+WorldFileSet fixture_world_files(const std::filesystem::path &dir) {
+    auto package = load_scenario_package(dir);
+    return package.world_files;
+}
+
+World load_fixture_world(std::string_view name) {
+    return load_world(fixture_world_files(scenario_fixture_path(name)));
+}
+
 } // namespace
 
 TEST(ScenarioPackageTest, LoadsManifestAndResolvesPackagePaths) {
@@ -102,6 +120,118 @@ TEST(ScenarioPackageTest, ValidationReportsMissingScenarioDirectory) {
     EXPECT_FALSE(report.ok);
     EXPECT_TRUE(has_error_containing(report, "scenario directory does not exist"));
     EXPECT_TRUE(has_error_containing(report, dir.string()));
+}
+
+TEST(ScenarioPackageTest, ValidScenarioFixturePackageValidates) {
+    auto report = validate_scenario_package(scenario_fixture_path("valid_minimal"));
+
+    EXPECT_TRUE(report.ok);
+    EXPECT_TRUE(report.errors.empty());
+    EXPECT_TRUE(report.warnings.empty());
+}
+
+TEST(ScenarioPackageTest, InvalidScenarioFixturePackagesReportStableFragments) {
+    struct Case {
+        std::string_view fixture;
+        std::vector<std::string_view> fragments;
+    };
+
+    const std::vector<Case> cases = {
+        {"invalid_missing_manifest", {"scenario manifest does not exist", "scenario.json"}},
+        {"invalid_malformed_manifest", {"failed to parse", "scenario.json"}},
+        {"invalid_unsupported_schema", {"schema version 999", "expected current version 1"}},
+        {"invalid_absolute_path", {"world path must be relative", "/tmp/world.json"}},
+        {"invalid_path_traversal", {"world path must stay inside package", "../world.json"}},
+        {"invalid_missing_referenced_file", {"world file does not exist", "missing_world.json"}},
+        {"invalid_malformed_world_json", {"failed to parse", "world.json"}},
+        {"invalid_malformed_npcs_json", {"failed to parse", "npcs.json"}},
+        {"invalid_malformed_facts_json", {"failed to parse", "facts.json"}},
+        {"invalid_malformed_flags_json", {"failed to parse", "flags.json"}},
+        {"invalid_malformed_events_json", {"failed to parse", "events.json"}},
+        {"invalid_missing_location_reference",
+         {"NPC 'warden' current_location 'missing_room'", "world.locations"}},
+        {"invalid_duplicate_item_ownership", {"Item 'ledger' has duplicate ownership"}},
+        {"invalid_unknown_npc_tool", {"unknown tool 'invent_magic'"}},
+        {"invalid_missing_policy_scope_ids",
+         {"allowed_items references missing item", "allowed_facts references missing fact",
+          "allowed_flags references missing flag",
+          "allowed_locations references missing location"}},
+        {"invalid_event_condition_arg_count",
+         {"Event 'intro_narration' condition #0 (player_at)", "requires 1 arg(s), got 0"}},
+        {"invalid_event_action_type",
+         {"Event 'intro_narration' action #0 (teleport)", "unknown action type 'teleport'"}},
+    };
+
+    for (const auto &test_case : cases) {
+        SCOPED_TRACE(test_case.fixture);
+        auto report = validate_scenario_package(scenario_fixture_path(test_case.fixture));
+
+        EXPECT_FALSE(report.ok);
+        for (auto fragment : test_case.fragments) {
+            EXPECT_TRUE(has_error_containing(report, fragment)) << "missing fragment: " << fragment;
+        }
+    }
+}
+
+TEST(ScenarioPackageTest, WarningScenarioFixtureDoesNotFailValidation) {
+    auto report = validate_scenario_package(scenario_fixture_path("warning_readable_without_text"));
+
+    EXPECT_TRUE(report.ok);
+    EXPECT_TRUE(report.errors.empty());
+    EXPECT_TRUE(has_warning_containing(report, "readable=true"));
+    EXPECT_TRUE(has_warning_containing(report, "ledger"));
+}
+
+TEST(ScenarioPackageTest, DefaultedManifestFileNamesAreCompatible) {
+    auto dir = scenario_fixture_path("valid_defaulted_manifest");
+    auto report = validate_scenario_package(dir);
+
+    EXPECT_TRUE(report.ok);
+    auto package = load_scenario_package(dir);
+    EXPECT_EQ(package.config_path, dir / "config.json");
+    EXPECT_EQ(package.world_files.world, dir / "world.json");
+    EXPECT_EQ(package.world_files.npcs, dir / "npcs.json");
+    EXPECT_EQ(package.world_files.facts, dir / "facts.json");
+    EXPECT_EQ(package.world_files.flags, dir / "flags.json");
+    EXPECT_EQ(package.world_files.events, dir / "events.json");
+}
+
+TEST(ScenarioPackageTest, OptionalMetadataIsLoadedWhenPresent) {
+    auto package = load_scenario_package(scenario_fixture_path("valid_minimal"));
+
+    ASSERT_TRUE(package.manifest.metadata.contains("description"));
+    EXPECT_EQ(package.manifest.metadata.at("description"),
+              "A minimal two-room Chronicle scenario fixture.");
+}
+
+TEST(ScenarioPackageTest, MissingToolPolicyDefaultsToFullBuiltInPalette) {
+    auto world = load_fixture_world("valid_missing_tool_policy");
+    const auto &policy = world.npcs.at("warden").identity.tool_policy;
+
+    EXPECT_EQ(policy.allowed_tools, default_allowed_npc_tools());
+    ToolRegistry registry(world);
+    auto result = registry.validate_move_npc("warden", "study");
+    EXPECT_TRUE(std::holds_alternative<MutationRequest>(result));
+}
+
+TEST(ScenarioPackageTest, EmptyScopedPolicyListsAreUnrestricted) {
+    auto world = load_fixture_world("valid_empty_scoped_policy_lists");
+
+    ToolRegistry registry(world);
+    auto result = registry.validate_move_npc("warden", "study");
+
+    EXPECT_TRUE(std::holds_alternative<MutationRequest>(result));
+}
+
+TEST(ScenarioPackageTest, EmptyAllowedToolsMeansNoToolPermissions) {
+    auto world = load_fixture_world("valid_empty_allowed_tools");
+
+    ToolRegistry registry(world);
+    auto result = registry.validate_move_npc("warden", "study");
+
+    ASSERT_TRUE(std::holds_alternative<std::string>(result));
+    EXPECT_NE(std::get<std::string>(result).find("not allowed to use tool 'move_self'"),
+              std::string::npos);
 }
 
 TEST(ScenarioPackageTest, ValidationReportsMissingManifest) {
@@ -393,6 +523,14 @@ TEST(ScenarioPackageTest, ValidationReportsWarningsWithoutFailingValidPackage) {
 
 TEST(ScenarioPackageTest, ValidatesBundledSampleScenario) {
     auto report = validate_scenario_package(std::filesystem::path(CHRONICLE_SOURCE_DIR) / "data");
+
+    EXPECT_TRUE(report.ok);
+    EXPECT_TRUE(report.errors.empty());
+}
+
+TEST(ScenarioPackageTest, ValidatesLighthouseVeilScenario) {
+    auto report = validate_scenario_package(std::filesystem::path(CHRONICLE_SOURCE_DIR) /
+                                            "examples" / "lighthouse_veil");
 
     EXPECT_TRUE(report.ok);
     EXPECT_TRUE(report.errors.empty());
