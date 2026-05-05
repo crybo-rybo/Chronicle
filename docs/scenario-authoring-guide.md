@@ -104,6 +104,9 @@ differently.
   three days at four periods each).
 - `max_response_tokens`, `context_size`, `temperature`: model prompt and
   sampling budgets.
+- `inference_timeout_ms` (int, default `120000`): wall-clock timeout for one
+  model request. Set to `0` only when debugging a local model and you want to
+  disable cancellation.
 - `max_memory_tokens`, `max_world_tokens`, `max_history_tokens`: prompt-budget
   caps `PromptBuilder` enforces.
 - `mutation_narration_templates` (object): per-mutation narration templates.
@@ -136,6 +139,7 @@ The sample's `config.json`:
   "n_gpu_layers": -1,
   "temperature": 0.7,
   "max_response_tokens": 512,
+  "inference_timeout_ms": 120000,
   "turns_per_period": 5,
   "total_periods": 12,
   "max_memory_tokens": 800,
@@ -560,6 +564,12 @@ engine continues to work. Real AI dialogue requires a local GGUF model. See
 the "Local Model Paths" section of [`CONTRIBUTING.md`](../CONTRIBUTING.md)
 for override mechanisms (`.secret/`, environment variables, gitignored local
 config).
+
+If a model request exceeds `inference_timeout_ms`, Chronicle requests
+Zoo-Keeper cancellation, discards NPC tool mutations from that failed turn, and
+keeps deterministic commands such as save, load, help, and leaving the
+conversation available. Set `inference_timeout_ms` to `0` only for local model
+debugging sessions where cancellation would hide the issue you are inspecting.
 
 ## 12. Where to look next
 

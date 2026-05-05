@@ -668,7 +668,9 @@ void GameEngine::handle_dialogue(const std::string &npc_id, const std::string &i
             tool_registry_->clear_all();
             logging::write(logging::Level::Error, "dialogue",
                            "agent chat failed npc=" + npc_id + " error=" + result.error_message);
-            renderer_->render_error("Agent chat failed: " + result.error_message);
+            renderer_->render_error(
+                "Dialogue failed or timed out. You can try again, say 'bye' to leave, or use "
+                "save/load/help.");
         }
 
     } catch (const std::exception &e) {
@@ -676,7 +678,9 @@ void GameEngine::handle_dialogue(const std::string &npc_id, const std::string &i
         tool_registry_->clear_all();
         logging::write(logging::Level::Error, "dialogue",
                        "dialogue exception npc=" + npc_id + " error=" + e.what());
-        renderer_->render_error(std::string("Dialogue error: ") + e.what());
+        renderer_->render_error(
+            "Dialogue failed or timed out. You can try again, say 'bye' to leave, or use "
+            "save/load/help.");
     }
 }
 

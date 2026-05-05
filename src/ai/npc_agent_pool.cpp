@@ -103,7 +103,8 @@ NpcAgentPool NpcAgentPool::from_config(const Config &config) {
                        " n_gpu_layers=" + std::to_string(config.n_gpu_layers) +
                        " max_response_tokens=" + std::to_string(config.max_response_tokens) +
                        " temperature=" + std::to_string(config.temperature) +
-                       " max_tool_iterations=" + std::to_string(config.max_tool_iterations));
+                       " max_tool_iterations=" + std::to_string(config.max_tool_iterations) +
+                       " inference_timeout_ms=" + std::to_string(config.inference_timeout_ms));
 
     zoo::ModelConfig model_config{
         .model_path = config.model_path,
@@ -127,7 +128,8 @@ NpcAgentPool NpcAgentPool::from_config(const Config &config) {
     }
 
     logging::write(logging::Level::Info, "ai", "zoo agent created");
-    return NpcAgentPool(std::make_unique<ZooAgentAdapter>(std::move(*result)));
+    return NpcAgentPool(
+        std::make_unique<ZooAgentAdapter>(std::move(*result), config.inference_timeout_ms));
 }
 
 NpcAgentHandle NpcAgentPool::acquire(const std::string &npc_id) {

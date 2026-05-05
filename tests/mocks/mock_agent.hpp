@@ -11,11 +11,14 @@ namespace chronicle {
 class FailureMockAgent : public AgentInterface {
   public:
     enum class Mode {
-        ThrowOnChat,       ///< chat_streaming throws an exception.
-        ReturnFailure,     ///< chat_streaming returns success=false.
-        StreamEmpty,       ///< chat_streaming returns success=true but emits no tokens.
-        MalformedToolArgs, ///< Drives a malformed string tool path without leaking mutations.
-        HangBriefly,       ///< Polls while briefly blocking, then returns success.
+        ThrowOnChat,                ///< chat_streaming throws an exception.
+        ReturnFailure,              ///< chat_streaming returns success=false.
+        ReturnFailureAfterMutation, ///< Enqueues a valid mutation, then returns failure.
+        TimeoutCancelled,           ///< Simulates a timeout/cancel failure after a queued mutation.
+        StreamEmpty,                ///< chat_streaming returns success=true but emits no tokens.
+        MalformedToolArgs,   ///< Drives a malformed string tool path without leaking mutations.
+        AllInvalidToolCalls, ///< Calls only invalid tools and returns success.
+        HangBriefly,         ///< Polls while briefly blocking, then returns success.
     };
 
     Mode mode = Mode::StreamEmpty;
@@ -38,11 +41,28 @@ class FailureMockAgent : public AgentInterface {
             throw std::runtime_error("Mock agent: simulated inference failure");
         case Mode::ReturnFailure:
             return AgentChatResult{false, "Mock agent: simulated chat failure"};
+        case Mode::ReturnFailureAfterMutation:
+            if (tool_registry_) {
+                (void)tool_registry_->handle_set_flag_tool("test_flag", "true");
+            }
+            return AgentChatResult{false, "Mock agent: failed after tool mutation"};
+        case Mode::TimeoutCancelled:
+            if (tool_registry_) {
+                (void)tool_registry_->handle_set_flag_tool("test_flag", "true");
+            }
+            return AgentChatResult{false, "Inference timed out after 1 ms."};
         case Mode::StreamEmpty:
             return AgentChatResult{true, ""};
         case Mode::MalformedToolArgs:
             if (tool_registry_) {
                 (void)tool_registry_->handle_set_flag_tool("test_flag", "not-a-bool");
+            }
+            return AgentChatResult{true, ""};
+        case Mode::AllInvalidToolCalls:
+            if (tool_registry_) {
+                (void)tool_registry_->handle_set_flag_tool("test_flag", "not-a-bool");
+                (void)tool_registry_->register_add_memory(npc_id_, "", 5);
+                (void)tool_registry_->register_move_npc(npc_id_, "missing_location");
             }
             return AgentChatResult{true, ""};
         case Mode::HangBriefly:

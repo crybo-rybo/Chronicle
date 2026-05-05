@@ -62,6 +62,12 @@ struct Config {
     /// @brief Maximum tokens the model may generate per NPC response.  Default: 512.
     int max_response_tokens = 512;
 
+    /// @brief Maximum wall-clock time for one inference request in milliseconds.
+    ///
+    /// @details Default: 120000 (two minutes).  Set to @c 0 to disable
+    /// timeout-driven cancellation for local model debugging.
+    int inference_timeout_ms = 120000;
+
     /// @brief Number of significant player actions per time period.  Default: 5.
     ///
     /// When this count is reached, @ref Clock::advance_turn transitions the
@@ -79,7 +85,8 @@ struct Config {
     /// are included before the prompt is sent to the model.
     int max_memory_tokens = 800;
 
-    /// @brief Token budget allocated to the world-context section of the system prompt.  Default: 400.
+    /// @brief Token budget allocated to the world-context section of the system prompt.  Default:
+    /// 400.
     int max_world_tokens = 400;
 
     /// @brief Token budget allocated to conversation history in the system prompt.  Default: 600.
@@ -133,7 +140,8 @@ struct Config {
 
 /// @cond INTERNAL
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Config, model_path, context_size, n_gpu_layers,
-                                                temperature, max_response_tokens, turns_per_period,
+                                                temperature, max_response_tokens,
+                                                inference_timeout_ms, turns_per_period,
                                                 total_periods, max_memory_tokens, max_world_tokens,
                                                 max_history_tokens, save_directory, use_tui,
                                                 use_color, mutation_narration_templates,

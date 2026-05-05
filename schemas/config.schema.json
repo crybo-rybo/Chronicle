@@ -30,6 +30,12 @@
       "minimum": 1,
       "default": 512
     },
+    "inference_timeout_ms": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 120000,
+      "description": "Maximum wall-clock time for one model request in milliseconds. 0 disables timeout-driven cancellation for local debugging."
+    },
     "turns_per_period": {
       "type": "integer",
       "minimum": 1,

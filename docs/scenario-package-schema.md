@@ -99,6 +99,7 @@ Optional/defaulted fields:
 | `n_gpu_layers` | integer | `-1` | GPU layer offload setting; `0` forces CPU-only. |
 | `temperature` | number | `0.7` | Dialogue sampling temperature. |
 | `max_response_tokens` | integer | `512` | Maximum generated tokens per response. |
+| `inference_timeout_ms` | integer | `120000` | Maximum wall-clock time for one model request. `0` disables timeout cancellation for debugging. |
 | `turns_per_period` | integer | `5` | Significant actions per time-period transition. |
 | `total_periods` | integer | `12` | Authored pacing value available to runtime logic. |
 | `max_memory_tokens` | integer | `800` | Prompt budget for NPC memories. |

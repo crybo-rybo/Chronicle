@@ -29,12 +29,13 @@ namespace chronicle {
 
 /// @brief Wraps a @c zoo::Agent to satisfy the @ref AgentInterface contract.
 class ZooAgentAdapter : public AgentInterface {
-public:
+  public:
     /// @brief Construct from an existing Zoo-Keeper agent.
     ///
-    /// @param agent A non-null @c zoo::Agent to wrap.
+    /// @param agent                A non-null @c zoo::Agent to wrap.
+    /// @param inference_timeout_ms Per-request timeout in milliseconds; @c 0 disables.
     /// @throws std::invalid_argument if @p agent is @c nullptr.
-    explicit ZooAgentAdapter(std::unique_ptr<zoo::Agent> agent);
+    explicit ZooAgentAdapter(std::unique_ptr<zoo::Agent> agent, int inference_timeout_ms = 120000);
 
     /// @brief Set the system prompt on the underlying @c zoo::Agent.
     void set_system_prompt(std::string_view prompt) override;
@@ -69,8 +70,7 @@ public:
     /// @param on_token     Callback invoked on the inference thread per token.
     /// @param poll         Callback invoked on the calling thread while waiting.
     /// @return @ref AgentChatResult indicating success or failure.
-    AgentChatResult chat_streaming(std::string_view user_message,
-                                   TokenCallback on_token,
+    AgentChatResult chat_streaming(std::string_view user_message, TokenCallback on_token,
                                    PollCallback poll) override;
 
     /// @brief Direct access to the underlying @c zoo::Agent.
@@ -80,9 +80,10 @@ public:
     /// @overload
     const zoo::Agent &agent() const { return *agent_; }
 
-private:
-    std::unique_ptr<zoo::Agent> agent_;                       ///< The wrapped Zoo-Keeper agent.
-    ToolRegistry *registered_tool_registry_ = nullptr;        ///< Tracks the last registered registry.
+  private:
+    std::unique_ptr<zoo::Agent> agent_;                ///< The wrapped Zoo-Keeper agent.
+    ToolRegistry *registered_tool_registry_ = nullptr; ///< Tracks the last registered registry.
+    int inference_timeout_ms_ = 120000;                ///< Per-request timeout; 0 disables.
 };
 
 } // namespace chronicle

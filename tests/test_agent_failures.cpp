@@ -2,8 +2,10 @@
 #include "engine/game_engine.hpp"
 #include "mocks/mock_agent.hpp"
 #include "rendering/renderer.hpp"
+#include <algorithm>
 #include <filesystem>
 #include <gtest/gtest.h>
+#include <string_view>
 
 namespace chronicle {
 
@@ -87,6 +89,12 @@ class AgentFailureTest : public ::testing::Test {
         dialogue.primary_arg = text;
         engine->handle_command(dialogue);
     }
+
+    bool rendered_error_containing(std::string_view needle) const {
+        return std::ranges::any_of(renderer_ptr->errors, [needle](const std::string &error) {
+            return error.find(needle) != std::string::npos;
+        });
+    }
 };
 
 // ---------------------------------------------------------------------------
@@ -115,15 +123,56 @@ TEST_F(AgentFailureTest, ReturnFailureRendersError) {
 
     EXPECT_NO_THROW(send_dialogue("Hello"));
 
-    bool has_error = false;
-    for (const auto &e : renderer_ptr->errors) {
-        if (e.find("failed") != std::string::npos || e.find("Failed") != std::string::npos) {
-            has_error = true;
-            break;
-        }
-    }
-    EXPECT_TRUE(has_error);
+    EXPECT_TRUE(rendered_error_containing("failed"));
+    ASSERT_FALSE(renderer_ptr->errors.empty());
+    EXPECT_EQ(renderer_ptr->errors.back().find("Mock agent"), std::string::npos);
     EXPECT_EQ(engine->world().clock.total_turns, 0);
+}
+
+TEST_F(AgentFailureTest, ReturnFailureClearsQueuedMutations) {
+    build_engine(FailureMockAgent::Mode::ReturnFailureAfterMutation);
+    start_conversation();
+    ASSERT_EQ(engine->phase(), GamePhase::InConversation);
+    ASSERT_FALSE(engine->world().flags.at("test_flag"));
+
+    EXPECT_NO_THROW(send_dialogue("Hello"));
+
+    EXPECT_TRUE(rendered_error_containing("failed"));
+    EXPECT_FALSE(engine->world().flags.at("test_flag"));
+    EXPECT_EQ(engine->world().clock.total_turns, 0);
+}
+
+TEST_F(AgentFailureTest, TimeoutCancelRendersErrorAndClearsQueuedMutations) {
+    build_engine(FailureMockAgent::Mode::TimeoutCancelled);
+    start_conversation();
+    ASSERT_EQ(engine->phase(), GamePhase::InConversation);
+    ASSERT_FALSE(engine->world().flags.at("test_flag"));
+
+    EXPECT_NO_THROW(send_dialogue("Hello"));
+
+    EXPECT_TRUE(rendered_error_containing("failed or timed out"));
+    EXPECT_FALSE(engine->world().flags.at("test_flag"));
+    EXPECT_EQ(engine->world().clock.total_turns, 0);
+}
+
+TEST_F(AgentFailureTest, PlayerCanLeaveAndContinueAfterDialogueFailure) {
+    build_engine(FailureMockAgent::Mode::ReturnFailureAfterMutation);
+    start_conversation();
+
+    send_dialogue("Hello");
+    ASSERT_EQ(engine->phase(), GamePhase::InConversation);
+
+    send_dialogue("bye");
+    EXPECT_EQ(engine->phase(), GamePhase::Playing);
+
+    ParsedCommand take;
+    take.verb = CommandVerb::Take;
+    take.primary_arg = "test item";
+    engine->handle_command(take);
+
+    EXPECT_TRUE(std::ranges::contains(engine->world().player.inventory, "test_item"));
+    EXPECT_FALSE(engine->world().flags.at("test_flag"));
+    EXPECT_EQ(engine->world().clock.total_turns, 1);
 }
 
 TEST_F(AgentFailureTest, StreamEmptyNoMutationsLeaked) {
@@ -147,6 +196,20 @@ TEST_F(AgentFailureTest, MalformedToolArgsNoMutationsLeaked) {
 
     EXPECT_EQ(engine->phase(), GamePhase::InConversation);
     EXPECT_FALSE(engine->world().flags.at("test_flag"));
+}
+
+TEST_F(AgentFailureTest, AllInvalidToolCallsDoNotMutateWorld) {
+    build_engine(FailureMockAgent::Mode::AllInvalidToolCalls);
+    start_conversation();
+    ASSERT_EQ(engine->phase(), GamePhase::InConversation);
+    ASSERT_FALSE(engine->world().flags.at("test_flag"));
+
+    EXPECT_NO_THROW(send_dialogue("Hello"));
+
+    EXPECT_EQ(engine->phase(), GamePhase::InConversation);
+    EXPECT_FALSE(engine->world().flags.at("test_flag"));
+    EXPECT_TRUE(engine->world().npcs.at("test_npc").state.memories.empty());
+    EXPECT_EQ(engine->world().npcs.at("test_npc").state.current_location, "test_room");
 }
 
 TEST_F(AgentFailureTest, HangBrieflyKeepsGameAlive) {
