@@ -1,5 +1,10 @@
 #include "ai/prompt_builder.hpp"
+#include <filesystem>
+#include <fstream>
 #include <gtest/gtest.h>
+#include <iterator>
+#include <stdexcept>
+#include <string_view>
 
 namespace {
 
@@ -38,6 +43,54 @@ chronicle::World make_test_world() {
     w.locations["tavern"] = loc;
 
     w.player.current_location = "tavern";
+
+    w.facts["fact_stolen_cargo"] = chronicle::Fact{
+        .id = "fact_stolen_cargo",
+        .text = "The stolen cargo was moved through the old canal.",
+        .category = "clue",
+        .revealed_by_default = false,
+    };
+    w.facts["fact_thief_identity"] = chronicle::Fact{
+        .id = "fact_thief_identity",
+        .text = "Elena hid the tide gate key beneath a loose floorboard.",
+        .category = "clue",
+        .revealed_by_default = false,
+    };
+
+    return w;
+}
+
+chronicle::World make_prompt_contract_world() {
+    auto w = make_test_world();
+    w.clock.day = 2;
+    w.clock.period = chronicle::TimePeriod::Evening;
+
+    auto &loc = w.locations.at("tavern");
+    loc.npcs = {"marcus", "elena"};
+    loc.items = {"harbor_ledger", "hidden_map"};
+
+    chronicle::Npc elena;
+    elena.identity.id = "elena";
+    elena.identity.name = "Elena";
+    w.npcs["elena"] = elena;
+
+    chronicle::Item ledger;
+    ledger.id = "harbor_ledger";
+    ledger.name = "Harbor Ledger";
+    ledger.hidden = false;
+    w.items["harbor_ledger"] = ledger;
+
+    chronicle::Item hidden_map;
+    hidden_map.id = "hidden_map";
+    hidden_map.name = "Hidden Map";
+    hidden_map.hidden = true;
+    w.items["hidden_map"] = hidden_map;
+
+    chronicle::Item key;
+    key.id = "old_key";
+    key.name = "Old Key";
+    w.items["old_key"] = key;
+
     return w;
 }
 
@@ -49,6 +102,33 @@ chronicle::MemoryEntry make_memory(const std::string &summary, int importance,
     m.summary = summary;
     m.importance = importance;
     return m;
+}
+
+std::filesystem::path prompt_snapshot_path(std::string_view name) {
+    return std::filesystem::path(CHRONICLE_SOURCE_DIR) / "tests" / "fixtures" / "prompt_contract" /
+           std::string(name);
+}
+
+std::string read_prompt_snapshot(std::string_view name) {
+    auto path = prompt_snapshot_path(name);
+    std::ifstream in(path, std::ios::binary);
+    if (!in.is_open()) {
+        throw std::runtime_error("Unable to open prompt snapshot: " + path.string());
+    }
+    return {std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
+}
+
+void expect_prompt_snapshot(std::string_view name, const std::string &actual) {
+    EXPECT_EQ(read_prompt_snapshot(name), actual) << "Snapshot: " << prompt_snapshot_path(name);
+}
+
+chronicle::NpcState make_prompt_contract_state(int trust) {
+    auto state = make_test_state();
+    state.mood = "suspicious";
+    state.trust_toward_player = trust;
+    state.inventory = {"old_key"};
+    state.memories.push_back(make_memory("player asked about the missing cargo", 8));
+    return state;
 }
 
 } // namespace
@@ -293,6 +373,30 @@ TEST(PromptBuilderTest, BuildUserTurnEmbedsInput) {
     EXPECT_NE(result.find("The player says:"), std::string::npos);
 }
 
+TEST(PromptBuilderContractTest, UserTurnWithInventoryMatchesSnapshot) {
+    chronicle::PromptBuilder builder(chronicle::PromptBuilder::Budget{});
+    chronicle::Player player;
+    player.current_location = "tavern";
+    player.inventory = {"gate_key", "sealed_note"};
+
+    std::string result = builder.build_user_turn("Can you explain \"cargo\"\nnow?", player);
+
+    expect_prompt_snapshot("user_turn_with_inventory.txt", result + "\n");
+    EXPECT_EQ(result.find("[Current state]"), std::string::npos);
+    EXPECT_EQ(result.find("Current mood:"), std::string::npos);
+}
+
+TEST(PromptBuilderContractTest, UserTurnWithoutInventoryMatchesSnapshot) {
+    chronicle::PromptBuilder builder(chronicle::PromptBuilder::Budget{});
+    chronicle::Player player;
+    player.current_location = "tavern";
+
+    std::string result = builder.build_user_turn("Just passing through", player);
+
+    expect_prompt_snapshot("user_turn_without_inventory.txt", result + "\n");
+    EXPECT_EQ(result.find("inventory"), std::string::npos);
+}
+
 TEST(PromptBuilderTest, BuildUserTurnWithInventory) {
     chronicle::PromptBuilder builder(chronicle::PromptBuilder::Budget{});
     chronicle::Player player;
@@ -435,6 +539,20 @@ TEST(PromptBuilderTest, SystemPromptDiscouragedSpuriousToolCalls) {
     EXPECT_NE(prompt.find("Speak to the player using normal dialogue text"), std::string::npos);
 }
 
+TEST(PromptBuilderContractTest, StaticSystemPromptMatchesSnapshot) {
+    chronicle::PromptBuilder builder(chronicle::PromptBuilder::Budget{});
+    auto identity = make_test_identity();
+    auto world = make_prompt_contract_world();
+
+    std::string prompt = builder.build_static_system_prompt(identity, world);
+
+    expect_prompt_snapshot("static_system_prompt.txt", prompt);
+    EXPECT_EQ(prompt.find("Current mood:"), std::string::npos);
+    EXPECT_EQ(prompt.find("Trust toward the player:"), std::string::npos);
+    EXPECT_EQ(prompt.find("Current time:"), std::string::npos);
+    EXPECT_EQ(prompt.find("Location:"), std::string::npos);
+}
+
 // --- Static system prompt tests ---
 
 TEST(PromptBuilderTest, StaticPromptContainsIdentity) {
@@ -473,8 +591,11 @@ TEST(PromptBuilderTest, StaticPromptContainsKnowledge) {
     auto world = make_test_world();
 
     std::string prompt = builder.build_static_system_prompt(identity, world);
-    EXPECT_NE(prompt.find("fact_stolen_cargo"), std::string::npos);
-    EXPECT_NE(prompt.find("fact_thief_identity"), std::string::npos);
+    EXPECT_NE(prompt.find("The stolen cargo was moved through the old canal."), std::string::npos);
+    EXPECT_NE(prompt.find("Elena hid the tide gate key beneath a loose floorboard."),
+              std::string::npos);
+    EXPECT_EQ(prompt.find("fact_stolen_cargo"), std::string::npos);
+    EXPECT_EQ(prompt.find("fact_thief_identity"), std::string::npos);
 }
 
 TEST(PromptBuilderTest, StaticPromptContainsRules) {
@@ -531,6 +652,32 @@ TEST(PromptBuilderTest, DynamicContextContainsMoodAndTrust) {
     std::string ctx = builder.build_dynamic_context(identity, state, world);
     EXPECT_NE(ctx.find("Current mood: suspicious"), std::string::npos);
     EXPECT_NE(ctx.find("Trust toward the player: 35/100"), std::string::npos);
+}
+
+TEST(PromptBuilderContractTest, DynamicContextLowTrustMatchesSnapshot) {
+    chronicle::PromptBuilder builder(chronicle::PromptBuilder::Budget{});
+    auto identity = make_test_identity();
+    auto state = make_prompt_contract_state(42);
+    auto world = make_prompt_contract_world();
+
+    std::string ctx = builder.build_dynamic_context(identity, state, world);
+
+    expect_prompt_snapshot("dynamic_context_low_trust.txt", ctx);
+    EXPECT_EQ(ctx.find("He helped the thief escape."), std::string::npos);
+    EXPECT_EQ(ctx.find("Background:"), std::string::npos);
+    EXPECT_EQ(ctx.find("Rules:"), std::string::npos);
+}
+
+TEST(PromptBuilderContractTest, DynamicContextHighTrustMatchesSnapshot) {
+    chronicle::PromptBuilder builder(chronicle::PromptBuilder::Budget{});
+    auto identity = make_test_identity();
+    auto state = make_prompt_contract_state(80);
+    auto world = make_prompt_contract_world();
+
+    std::string ctx = builder.build_dynamic_context(identity, state, world);
+
+    expect_prompt_snapshot("dynamic_context_high_trust.txt", ctx);
+    EXPECT_NE(ctx.find("He helped the thief escape."), std::string::npos);
 }
 
 TEST(PromptBuilderTest, DynamicContextContainsWorldState) {

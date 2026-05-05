@@ -1,0 +1,3 @@
+The player says: "Can you explain \"cargo\"\nnow?"
+
+Player inventory: gate_key, sealed_note
