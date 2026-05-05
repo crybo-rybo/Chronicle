@@ -119,7 +119,9 @@ TEST_F(SaveSystemTest, SlotExistsTrue) {
     EXPECT_TRUE(save_system_->slot_exists(1));
 }
 
-TEST_F(SaveSystemTest, SlotExistsFalse) { EXPECT_FALSE(save_system_->slot_exists(2)); }
+TEST_F(SaveSystemTest, SlotExistsFalse) {
+    EXPECT_FALSE(save_system_->slot_exists(2));
+}
 
 TEST_F(SaveSystemTest, DeleteSlotRemovesFile) {
     auto world = make_test_world();

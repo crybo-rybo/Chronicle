@@ -9,7 +9,7 @@
 #include <iostream>
 
 int main() {
-    const char* model_path = std::getenv("ZOO_MODEL_PATH");
+    const char *model_path = std::getenv("ZOO_MODEL_PATH");
     if (!model_path) {
         std::cerr << "Error: ZOO_MODEL_PATH environment variable is not set.\n"
                   << "Usage: ZOO_MODEL_PATH=/path/to/model.gguf ./zk_smoke_test\n";
@@ -26,7 +26,7 @@ int main() {
         return 1;
     }
 
-    auto& agent = *agent_result;
+    auto &agent = *agent_result;
     std::cout << "Agent created successfully. Sending chat message...\n\n";
 
     auto handle = agent->chat("Hello, who are you?", {},

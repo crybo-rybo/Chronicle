@@ -183,11 +183,10 @@ TEST(WorldTest, ItemOwnershipInvariant) {
 
     // Collect all item references
     std::vector<std::string> all_item_refs;
-    for (const auto& [id, loc] : world.locations) {
+    for (const auto &[id, loc] : world.locations) {
         all_item_refs.insert(all_item_refs.end(), loc.items.begin(), loc.items.end());
     }
-    all_item_refs.insert(all_item_refs.end(),
-                         world.player.inventory.begin(),
+    all_item_refs.insert(all_item_refs.end(), world.player.inventory.begin(),
                          world.player.inventory.end());
 
     // Verify no duplicates

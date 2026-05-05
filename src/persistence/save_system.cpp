@@ -143,8 +143,12 @@ std::vector<SaveSlotInfo> SaveSystem::list_slots() const {
     return slots;
 }
 
-bool SaveSystem::slot_exists(int slot) const { return std::filesystem::exists(slot_path(slot)); }
+bool SaveSystem::slot_exists(int slot) const {
+    return std::filesystem::exists(slot_path(slot));
+}
 
-void SaveSystem::delete_slot(int slot) { std::filesystem::remove(slot_path(slot)); }
+void SaveSystem::delete_slot(int slot) {
+    std::filesystem::remove(slot_path(slot));
+}
 
 } // namespace chronicle

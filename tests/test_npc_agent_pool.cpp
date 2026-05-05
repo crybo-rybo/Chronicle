@@ -9,7 +9,7 @@ namespace chronicle {
 // ---------------------------------------------------------------------------
 
 class MockAgent : public AgentInterface {
-public:
+  public:
     int clear_history_call_count = 0;
     std::string last_system_prompt;
     bool running = true;
@@ -26,8 +26,7 @@ public:
 
     void register_tools(ToolRegistry &, const std::string &) override {}
 
-    AgentChatResult chat_streaming(std::string_view,
-                                   AgentInterface::TokenCallback,
+    AgentChatResult chat_streaming(std::string_view, AgentInterface::TokenCallback,
                                    AgentInterface::PollCallback) override {
         return AgentChatResult{true, ""};
     }
@@ -47,7 +46,7 @@ TEST(NpcAgentPoolTest, AcquireReturnsValidHandle) {
 
 TEST(NpcAgentPoolTest, HandleDestructorCallsClearHistory) {
     auto mock = std::make_unique<MockAgent>();
-    auto* raw = mock.get();
+    auto *raw = mock.get();
     NpcAgentPool pool(std::move(mock));
 
     {
@@ -80,7 +79,7 @@ TEST(NpcAgentPoolTest, DoubleAcquireThrows) {
 
 TEST(NpcAgentPoolTest, HandleMoveSemantics) {
     auto mock = std::make_unique<MockAgent>();
-    auto* raw = mock.get();
+    auto *raw = mock.get();
     NpcAgentPool pool(std::move(mock));
 
     int count_before;

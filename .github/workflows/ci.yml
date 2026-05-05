@@ -34,3 +34,6 @@ jobs:
 
       - name: Validate lighthouse example
         run: ./build/src/chronicle validate --scenario examples/lighthouse_veil
+
+      - name: Validate minimal starter example
+        run: ./build/src/chronicle validate --scenario examples/minimal_scenario

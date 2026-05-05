@@ -36,7 +36,7 @@ namespace chronicle {
 /// the queue deque, while the @c done_ flag uses acquire/release ordering
 /// sufficient for the single-flag pattern.
 class TokenQueue {
-public:
+  public:
     /// @brief Append a token to the back of the queue.
     ///
     /// @details Thread-safe.  Called from the Zoo-Keeper inference callback.
@@ -68,7 +68,7 @@ public:
     /// inference turn to discard any stale tokens from a previous conversation.
     void reset();
 
-private:
+  private:
     std::deque<std::string> queue_; ///< Buffered token strings.
     mutable std::mutex mutex_;      ///< Guards access to @c queue_.
     std::atomic<bool> done_{false}; ///< Set by @ref signal_done.

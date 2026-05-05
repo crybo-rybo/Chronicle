@@ -35,7 +35,9 @@ TimePeriod string_to_time_period(const std::string &s) {
     throw std::invalid_argument("Unknown time period: " + s);
 }
 
-void to_json(nlohmann::json &j, const TimePeriod &p) { j = time_period_to_string(p); }
+void to_json(nlohmann::json &j, const TimePeriod &p) {
+    j = time_period_to_string(p);
+}
 
 void from_json(const nlohmann::json &j, TimePeriod &p) {
     p = string_to_time_period(j.get<std::string>());
