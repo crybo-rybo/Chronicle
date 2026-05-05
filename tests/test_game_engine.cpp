@@ -1,8 +1,14 @@
 #include "ai/npc_agent_pool.hpp"
 #include "engine/game_engine.hpp"
+#include <algorithm>
+#include <cctype>
 #include <filesystem>
+#include <fstream>
 #include <gtest/gtest.h>
+#include <map>
+#include <nlohmann/json.hpp>
 #include <ranges>
+#include <stdexcept>
 
 using namespace chronicle;
 
@@ -13,6 +19,7 @@ class MockEngineRenderer : public Renderer {
     std::vector<std::string> errors;
     std::vector<std::string> tokens;
     std::vector<std::string> examined_items;
+    std::vector<std::string> resolutions;
     int render_scene_count = 0;
     int time_advance_count = 0;
     Clock last_time_advance;
@@ -41,7 +48,9 @@ class MockEngineRenderer : public Renderer {
         ++time_advance_count;
         last_time_advance = clock;
     }
-    void render_resolution(std::string_view) override {}
+    void render_resolution(std::string_view narration) override {
+        resolutions.push_back(std::string(narration));
+    }
     std::string get_player_input(std::string_view) override { return ""; }
     void clear_input_line() override {}
 };
@@ -117,6 +126,224 @@ WorldFileSet sample_world_files() {
                         .facts = root / "facts.json",
                         .flags = root / "flags.json",
                         .events = root / "events.json"};
+}
+
+std::string sanitized_temp_name(std::string_view suffix) {
+    const auto *info = ::testing::UnitTest::GetInstance()->current_test_info();
+    std::string name = "chronicle_" + std::string(info->test_suite_name()) + "_" + info->name() +
+                       "_" + std::string(suffix);
+    for (char &ch : name) {
+        if (!std::isalnum(static_cast<unsigned char>(ch))) {
+            ch = '_';
+        }
+    }
+    return name;
+}
+
+void write_file(const std::filesystem::path &path, std::string_view contents) {
+    std::ofstream out(path);
+    if (!out) {
+        throw std::runtime_error("Failed to write test fixture: " + path.string());
+    }
+    out << contents;
+}
+
+struct TempEngineScenario {
+    std::filesystem::path root;
+    WorldFileSet files;
+
+    TempEngineScenario() = default;
+    explicit TempEngineScenario(std::filesystem::path root_dir) : root(std::move(root_dir)) {
+        files = WorldFileSet{.world = root / "world.json",
+                             .npcs = root / "npcs.json",
+                             .facts = root / "facts.json",
+                             .flags = root / "flags.json",
+                             .events = root / "events.json"};
+    }
+    TempEngineScenario(const TempEngineScenario &) = delete;
+    TempEngineScenario &operator=(const TempEngineScenario &) = delete;
+    TempEngineScenario(TempEngineScenario &&other) noexcept
+        : root(std::move(other.root)), files(std::move(other.files)) {
+        other.root.clear();
+    }
+    TempEngineScenario &operator=(TempEngineScenario &&other) noexcept {
+        if (this != &other) {
+            if (!root.empty()) {
+                std::filesystem::remove_all(root);
+            }
+            root = std::move(other.root);
+            files = std::move(other.files);
+            other.root.clear();
+        }
+        return *this;
+    }
+    ~TempEngineScenario() {
+        if (!root.empty()) {
+            std::filesystem::remove_all(root);
+        }
+    }
+};
+
+TempEngineScenario make_event_engine_scenario(std::string_view suffix,
+                                              std::string_view events_json) {
+    auto root = std::filesystem::temp_directory_path() / sanitized_temp_name(suffix);
+    std::filesystem::remove_all(root);
+    std::filesystem::create_directories(root);
+
+    TempEngineScenario scenario(root);
+
+    write_file(root / "world.json", R"json({
+  "start_location": "start",
+  "locations": {
+    "start": {
+      "name": "Start",
+      "base_description": "The starting room.",
+      "exits": {"north": "destination"},
+      "items": ["takeable_item"],
+      "npcs": [],
+      "locked_exits": []
+    },
+    "destination": {
+      "name": "Destination",
+      "base_description": "The destination room.",
+      "exits": {"south": "start"},
+      "items": [],
+      "npcs": [],
+      "locked_exits": []
+    }
+  },
+  "items": {
+    "takeable_item": {
+      "name": "Takeable Item",
+      "description": "An item for event tests.",
+      "takeable": true,
+      "key_item": false,
+      "hidden": false,
+      "unlock_target": "",
+      "properties": {}
+    },
+    "spawned_item": {
+      "name": "Spawned Item",
+      "description": "An item placed by an event.",
+      "takeable": true,
+      "key_item": false,
+      "hidden": false,
+      "unlock_target": "",
+      "properties": {}
+    }
+  }
+})json");
+
+    write_file(root / "npcs.json", R"json({
+  "npcs": {
+    "witness": {
+      "identity": {
+        "id": "witness",
+        "name": "Witness",
+        "role": "observer",
+        "personality_summary": "Precise and quiet.",
+        "backstory": "Created for event tests.",
+        "secret": "None.",
+        "goals": ["Observe events"],
+        "knowledge": ["test_fact"],
+        "trust_reveal_threshold": 50
+      },
+      "state": {
+        "current_location": "start",
+        "mood": "friendly",
+        "trust_toward_player": 10,
+        "inventory": [],
+        "memories": [],
+        "has_met_player": false,
+        "secret_revealed": false
+      }
+    }
+  }
+})json");
+
+    write_file(root / "facts.json", R"json({
+  "facts": {
+    "test_fact": {
+      "text": "A fact used by event tests.",
+      "category": "test",
+      "revealed_by_default": false
+    }
+  }
+})json");
+
+    write_file(root / "flags.json", R"json({
+  "flags": {
+    "test_flag": {
+      "default": false,
+      "description": "A flag used by event tests."
+    }
+  }
+})json");
+
+    write_file(root / "events.json", events_json);
+
+    nlohmann::json config = {
+        {"model_path", ""},
+        {"turns_per_period", 3},
+        {"save_directory", (root / "saves").string()},
+    };
+    write_file(root / "config.json", config.dump(2));
+
+    nlohmann::json manifest = {
+        {"id", "event_test"},
+        {"name", "Event Test"},
+        {"version", "1.0.0"},
+        {"chronicle_schema_version", 1},
+        {"files",
+         {{"config", "config.json"},
+          {"world", "world.json"},
+          {"npcs", "npcs.json"},
+          {"facts", "facts.json"},
+          {"flags", "flags.json"},
+          {"events", "events.json"}}},
+    };
+    write_file(root / "scenario.json", manifest.dump(2));
+
+    return scenario;
+}
+
+nlohmann::json event_condition_json(std::string type, std::vector<std::string> args) {
+    return nlohmann::json{{"type", std::move(type)}, {"args", std::move(args)}};
+}
+
+nlohmann::json event_action_json(std::string type, std::map<std::string, std::string> params = {}) {
+    return nlohmann::json{{"type", std::move(type)}, {"params", std::move(params)}};
+}
+
+std::string single_event_json(std::vector<nlohmann::json> conditions,
+                              std::vector<nlohmann::json> actions, bool once = true) {
+    nlohmann::json events = {
+        {"events",
+         {{"event_under_test",
+           {{"conditions", std::move(conditions)},
+            {"actions", std::move(actions)},
+            {"once", once},
+            {"fired", false}}}}},
+    };
+    return events.dump(2);
+}
+
+bool contains_action(const MockEngineRenderer &renderer, std::string_view text) {
+    return std::ranges::contains(renderer.actions, std::string(text));
+}
+
+void trigger_take(GameEngine &engine) {
+    ParsedCommand take;
+    take.verb = CommandVerb::Take;
+    take.primary_arg = "takeable item";
+    engine.handle_command(take);
+}
+
+void trigger_go(GameEngine &engine, std::string direction) {
+    ParsedCommand go;
+    go.verb = CommandVerb::Go;
+    go.primary_arg = std::move(direction);
+    engine.handle_command(go);
 }
 
 } // namespace
@@ -461,4 +688,184 @@ TEST_F(GameEngineTest, PeriodTransitionRendersOnceWhenThresholdCrosses) {
     EXPECT_EQ(engine.world().clock.period, TimePeriod::Afternoon);
     EXPECT_EQ(renderer->time_advance_count, 1);
     EXPECT_EQ(renderer->last_time_advance.period, TimePeriod::Afternoon);
+}
+
+TEST_F(GameEngineTest, ScriptedEventConditionsHaveTrueAndFalseCases) {
+    struct ConditionCase {
+        std::string name;
+        std::string type;
+        std::vector<std::string> true_args;
+        std::vector<std::string> false_args;
+    };
+
+    const std::vector<ConditionCase> cases = {
+        {"clock_is", "clock_is", {"morning"}, {"afternoon"}},
+        {"player_at", "player_at", {"start"}, {"destination"}},
+        {"flag_set", "flag_set", {"test_flag", "false"}, {"test_flag", "true"}},
+        {"npc_trust_ge", "npc_trust_ge", {"witness", "10"}, {"witness", "11"}},
+        {"npc_at", "npc_at", {"witness", "start"}, {"witness", "destination"}},
+        {"item_in_player_inv", "item_in_player_inv", {"takeable_item"}, {"spawned_item"}},
+        {"turn_ge", "turn_ge", {"1"}, {"2"}},
+    };
+
+    for (const auto &condition_case : cases) {
+        const auto true_events =
+            single_event_json({event_condition_json(condition_case.type, condition_case.true_args)},
+                              {event_action_json("narrate", {{"text", "condition fired"}})});
+        auto true_scenario =
+            make_event_engine_scenario("condition_true_" + condition_case.name, true_events);
+        auto true_renderer = std::make_unique<MockEngineRenderer>();
+        auto *true_renderer_ptr = true_renderer.get();
+        GameEngine true_engine((true_scenario.root / "config.json").string(), true_scenario.files,
+                               std::move(true_renderer));
+
+        trigger_take(true_engine);
+
+        EXPECT_TRUE(contains_action(*true_renderer_ptr, "condition fired")) << condition_case.name;
+        EXPECT_TRUE(true_engine.world().events[0].fired) << condition_case.name;
+
+        const auto false_events = single_event_json(
+            {event_condition_json(condition_case.type, condition_case.false_args)},
+            {event_action_json("narrate", {{"text", "condition fired"}})});
+        auto false_scenario =
+            make_event_engine_scenario("condition_false_" + condition_case.name, false_events);
+        auto false_renderer = std::make_unique<MockEngineRenderer>();
+        auto *false_renderer_ptr = false_renderer.get();
+        GameEngine false_engine((false_scenario.root / "config.json").string(),
+                                false_scenario.files, std::move(false_renderer));
+
+        trigger_take(false_engine);
+
+        EXPECT_FALSE(contains_action(*false_renderer_ptr, "condition fired"))
+            << condition_case.name;
+        EXPECT_FALSE(false_engine.world().events[0].fired) << condition_case.name;
+    }
+}
+
+TEST_F(GameEngineTest, ScriptedEventConditionsUseAndSemantics) {
+    const auto events =
+        single_event_json({event_condition_json("turn_ge", {"1"}),
+                           event_condition_json("player_at", {"destination"})},
+                          {event_action_json("narrate", {{"text", "AND event fired."}})});
+    auto scenario = make_event_engine_scenario("event_and_semantics", events);
+    auto renderer = std::make_unique<MockEngineRenderer>();
+    auto *renderer_ptr = renderer.get();
+    GameEngine engine((scenario.root / "config.json").string(), scenario.files,
+                      std::move(renderer));
+
+    trigger_take(engine);
+
+    EXPECT_FALSE(contains_action(*renderer_ptr, "AND event fired."));
+    EXPECT_FALSE(engine.world().events[0].fired);
+}
+
+TEST_F(GameEngineTest, ScriptedEventActionsUseMutationPipeline) {
+    const auto events = single_event_json(
+        {event_condition_json("turn_ge", {"1"})},
+        {event_action_json("set_flag", {{"flag_id", "test_flag"}, {"value", "true"}}),
+         event_action_json("spawn_item",
+                           {{"item_id", "spawned_item"}, {"location_id", "destination"}}),
+         event_action_json("move_npc", {{"npc_id", "witness"}, {"location_id", "destination"}}),
+         event_action_json("narrate", {{"text", "Event actions fired."}})});
+    auto scenario = make_event_engine_scenario("event_actions", events);
+    auto renderer = std::make_unique<MockEngineRenderer>();
+    auto *renderer_ptr = renderer.get();
+    GameEngine engine((scenario.root / "config.json").string(), scenario.files,
+                      std::move(renderer));
+
+    trigger_go(engine, "north");
+
+    EXPECT_TRUE(engine.world().flags.at("test_flag"));
+    EXPECT_TRUE(
+        std::ranges::contains(engine.world().locations.at("destination").items, "spawned_item"));
+    EXPECT_EQ(engine.world().npcs.at("witness").state.current_location, "destination");
+    EXPECT_FALSE(std::ranges::contains(engine.world().locations.at("start").npcs, "witness"));
+    EXPECT_TRUE(std::ranges::contains(engine.world().locations.at("destination").npcs, "witness"));
+    EXPECT_TRUE(engine.world().events[0].fired);
+    EXPECT_TRUE(contains_action(*renderer_ptr, "Event actions fired."));
+    EXPECT_TRUE(contains_action(*renderer_ptr, "Witness excuses themselves and leaves."));
+}
+
+TEST_F(GameEngineTest, ScriptedEventNarrationsRenderInAuthoredOrder) {
+    const auto events =
+        single_event_json({event_condition_json("turn_ge", {"1"})},
+                          {event_action_json("narrate", {{"text", "First event beat."}}),
+                           event_action_json("narrate", {{"text", "Second event beat."}})});
+    auto scenario = make_event_engine_scenario("event_narration_order", events);
+    auto renderer = std::make_unique<MockEngineRenderer>();
+    auto *renderer_ptr = renderer.get();
+    GameEngine engine((scenario.root / "config.json").string(), scenario.files,
+                      std::move(renderer));
+
+    trigger_take(engine);
+
+    auto first = std::ranges::find(renderer_ptr->actions, "First event beat.");
+    auto second = std::ranges::find(renderer_ptr->actions, "Second event beat.");
+    ASSERT_NE(first, renderer_ptr->actions.end());
+    ASSERT_NE(second, renderer_ptr->actions.end());
+    EXPECT_LT(std::distance(renderer_ptr->actions.begin(), first),
+              std::distance(renderer_ptr->actions.begin(), second));
+}
+
+TEST_F(GameEngineTest, OneShotScriptedEventsDoNotRefireAfterSaveLoad) {
+    const auto events =
+        single_event_json({event_condition_json("turn_ge", {"1"})},
+                          {event_action_json("narrate", {{"text", "Once event fires."}})});
+    auto scenario = make_event_engine_scenario("event_save_load_once", events);
+    auto renderer = std::make_unique<MockEngineRenderer>();
+    auto *renderer_ptr = renderer.get();
+    GameEngine engine((scenario.root / "config.json").string(), scenario.files,
+                      std::move(renderer));
+
+    trigger_go(engine, "north");
+    ASSERT_TRUE(contains_action(*renderer_ptr, "Once event fires."));
+    ASSERT_TRUE(engine.world().events[0].fired);
+
+    ParsedCommand save;
+    save.verb = CommandVerb::Save;
+    engine.handle_command(save);
+
+    ParsedCommand load;
+    load.verb = CommandVerb::Load;
+    engine.handle_command(load);
+    ASSERT_TRUE(engine.world().events[0].fired);
+
+    renderer_ptr->actions.clear();
+    trigger_go(engine, "south");
+
+    EXPECT_FALSE(contains_action(*renderer_ptr, "Once event fires."));
+    EXPECT_TRUE(engine.world().events[0].fired);
+}
+
+TEST_F(GameEngineTest, RepeatingScriptedEventsStayUnfiredAndRefireWhileEligible) {
+    const auto events = single_event_json(
+        {event_condition_json("turn_ge", {"1"})},
+        {event_action_json("narrate", {{"text", "Repeating event fires."}})}, false);
+    auto scenario = make_event_engine_scenario("event_repeating", events);
+    auto renderer = std::make_unique<MockEngineRenderer>();
+    auto *renderer_ptr = renderer.get();
+    GameEngine engine((scenario.root / "config.json").string(), scenario.files,
+                      std::move(renderer));
+
+    trigger_go(engine, "north");
+    trigger_go(engine, "south");
+
+    EXPECT_EQ(std::ranges::count(renderer_ptr->actions, "Repeating event fires."), 2);
+    EXPECT_FALSE(engine.world().events[0].fired);
+}
+
+TEST_F(GameEngineTest, EndGameScriptedEventEntersResolutionPhase) {
+    const auto events = single_event_json({event_condition_json("turn_ge", {"1"})},
+                                          {event_action_json("end_game")});
+    auto scenario = make_event_engine_scenario("event_end_game", events);
+    auto renderer = std::make_unique<MockEngineRenderer>();
+    auto *renderer_ptr = renderer.get();
+    GameEngine engine((scenario.root / "config.json").string(), scenario.files,
+                      std::move(renderer));
+
+    trigger_go(engine, "north");
+
+    EXPECT_EQ(engine.phase(), GamePhase::Resolution);
+    ASSERT_EQ(renderer_ptr->resolutions.size(), 1u);
+    EXPECT_TRUE(engine.world().events[0].fired);
 }

@@ -189,7 +189,7 @@ class GameEngine {
     /// Apply pending mutations, advance time once, and run post-turn systems.
     void run_post_turn_pipeline();
 
-    /// Evaluate scripted events. Task 6 fills in the event execution logic.
+    /// Evaluate eligible scripted events after a significant turn.
     void evaluate_scripted_events();
 };
 

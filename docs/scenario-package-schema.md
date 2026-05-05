@@ -366,6 +366,9 @@ Event trigger fields:
 | `once` | no | `true` | One-shot triggers are disabled after firing. |
 | `fired` | no | `false` | Runtime state persisted in saves. Author this as false. |
 
+For `once: false`, Chronicle leaves `fired` as `false`; the trigger may fire
+again on each later post-turn pass while all conditions remain true.
+
 Condition types:
 
 | Type | Args | Cross-reference rule |

@@ -12,6 +12,7 @@
 #include "diagnostics/logger.hpp"
 #include "engine/mutation_gate.hpp"
 #include "engine/mutations.hpp"
+#include "engine/parse_utils.hpp"
 #include "engine/text_utils.hpp"
 #include "entities/world_loader.hpp"
 #include "rendering/terminal_renderer.hpp"
@@ -102,6 +103,72 @@ std::string format_params(const std::map<std::string, std::string> &params) {
     }
     oss << "}";
     return oss.str();
+}
+
+std::optional<std::string> event_param(const EventAction &action, const std::string &key) {
+    auto it = action.params.find(key);
+    if (it == action.params.end() || it->second.empty()) {
+        return std::nullopt;
+    }
+    return it->second;
+}
+
+bool event_condition_matches(const World &world, const Condition &condition) {
+    switch (condition.type) {
+    case ConditionType::ClockIs:
+        if (condition.args.size() != 1) {
+            return false;
+        }
+        try {
+            return world.clock.period == string_to_time_period(condition.args[0]);
+        } catch (const std::exception &) {
+            return false;
+        }
+    case ConditionType::PlayerAt:
+        return condition.args.size() == 1 && world.player.current_location == condition.args[0];
+    case ConditionType::FlagSet: {
+        if (condition.args.size() != 2) {
+            return false;
+        }
+        auto flag_it = world.flags.find(condition.args[0]);
+        auto expected = parse_bool(condition.args[1]);
+        return flag_it != world.flags.end() && expected && flag_it->second == *expected;
+    }
+    case ConditionType::NpcTrustGe: {
+        if (condition.args.size() != 2) {
+            return false;
+        }
+        auto npc_it = world.npcs.find(condition.args[0]);
+        auto threshold = parse_int(condition.args[1]);
+        return npc_it != world.npcs.end() && threshold &&
+               npc_it->second.state.trust_toward_player >= *threshold;
+    }
+    case ConditionType::NpcAt: {
+        if (condition.args.size() != 2) {
+            return false;
+        }
+        auto npc_it = world.npcs.find(condition.args[0]);
+        return npc_it != world.npcs.end() &&
+               npc_it->second.state.current_location == condition.args[1];
+    }
+    case ConditionType::ItemInPlayerInv:
+        return condition.args.size() == 1 &&
+               std::ranges::contains(world.player.inventory, condition.args[0]);
+    case ConditionType::TurnGe: {
+        if (condition.args.size() != 1) {
+            return false;
+        }
+        auto threshold = parse_int(condition.args[0]);
+        return threshold && world.total_turns_elapsed >= *threshold;
+    }
+    }
+    return false;
+}
+
+bool event_conditions_match(const World &world, const EventTrigger &event) {
+    return std::ranges::all_of(event.conditions, [&](const Condition &condition) {
+        return event_condition_matches(world, condition);
+    });
 }
 
 } // namespace
@@ -399,7 +466,86 @@ void GameEngine::run_post_turn_pipeline() {
     process_pending_mutations();
 }
 
-void GameEngine::evaluate_scripted_events() {}
+void GameEngine::evaluate_scripted_events() {
+    for (auto &event : world_.events) {
+        if (event.once && event.fired) {
+            continue;
+        }
+        if (!event_conditions_match(world_, event)) {
+            continue;
+        }
+
+        logging::write(logging::Level::Info, "events", "triggering event=" + event.id);
+
+        bool entered_resolution = false;
+        for (const auto &action : event.actions) {
+            if (action.type == "move_npc") {
+                auto npc_id = event_param(action, "npc_id");
+                auto location_id = event_param(action, "location_id");
+                if (!npc_id || !location_id) {
+                    logging::write(logging::Level::Warning, "events",
+                                   "skipping malformed move_npc action event=" + event.id);
+                    continue;
+                }
+                pending_mutations_.push_back(MutationRequest{
+                    .type = MutationRequest::Type::MoveNpc,
+                    .source = MutationRequest::Source::System,
+                    .actor_id = *npc_id,
+                    .params = {{"location_id", *location_id}},
+                });
+            } else if (action.type == "set_flag") {
+                auto flag_id = event_param(action, "flag_id");
+                auto value = event_param(action, "value");
+                if (!flag_id || !value) {
+                    logging::write(logging::Level::Warning, "events",
+                                   "skipping malformed set_flag action event=" + event.id);
+                    continue;
+                }
+                pending_mutations_.push_back(MutationRequest{
+                    .type = MutationRequest::Type::SetFlag,
+                    .source = MutationRequest::Source::System,
+                    .actor_id = event.id,
+                    .params = {{"flag_id", *flag_id}, {"value", *value}},
+                });
+            } else if (action.type == "spawn_item") {
+                auto item_id = event_param(action, "item_id");
+                auto location_id = event_param(action, "location_id");
+                if (!item_id || !location_id) {
+                    logging::write(logging::Level::Warning, "events",
+                                   "skipping malformed spawn_item action event=" + event.id);
+                    continue;
+                }
+                pending_mutations_.push_back(MutationRequest{
+                    .type = MutationRequest::Type::SpawnItem,
+                    .source = MutationRequest::Source::System,
+                    .actor_id = event.id,
+                    .params = {{"item_id", *item_id}, {"location_id", *location_id}},
+                });
+            } else if (action.type == "narrate") {
+                if (auto text = event_param(action, "text")) {
+                    renderer_->render_action(*text);
+                }
+            } else if (action.type == "end_game") {
+                phase_ = GamePhase::Resolution;
+                running_ = false;
+                renderer_->render_resolution("");
+                entered_resolution = true;
+                break;
+            } else {
+                logging::write(logging::Level::Warning, "events",
+                               "skipping unknown action type=" + action.type +
+                                   " event=" + event.id);
+            }
+        }
+
+        if (event.once) {
+            event.fired = true;
+        }
+        if (entered_resolution) {
+            break;
+        }
+    }
+}
 
 void GameEngine::handle_dialogue(const std::string &npc_id, const std::string &input) {
     if (!active_conversation_handle_) {

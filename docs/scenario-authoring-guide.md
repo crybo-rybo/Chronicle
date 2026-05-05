@@ -414,6 +414,10 @@ When all conditions are true (AND semantics), the actions run.
 `once: true` (the default) disables the trigger after firing. `fired` is
 runtime state — author it as `false`.
 
+`once: false` keeps `fired` as `false` and lets the trigger fire on every
+post-turn evaluation where its conditions remain true. Use an authored flag
+condition/action if a repeating event needs its own cooldown or gate.
+
 Condition types validated by `validate_world` in
 [`src/entities/world_validator.cpp`](../src/entities/world_validator.cpp):
 
