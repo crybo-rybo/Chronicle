@@ -418,6 +418,12 @@ bool contains_action(const MockEngineRenderer &renderer, std::string_view text) 
     return std::ranges::contains(renderer.actions, std::string(text));
 }
 
+bool contains_system_text(const MockEngineRenderer &renderer, std::string_view text) {
+    return std::ranges::any_of(renderer.systems, [text](const std::string &system) {
+        return system.find(text) != std::string::npos;
+    });
+}
+
 void trigger_take(GameEngine &engine) {
     ParsedCommand take;
     take.verb = CommandVerb::Take;
@@ -763,6 +769,112 @@ TEST_F(GameEngineTest, HandlesQuitCommand) {
     engine.handle_command(cmd);
 
     // The running flag becomes false.
+}
+
+TEST_F(GameEngineTest, PlayingHelpListsRuntimeCommands) {
+    auto *renderer = mock_renderer.get();
+    GameEngine engine((sample_root() / "config.json").string(), sample_world_files(),
+                      std::move(mock_renderer));
+
+    ParsedCommand help;
+    help.verb = CommandVerb::Help;
+    engine.handle_command(help);
+
+    ASSERT_FALSE(renderer->systems.empty());
+    const auto &help_text = renderer->systems.back();
+    EXPECT_NE(help_text.find("go <direction>"), std::string::npos);
+    EXPECT_NE(help_text.find("use <item> on/with <target>"), std::string::npos);
+    EXPECT_NE(help_text.find("talk <npc>"), std::string::npos);
+    EXPECT_NE(help_text.find("save [slot]"), std::string::npos);
+    EXPECT_EQ(help_text.find("give <item>"), std::string::npos);
+}
+
+TEST_F(GameEngineTest, ConversationHelpListsDialogueAndHardCommands) {
+    auto *renderer = mock_renderer.get();
+    GameEngine engine((sample_root() / "config.json").string(), sample_world_files(),
+                      std::move(mock_renderer));
+
+    ParsedCommand talk;
+    talk.verb = CommandVerb::Talk;
+    talk.primary_arg = "marcus";
+    engine.handle_command(talk);
+
+    ParsedCommand help;
+    help.verb = CommandVerb::Help;
+    engine.handle_command(help);
+
+    ASSERT_FALSE(renderer->systems.empty());
+    const auto &help_text = renderer->systems.back();
+    EXPECT_NE(help_text.find("type a message"), std::string::npos);
+    EXPECT_NE(help_text.find("bye/goodbye/leave"), std::string::npos);
+    EXPECT_NE(help_text.find("save [slot]"), std::string::npos);
+    EXPECT_EQ(help_text.find("go <direction>"), std::string::npos);
+}
+
+TEST_F(GameEngineTest, StubDialogueExplainsEmptyModelPath) {
+    auto *renderer = mock_renderer.get();
+    GameEngine engine((sample_root() / "config.json").string(), sample_world_files(),
+                      std::move(mock_renderer));
+
+    ParsedCommand talk;
+    talk.verb = CommandVerb::Talk;
+    talk.primary_arg = "marcus";
+    engine.handle_command(talk);
+
+    EXPECT_TRUE(contains_system_text(*renderer, "stub output"));
+    EXPECT_TRUE(contains_system_text(*renderer, "no local model"));
+    EXPECT_TRUE(contains_system_text(*renderer, "CONTRIBUTING.md#local-model-paths"));
+
+    ParsedCommand dialogue;
+    dialogue.verb = CommandVerb::Dialogue;
+    dialogue.raw_input = "Can you hear me?";
+    dialogue.primary_arg = "Can you hear me?";
+    engine.handle_command(dialogue);
+
+    ASSERT_FALSE(renderer->systems.empty());
+    EXPECT_NE(renderer->systems.back().find("AI dialogue stub"), std::string::npos);
+    EXPECT_NE(renderer->systems.back().find("no local model"), std::string::npos);
+    EXPECT_NE(renderer->systems.back().find("CONTRIBUTING.md#local-model-paths"),
+              std::string::npos);
+    EXPECT_EQ(engine.world().clock.total_turns, 1);
+}
+
+TEST_F(GameEngineTest, InConversationRejectsDirectGameplayCommands) {
+    auto *renderer = mock_renderer.get();
+    GameEngine engine((sample_root() / "config.json").string(), sample_world_files(),
+                      std::move(mock_renderer));
+
+    ParsedCommand talk;
+    talk.verb = CommandVerb::Talk;
+    talk.primary_arg = "marcus";
+    engine.handle_command(talk);
+    ASSERT_EQ(engine.phase(), GamePhase::InConversation);
+
+    ParsedCommand take;
+    take.verb = CommandVerb::Take;
+    take.primary_arg = "cargo manifest";
+    engine.handle_command(take);
+
+    ASSERT_FALSE(renderer->errors.empty());
+    EXPECT_NE(renderer->errors.back().find("conversation"), std::string::npos);
+    EXPECT_EQ(engine.phase(), GamePhase::InConversation);
+    EXPECT_FALSE(std::ranges::contains(engine.world().player.inventory, "cargo_manifest"));
+    EXPECT_EQ(engine.world().clock.total_turns, 0);
+}
+
+TEST_F(GameEngineTest, GiveCommandReportsUnsupportedAction) {
+    auto *renderer = mock_renderer.get();
+    GameEngine engine((sample_root() / "config.json").string(), sample_world_files(),
+                      std::move(mock_renderer));
+
+    ParsedCommand give;
+    give.verb = CommandVerb::Give;
+    give.primary_arg = "cargo manifest";
+    engine.handle_command(give);
+
+    ASSERT_FALSE(renderer->errors.empty());
+    EXPECT_NE(renderer->errors.back().find("not supported"), std::string::npos);
+    EXPECT_EQ(engine.world().clock.total_turns, 0);
 }
 
 TEST_F(GameEngineTest, TalkCommandInitializesAgent) {
@@ -1300,7 +1412,8 @@ TEST_F(GameEngineTest, GameOverRestrictsCommandsButAllowsHelpLoadAndQuit) {
     look.verb = CommandVerb::Look;
     engine.handle_command(look);
     ASSERT_FALSE(renderer_ptr->errors.empty());
-    EXPECT_EQ(renderer_ptr->errors.back(), "The scenario has ended. Use help, load, or quit.");
+    EXPECT_EQ(renderer_ptr->errors.back(),
+              "The scenario has ended. Use help, load [slot], or quit.");
 
     ParsedCommand help;
     help.verb = CommandVerb::Help;

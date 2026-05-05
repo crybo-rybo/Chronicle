@@ -92,13 +92,87 @@ std::string_view mutation_type_name(MutationRequest::Type type) {
     return "unknown";
 }
 
-std::string help_text() {
-    return "Commands: go <direction>, look, examine <item>, take <item>, drop <item>, talk <npc>, "
-           "inventory, save [slot], load [slot], help, quit.";
+constexpr std::string_view kLocalModelDocs = "CONTRIBUTING.md#local-model-paths";
+
+std::string help_text(GamePhase phase) {
+    switch (phase) {
+    case GamePhase::Playing:
+        return "Commands: go <direction>, look, examine <item>, take <item>, drop <item>, "
+               "use <item> on/with <target>, talk <npc>, inventory, save [slot], load [slot], "
+               "help, quit.";
+    case GamePhase::InConversation:
+        return "Commands: type a message to speak, bye/goodbye/leave to end the conversation, "
+               "look, inventory, save [slot], load [slot], help, quit.";
+    case GamePhase::Resolution:
+        return "Commands: load [slot], help, quit.";
+    case GamePhase::GameOver:
+        return "Commands: load [slot], help, quit.";
+    }
+    return "Commands: help, quit.";
 }
 
 std::string game_over_command_error() {
-    return "The scenario has ended. Use help, load, or quit.";
+    return "The scenario has ended. Use help, load [slot], or quit.";
+}
+
+std::string unknown_command_error(GamePhase phase) {
+    switch (phase) {
+    case GamePhase::Playing:
+        return "I don't understand that command. Type help for commands.";
+    case GamePhase::InConversation:
+        return "I don't understand that in this conversation. Type a reply, use bye to leave, "
+               "or use help.";
+    case GamePhase::Resolution:
+        return game_over_command_error();
+    case GamePhase::GameOver:
+        return game_over_command_error();
+    }
+    return "I don't understand that command.";
+}
+
+std::string conversation_command_error() {
+    return "You are in a conversation. Type a reply, use bye to leave, or use help.";
+}
+
+std::string unsupported_give_error() {
+    return "Giving items directly is not supported. Use dialogue when an NPC can exchange items.";
+}
+
+bool allowed_in_conversation(CommandVerb verb) {
+    return verb == CommandVerb::Dialogue || verb == CommandVerb::Look ||
+           verb == CommandVerb::Inventory || verb == CommandVerb::Save ||
+           verb == CommandVerb::Load || verb == CommandVerb::Quit || verb == CommandVerb::Help;
+}
+
+std::string stub_intro_message(bool empty_model_path) {
+    if (empty_model_path) {
+        return "AI dialogue is using stub output because no local model is configured. "
+               "NPC replies are placeholders. See " +
+               std::string(kLocalModelDocs) + ".";
+    }
+    return "AI dialogue is using stub output because the configured local model could not be "
+           "initialized. Check logs and see " +
+           std::string(kLocalModelDocs) + ".";
+}
+
+std::string stub_dialogue_message(std::string_view npc_name, bool empty_model_path) {
+    if (empty_model_path) {
+        return "AI dialogue stub: " + std::string(npc_name) +
+               " cannot generate a model-backed reply because no local model is configured. See " +
+               std::string(kLocalModelDocs) + ".";
+    }
+    return "AI dialogue stub: " + std::string(npc_name) +
+           " cannot generate a model-backed reply because the configured local model is "
+           "unavailable. Check logs and see " +
+           std::string(kLocalModelDocs) + ".";
+}
+
+std::string npc_display_name(const World &world, const std::string &npc_id) {
+    auto npc_it = world.npcs.find(npc_id);
+    if (npc_it != world.npcs.end()) {
+        return npc_it->second.identity.name;
+    }
+    return npc_id;
 }
 
 std::string generic_ending_text() {
@@ -274,19 +348,19 @@ void GameEngine::handle_command(const ParsedCommand &cmd) {
                        " raw_input=\"" + cmd.raw_input + "\" primary_arg=\"" + cmd.primary_arg +
                        "\"");
 
-    if (cmd.verb == CommandVerb::Unknown) {
-        renderer_->render_error("I don't understand that command.");
-        return;
-    }
-
     if (cmd.verb == CommandVerb::Help) {
-        renderer_->render_system(help_text());
+        renderer_->render_system(help_text(phase_));
         return;
     }
 
     if (phase_ == GamePhase::GameOver && cmd.verb != CommandVerb::Load &&
         cmd.verb != CommandVerb::Quit) {
         renderer_->render_error(game_over_command_error());
+        return;
+    }
+
+    if (cmd.verb == CommandVerb::Unknown) {
+        renderer_->render_error(unknown_command_error(phase_));
         return;
     }
 
@@ -307,6 +381,11 @@ void GameEngine::handle_command(const ParsedCommand &cmd) {
     if (phase_ == GamePhase::InConversation && cmd.verb == CommandVerb::Quit &&
         is_conversation_exit(cmd.raw_input)) {
         leave_conversation();
+        return;
+    }
+
+    if (phase_ == GamePhase::InConversation && !allowed_in_conversation(cmd.verb)) {
+        renderer_->render_error(conversation_command_error());
         return;
     }
 
@@ -443,6 +522,11 @@ void GameEngine::handle_command(const ParsedCommand &cmd) {
         } else {
             renderer_->render_error("There is no one here by that name.");
         }
+        return;
+    }
+
+    if (cmd.verb == CommandVerb::Give) {
+        renderer_->render_error(unsupported_give_error());
         return;
     }
 
@@ -592,7 +676,8 @@ void GameEngine::handle_dialogue(const std::string &npc_id, const std::string &i
         if (!agent_pool_) {
             logging::write(logging::Level::Warning, "dialogue",
                            "agent pool unavailable; using stub dialogue for npc=" + npc_id);
-            renderer_->render_system("Dialogue stub: " + input + " (AI not initialized)");
+            renderer_->render_system(stub_dialogue_message(npc_display_name(world_, npc_id),
+                                                           config_.model_path.empty()));
             run_post_turn_pipeline();
             return;
         }
@@ -852,6 +937,7 @@ bool GameEngine::start_conversation(const std::string &npc_id) {
         phase_ = GamePhase::InConversation;
         current_conversation_npc_id_ = npc_id;
         renderer_->render_system("You are now talking to " + npc_it->second.identity.name + ".");
+        renderer_->render_system(stub_intro_message(config_.model_path.empty()));
         return true;
     }
 

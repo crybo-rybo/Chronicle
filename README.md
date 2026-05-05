@@ -40,6 +40,12 @@ scripts/test.sh
 
 ## Running
 
+Print the stable CLI surface:
+
+```bash
+./build/src/chronicle --help
+```
+
 Run the bundled sample scenario:
 
 ```bash
@@ -58,11 +64,31 @@ Validate a scenario package without starting play:
 ./build/src/chronicle validate --scenario data
 ```
 
+Once the runtime starts, type `help` for the in-game command list.
+
+Tracked scenario packages keep `model_path` empty, so NPC dialogue uses explicit
+stub output until you configure a local GGUF model path for your machine. This
+is expected for a fresh checkout; deterministic commands, validation, save/load,
+and scripted events still work. See [Local Model Paths](CONTRIBUTING.md#local-model-paths).
+
+## Logging
+
 Logging builds default to stderr. To keep the terminal UI clean, send logs to a file:
 
 ```bash
 CHRONICLE_LOG_FILE=chronicle.log ./build-logging/src/chronicle
 ```
+
+Runtime logging controls:
+
+- `CHRONICLE_LOG_FILE=/path/to/chronicle.log` appends Chronicle logs to a file.
+- `CHRONICLE_LOG_LEVEL=debug|info|warning|error` sets the minimum emitted level.
+- `CHRONICLE_LOG=off` disables Chronicle logging even in a logging build.
+- `CHRONICLE_LOG=debug|info|warning|error` enables logging at that level.
+
+Logs are local diagnostics. Before sharing them, review or redact local file
+paths, player input, model setup details, and any scenario secrets that may
+appear in debug output.
 
 ## Scenario Packages
 
