@@ -1,3 +1,8 @@
 {
-  "flags": {}
+  "flags": {
+    "cargo_inquiry_public": {
+      "default": false,
+      "description": "Set when the market guards publicly start questioning traders about the missing cargo."
+    }
+  }
 }

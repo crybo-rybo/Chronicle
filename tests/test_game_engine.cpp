@@ -854,7 +854,7 @@ TEST_F(GameEngineTest, RepeatingScriptedEventsStayUnfiredAndRefireWhileEligible)
     EXPECT_FALSE(engine.world().events[0].fired);
 }
 
-TEST_F(GameEngineTest, EndGameScriptedEventEntersResolutionPhase) {
+TEST_F(GameEngineTest, EndGameScriptedEventRendersGenericResolutionAndEntersGameOver) {
     const auto events = single_event_json({event_condition_json("turn_ge", {"1"})},
                                           {event_action_json("end_game")});
     auto scenario = make_event_engine_scenario("event_end_game", events);
@@ -865,7 +865,84 @@ TEST_F(GameEngineTest, EndGameScriptedEventEntersResolutionPhase) {
 
     trigger_go(engine, "north");
 
-    EXPECT_EQ(engine.phase(), GamePhase::Resolution);
+    EXPECT_EQ(engine.phase(), GamePhase::GameOver);
     ASSERT_EQ(renderer_ptr->resolutions.size(), 1u);
+    EXPECT_EQ(renderer_ptr->resolutions[0], "The scenario has reached its conclusion.");
     EXPECT_TRUE(engine.world().events[0].fired);
+}
+
+TEST_F(GameEngineTest, EndGameScriptedEventUsesAuthoredResolutionText) {
+    const auto events = single_event_json(
+        {event_condition_json("turn_ge", {"1"})},
+        {event_action_json("end_game", {{"text", "The authored ending resolves the scenario."}})});
+    auto scenario = make_event_engine_scenario("event_end_game_authored_text", events);
+    auto renderer = std::make_unique<MockEngineRenderer>();
+    auto *renderer_ptr = renderer.get();
+    GameEngine engine((scenario.root / "config.json").string(), scenario.files,
+                      std::move(renderer));
+
+    trigger_go(engine, "north");
+
+    EXPECT_EQ(engine.phase(), GamePhase::GameOver);
+    ASSERT_EQ(renderer_ptr->resolutions.size(), 1u);
+    EXPECT_EQ(renderer_ptr->resolutions[0], "The authored ending resolves the scenario.");
+}
+
+TEST_F(GameEngineTest, GameOverRestrictsCommandsButAllowsHelpLoadAndQuit) {
+    const auto events =
+        single_event_json({event_condition_json("turn_ge", {"1"})},
+                          {event_action_json("end_game", {{"text", "The scenario is over."}})});
+    auto scenario = make_event_engine_scenario("game_over_commands", events);
+    auto renderer = std::make_unique<MockEngineRenderer>();
+    auto *renderer_ptr = renderer.get();
+    GameEngine engine((scenario.root / "config.json").string(), scenario.files,
+                      std::move(renderer));
+
+    ParsedCommand save;
+    save.verb = CommandVerb::Save;
+    engine.handle_command(save);
+
+    trigger_go(engine, "north");
+    ASSERT_EQ(engine.phase(), GamePhase::GameOver);
+
+    ParsedCommand look;
+    look.verb = CommandVerb::Look;
+    engine.handle_command(look);
+    ASSERT_FALSE(renderer_ptr->errors.empty());
+    EXPECT_EQ(renderer_ptr->errors.back(), "The scenario has ended. Use help, load, or quit.");
+
+    ParsedCommand help;
+    help.verb = CommandVerb::Help;
+    engine.handle_command(help);
+    ASSERT_FALSE(renderer_ptr->systems.empty());
+    EXPECT_NE(renderer_ptr->systems.back().find("Commands:"), std::string::npos);
+
+    ParsedCommand load;
+    load.verb = CommandVerb::Load;
+    engine.handle_command(load);
+    EXPECT_EQ(engine.phase(), GamePhase::Playing);
+
+    trigger_go(engine, "north");
+    ASSERT_EQ(engine.phase(), GamePhase::GameOver);
+
+    ParsedCommand quit;
+    quit.verb = CommandVerb::Quit;
+    engine.handle_command(quit);
+    ASSERT_FALSE(renderer_ptr->systems.empty());
+    EXPECT_EQ(renderer_ptr->systems.back(), "Thanks for playing!");
+}
+
+TEST_F(GameEngineTest, BundledSampleReachesEventOnlyEnding) {
+    auto renderer = std::make_unique<MockEngineRenderer>();
+    auto *renderer_ptr = renderer.get();
+    GameEngine engine((sample_root() / "config.json").string(), sample_world_files(),
+                      std::move(renderer));
+
+    for (const auto &direction : {"north", "south", "north", "south", "north", "south"}) {
+        trigger_go(engine, direction);
+    }
+
+    EXPECT_EQ(engine.phase(), GamePhase::GameOver);
+    ASSERT_EQ(renderer_ptr->resolutions.size(), 1u);
+    EXPECT_NE(renderer_ptr->resolutions[0].find("stolen cargo trail goes cold"), std::string::npos);
 }

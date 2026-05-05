@@ -441,7 +441,7 @@ Action types:
 | `set_flag`   | `flag_id`, `value` (`"true"`/`"false"`)  | Set a declared flag.                         |
 | `spawn_item` | `item_id`, `location_id`                 | Place an existing item ID into a location.   |
 | `narrate`    | `text`                                   | Print narration to the player.               |
-| `end_game`   | (none)                                   | Trigger the resolution pathway.              |
+| `end_game`   | optional `text`                          | Trigger the resolution pathway.              |
 
 Unknown action types are validation errors. Required `params` keys must be
 non-empty strings.

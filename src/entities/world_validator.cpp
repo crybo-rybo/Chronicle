@@ -288,7 +288,7 @@ ValidationReport validate_world(const World &world) {
             } else if (action.type == "narrate") {
                 (void)require_param(event, i, action, "text");
             } else if (action.type == "end_game") {
-                // Control-only action; no world mutation parameters are required.
+                // Control-only action; optional text is used as final narration.
             } else {
                 error(action_context(event, i, action.type) + " has unknown action type '" +
                       action.type + "'");

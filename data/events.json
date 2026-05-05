@@ -7,9 +7,32 @@
       ],
       "actions": [
         {
+          "type": "set_flag",
+          "params": {
+            "flag_id": "cargo_inquiry_public",
+            "value": "true"
+          }
+        },
+        {
           "type": "narrate",
           "params": {
             "text": "A commotion breaks out near the merchant stalls. Guards are questioning traders about the missing cargo."
+          }
+        }
+      ],
+      "once": true,
+      "fired": false
+    },
+    "cargo_trail_goes_cold": {
+      "conditions": [
+        {"type": "flag_set", "args": ["cargo_inquiry_public", "true"]},
+        {"type": "turn_ge", "args": ["6"]}
+      ],
+      "actions": [
+        {
+          "type": "end_game",
+          "params": {
+            "text": "By sundown, every trader has heard the accusation and every useful witness has learned to keep quiet. The stolen cargo trail goes cold in the market dust."
           }
         }
       ],

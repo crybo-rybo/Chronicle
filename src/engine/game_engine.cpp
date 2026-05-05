@@ -90,6 +90,19 @@ std::string_view mutation_type_name(MutationRequest::Type type) {
     return "unknown";
 }
 
+std::string help_text() {
+    return "Commands: go <direction>, look, examine <item>, take <item>, drop <item>, talk <npc>, "
+           "inventory, save [slot], load [slot], help, quit.";
+}
+
+std::string game_over_command_error() {
+    return "The scenario has ended. Use help, load, or quit.";
+}
+
+std::string generic_ending_text() {
+    return "The scenario has reached its conclusion.";
+}
+
 std::string format_params(const std::map<std::string, std::string> &params) {
     std::ostringstream oss;
     oss << "{";
@@ -264,6 +277,17 @@ void GameEngine::handle_command(const ParsedCommand &cmd) {
         return;
     }
 
+    if (cmd.verb == CommandVerb::Help) {
+        renderer_->render_system(help_text());
+        return;
+    }
+
+    if (phase_ == GamePhase::GameOver && cmd.verb != CommandVerb::Load &&
+        cmd.verb != CommandVerb::Quit) {
+        renderer_->render_error(game_over_command_error());
+        return;
+    }
+
     if (cmd.verb == CommandVerb::Dialogue) {
         if (is_conversation_exit(cmd.raw_input)) {
             leave_conversation();
@@ -300,6 +324,9 @@ void GameEngine::handle_command(const ParsedCommand &cmd) {
             auto dest_id = req.params.at("location_id");
             pending_mutations_.push_back(std::move(req));
             run_post_turn_pipeline();
+            if (phase_ == GamePhase::GameOver) {
+                return;
+            }
             auto dest_it = world_.locations.find(dest_id);
             std::string name = dest_it != world_.locations.end() ? dest_it->second.name : dest_id;
             renderer_->render_move(dir, name);
@@ -327,6 +354,9 @@ void GameEngine::handle_command(const ParsedCommand &cmd) {
             auto item_id = req.params.at("item_id");
             pending_mutations_.push_back(std::move(req));
             run_post_turn_pipeline();
+            if (phase_ == GamePhase::GameOver) {
+                return;
+            }
             auto w_it = world_.items.find(item_id);
             renderer_->render_action(
                 "You take the " + (w_it != world_.items.end() ? w_it->second.name : item_id) + ".");
@@ -343,6 +373,9 @@ void GameEngine::handle_command(const ParsedCommand &cmd) {
             auto item_id = req.params.at("item_id");
             pending_mutations_.push_back(std::move(req));
             run_post_turn_pipeline();
+            if (phase_ == GamePhase::GameOver) {
+                return;
+            }
             auto w_it = world_.items.find(item_id);
             renderer_->render_action(
                 "You drop the " + (w_it != world_.items.end() ? w_it->second.name : item_id) + ".");
@@ -526,9 +559,9 @@ void GameEngine::evaluate_scripted_events() {
                     renderer_->render_action(*text);
                 }
             } else if (action.type == "end_game") {
-                phase_ = GamePhase::Resolution;
-                running_ = false;
-                renderer_->render_resolution("");
+                phase_ = GamePhase::GameOver;
+                renderer_->render_resolution(
+                    event_param(action, "text").value_or(generic_ending_text()));
                 entered_resolution = true;
                 break;
             } else {
