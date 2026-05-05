@@ -6,8 +6,10 @@ end-to-end. Every JSON snippet is taken directly from the bundled sample at
 
 Chronicle's v1 public contract is the CLI plus the JSON scenario package
 schema. C++ APIs are not part of the contract. For the formal contract see
-[`docs/chronicle-scenario-sdk-pivot.md`](chronicle-scenario-sdk-pivot.md); for
-the canonical type definitions see [`src/entities/`](../src/entities).
+[`docs/chronicle-scenario-sdk-pivot.md`](chronicle-scenario-sdk-pivot.md).
+The C++ sources can help explain current implementation behavior, but the
+author-facing contract is the CLI, this guide, the JSON schemas, and validator
+diagnostics.
 
 ## 1. Overview
 
@@ -362,14 +364,14 @@ shape:
 {
   "flags": {
     "secret_revealed": {
-      "default_value": false,
+      "default": false,
       "description": "Set to true once Marcus admits to helping the thief."
     }
   }
 }
 ```
 
-- `default_value`: initial value loaded into `World::flags`.
+- `default`: initial value loaded into the runtime's flag state.
 - `description`: authoring note. Not currently surfaced at runtime; useful
   for keeping a registry of what each flag means.
 
@@ -553,13 +555,13 @@ config).
 
 - [`data/`](../data) — canonical small sample package. Read it end-to-end
   before authoring your own.
-- `examples/` — richer reference scenarios. (Landing in parallel; may not
-  yet be present in your tree.)
-- `schemas/` — JSON Schema files for each scenario file. (Also landing in
-  parallel; useful for editor integration once present.)
-- [`src/entities/`](../src/entities) — source-of-truth structs for every
-  scenario file. When in doubt about a field's meaning or default, the
-  `*.hpp` is authoritative.
+- [`examples/lighthouse_veil/`](../examples/lighthouse_veil) — richer
+  reference package showing multi-location authoring, scoped NPC policies, and
+  event chains.
+- [`schemas/`](../schemas) — JSON Schema files for each scenario file, useful
+  for editor integration.
+- [`src/entities/`](../src/entities) — implementation code for the current
+  loader and validator. Treat it as explanatory, not as a stable public API.
 - [`src/entities/world_validator.cpp`](../src/entities/world_validator.cpp) —
   exact, exhaustive list of validation rules.
 - [`src/ai/tool_registry.cpp`](../src/ai/tool_registry.cpp) — exact tool

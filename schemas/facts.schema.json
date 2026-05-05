@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://chronicle.dev/schemas/facts.schema.json",
   "title": "Chronicle Facts File",
-  "description": "Authored fact registry. Mirrors Fact in src/entities/fact.hpp. Map keys are injected as fact ids by the loader.",
+  "description": "Authored fact registry for the v1 scenario package contract. Map keys are injected as fact ids by the loader.",
   "type": "object",
   "additionalProperties": true,
   "required": ["facts"],

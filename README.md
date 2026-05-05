@@ -2,7 +2,13 @@
 
 Chronicle is a bounded scenario SDK/runtime for offline, LLM-driven NPC mystery and social-sim text adventures. Creators author JSON scenario packages; Chronicle provides the C++23 runtime, local [Zoo-Keeper](https://github.com/crybo-rybo/zoo-keeper) integration, prompt assembly, save/load, validation, and a strict tool/mutation pipeline.
 
-The v1 public contract is the command-line runner plus the scenario package schema. C++ internals are still allowed to evolve.
+The stable v1 public contract is deliberately narrow:
+
+- CLI runner: `chronicle [--scenario <dir>]`
+- CLI validator: `chronicle validate --scenario <dir>`
+- JSON scenario package schema and validation behavior
+
+The bundled `data/` directory is a sample package and contract fixture, not the product itself. C++ headers, source layout, and library boundaries are implementation details for v1 and may change without compatibility guarantees.
 
 ## Prerequisites
 
@@ -86,6 +92,8 @@ Manifest file paths must be relative paths that stay inside the package director
 NPCs may declare per-character tool policies in `npcs.json`. `allowed_tools` is the fixed v1 tool palette; scoped lists restrict which authored IDs the NPC may touch. Empty scoped lists mean no additional ID restriction.
 
 Supported NPC tools: `say`, `give_item`, `take_item`, `update_mood`, `update_trust`, `move_self`, `reveal_knowledge`, `remember`, `set_flag`, `inspect_item`.
+
+For the short public-contract statement, see [`docs/chronicle-scenario-sdk-pivot.md`](docs/chronicle-scenario-sdk-pivot.md). For authoring guidance, see [`docs/scenario-authoring-guide.md`](docs/scenario-authoring-guide.md). JSON Schema files for editor integration live under [`schemas/`](schemas).
 
 ## Testing
 

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://chronicle.dev/schemas/config.schema.json",
   "title": "Chronicle Runtime Config",
-  "description": "Runtime configuration loaded from config.json. Mirrors Config in src/entities/config.hpp. All fields are optional; missing fields receive struct defaults.",
+  "description": "Runtime configuration loaded from config.json. This is part of the v1 scenario package contract. All fields are optional; missing fields receive runtime defaults.",
   "type": "object",
   "additionalProperties": true,
   "properties": {

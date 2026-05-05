@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://chronicle.dev/schemas/flags.schema.json",
   "title": "Chronicle Flags File",
-  "description": "Scenario-declared boolean narrative flags. Mirrors Flag in src/entities/flag.hpp. Map keys are injected as flag ids; the JSON key for the default value is 'default' (not 'default_value').",
+  "description": "Scenario-declared boolean narrative flags for the v1 scenario package contract. Map keys are injected as flag ids; the JSON key for the default value is 'default' (not 'default_value').",
   "type": "object",
   "additionalProperties": true,
   "required": ["flags"],
