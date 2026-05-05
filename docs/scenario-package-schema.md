@@ -142,7 +142,7 @@ Location fields:
 | `exits` | no | `{}` | Direction string to destination location ID. |
 | `items` | no | `[]` | Item IDs initially in this location. |
 | `npcs` | no | `[]` | NPC IDs initially listed here. Usually leave empty; the loader inserts NPCs from `npcs.json`. |
-| `locked_exits` | no | `[]` | Exit direction names that start locked. Stored in world state for item-use work. |
+| `locked_exits` | no | `[]` | Exit direction names that start locked. Each entry must be a key in `exits`. |
 
 Item fields:
 
@@ -153,13 +153,14 @@ Item fields:
 | `takeable` | no | `true` | If false, player take attempts fail. |
 | `key_item` | no | `false` | Protected from some transfer/drop behavior. |
 | `hidden` | no | `false` | Hidden items are omitted from ambient scene listings. |
-| `unlock_target` | no | `""` | Destination location ID unlocked by this item when authored locked-exit behavior is used. |
+| `unlock_target` | no | `""` | Destination location ID unlocked by this item when used on a matching locked exit. |
 | `properties` | no | `{}` | String-to-string metadata. `readable: "true"` plus `text` renders document text. |
 
-ID and cross-reference rules: `start_location`, every exit target, every listed
-item ID, and every listed NPC ID must refer to declared entities. A given item
-ID may appear in at most one owner container: one location, one NPC inventory,
-or the player inventory in a save.
+ID and cross-reference rules: `start_location`, every exit target, every
+`locked_exits` entry, every non-empty item `unlock_target`, every listed item
+ID, and every listed NPC ID must refer to declared entities. A given item ID may
+appear in at most one owner container: one location, one NPC inventory, or the
+player inventory in a save.
 
 Validation behavior: dangling references and duplicate item ownership are
 errors. `readable=true` without non-empty `text` is a warning.

@@ -84,6 +84,8 @@ std::string_view mutation_type_name(MutationRequest::Type type) {
         return "player_take";
     case MutationRequest::Type::PlayerDrop:
         return "player_drop";
+    case MutationRequest::Type::UnlockExit:
+        return "unlock_exit";
     case MutationRequest::Type::SpawnItem:
         return "spawn_item";
     }
@@ -380,6 +382,11 @@ void GameEngine::handle_command(const ParsedCommand &cmd) {
             renderer_->render_action(
                 "You drop the " + (w_it != world_.items.end() ? w_it->second.name : item_id) + ".");
         }
+        return;
+    }
+
+    if (cmd.verb == CommandVerb::Use) {
+        handle_use(cmd.primary_arg, cmd.secondary_arg);
         return;
     }
 
@@ -730,6 +737,84 @@ std::optional<std::string> GameEngine::find_accessible_item_id(const std::string
         }
     }
     return std::nullopt;
+}
+
+std::optional<std::string> GameEngine::find_inventory_item_id(const std::string &query) const {
+    for (const auto &item_id : world_.player.inventory) {
+        auto item_it = world_.items.find(item_id);
+        if (item_it != world_.items.end() &&
+            (text::contains_normalized(item_it->second.name, query) ||
+             text::contains_normalized(item_id, query))) {
+            return item_id;
+        }
+    }
+    return std::nullopt;
+}
+
+std::optional<GameEngine::LockedExitMatch>
+GameEngine::find_locked_exit_match(const std::string &query) const {
+    auto loc_it = world_.locations.find(world_.player.current_location);
+    if (loc_it == world_.locations.end()) {
+        return std::nullopt;
+    }
+
+    const auto &loc = loc_it->second;
+    for (const auto &direction : loc.locked_exits) {
+        auto exit_it = loc.exits.find(direction);
+        if (exit_it == loc.exits.end()) {
+            continue;
+        }
+        const auto &destination_id = exit_it->second;
+        std::string destination_name = destination_id;
+        if (auto dest_it = world_.locations.find(destination_id);
+            dest_it != world_.locations.end()) {
+            destination_name = dest_it->second.name;
+        }
+
+        if (text::contains_normalized(direction, query) ||
+            text::contains_normalized(destination_id, query) ||
+            text::contains_normalized(destination_name, query)) {
+            return LockedExitMatch{direction, destination_id, destination_name};
+        }
+    }
+    return std::nullopt;
+}
+
+void GameEngine::handle_use(const std::string &item_query, const std::string &target_query) {
+    auto item_id = find_inventory_item_id(item_query);
+    if (!item_id) {
+        renderer_->render_error("You aren't carrying that.");
+        return;
+    }
+    if (text::trim_copy(target_query).empty()) {
+        renderer_->render_error("Use it on what?");
+        return;
+    }
+
+    auto locked_exit = find_locked_exit_match(target_query);
+    if (!locked_exit) {
+        renderer_->render_error("That target is not locked.");
+        return;
+    }
+
+    const auto &item = world_.items.at(*item_id);
+    if (item.unlock_target != locked_exit->destination_id) {
+        renderer_->render_error("That doesn't unlock the " + locked_exit->direction + " exit.");
+        return;
+    }
+
+    pending_mutations_.push_back(MutationRequest{
+        .type = MutationRequest::Type::UnlockExit,
+        .source = MutationRequest::Source::Player,
+        .actor_id = "player",
+        .params = {{"location_id", world_.player.current_location},
+                   {"direction", locked_exit->direction}},
+    });
+    run_post_turn_pipeline();
+    if (phase_ == GamePhase::GameOver) {
+        return;
+    }
+    renderer_->render_action("You unlock the " + locked_exit->direction + " exit.");
 }
 
 std::optional<int> GameEngine::parse_slot(const std::string &slot_text) const {

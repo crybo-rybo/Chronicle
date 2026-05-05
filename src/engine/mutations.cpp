@@ -268,6 +268,25 @@ bool apply_player_drop(World &world, const MutationRequest &mutation) {
     return true;
 }
 
+bool apply_unlock_exit(World &world, const MutationRequest &mutation) {
+    auto location_id = get_param(mutation, "location_id");
+    auto direction = get_param(mutation, "direction");
+    if (!location_id || !direction) {
+        return false;
+    }
+    auto loc_it = world.locations.find(*location_id);
+    if (loc_it == world.locations.end()) {
+        return false;
+    }
+    auto &locked_exits = loc_it->second.locked_exits;
+    auto it = std::ranges::find(locked_exits, *direction);
+    if (it == locked_exits.end()) {
+        return false;
+    }
+    locked_exits.erase(it);
+    return true;
+}
+
 bool apply_spawn_item(World &world, const MutationRequest &mutation) {
     auto item_id = get_param(mutation, "item_id");
     auto location_id = get_param(mutation, "location_id");
@@ -307,6 +326,8 @@ bool apply_mutation(World &world, const MutationRequest &mutation) {
         return apply_player_take(world, mutation);
     case MutationRequest::Type::PlayerDrop:
         return apply_player_drop(world, mutation);
+    case MutationRequest::Type::UnlockExit:
+        return apply_unlock_exit(world, mutation);
     case MutationRequest::Type::SpawnItem:
         return apply_spawn_item(world, mutation);
     }

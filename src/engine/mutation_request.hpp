@@ -24,7 +24,7 @@ namespace chronicle {
 struct MutationRequest {
     /// @brief Who initiated the mutation.
     enum class Source {
-        Player, ///< Player command (go, take, drop).
+        Player, ///< Player command (go, take, drop, use).
         Npc,    ///< NPC tool call during inference.
         System  ///< Engine event or scripted action.
     };
@@ -43,6 +43,7 @@ struct MutationRequest {
     /// - @c PlayerMove: @c location_id and @c direction.
     /// - @c PlayerTake: @c item_id.
     /// - @c PlayerDrop: @c item_id.
+    /// - @c UnlockExit: @c location_id and @c direction.
     /// - @c SpawnItem: @c item_id and @c location_id.
     enum class Type {
         // NPC-originated
@@ -59,6 +60,7 @@ struct MutationRequest {
         PlayerMove, ///< Move the player to a connected location.
         PlayerTake, ///< Take an item from the current location.
         PlayerDrop, ///< Drop an item from the player's inventory.
+        UnlockExit, ///< Unlock a locked exit in the current location.
 
         // System/event-originated
         SpawnItem, ///< Create or place an item in a location.

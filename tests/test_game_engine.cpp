@@ -307,6 +307,78 @@ TempEngineScenario make_event_engine_scenario(std::string_view suffix,
     return scenario;
 }
 
+TempEngineScenario make_locked_exit_engine_scenario(std::string_view suffix) {
+    auto root = std::filesystem::temp_directory_path() / sanitized_temp_name(suffix);
+    std::filesystem::remove_all(root);
+    std::filesystem::create_directories(root);
+
+    TempEngineScenario scenario(root);
+
+    write_file(root / "world.json", R"json({
+  "start_location": "start",
+  "locations": {
+    "start": {
+      "name": "Start",
+      "base_description": "A starting room with a locked northern gate.",
+      "exits": {"north": "dock", "east": "garden"},
+      "items": ["gate_key", "wrong_key"],
+      "npcs": [],
+      "locked_exits": ["north"]
+    },
+    "dock": {
+      "name": "Tide-Gate Pier",
+      "base_description": "A pier behind the locked gate.",
+      "exits": {"south": "start"},
+      "items": [],
+      "npcs": [],
+      "locked_exits": []
+    },
+    "garden": {
+      "name": "Garden",
+      "base_description": "An unlocked side garden.",
+      "exits": {"west": "start"},
+      "items": [],
+      "npcs": [],
+      "locked_exits": []
+    }
+  },
+  "items": {
+    "gate_key": {
+      "name": "Gate Key",
+      "description": "A key for the tide gate.",
+      "takeable": true,
+      "key_item": true,
+      "hidden": false,
+      "unlock_target": "dock",
+      "properties": {}
+    },
+    "wrong_key": {
+      "name": "Wrong Key",
+      "description": "A key for somewhere else.",
+      "takeable": true,
+      "key_item": true,
+      "hidden": false,
+      "unlock_target": "garden",
+      "properties": {}
+    }
+  }
+})json");
+
+    write_file(root / "npcs.json", R"json({"npcs": {}})json");
+    write_file(root / "facts.json", R"json({"facts": {}})json");
+    write_file(root / "flags.json", R"json({"flags": {}})json");
+    write_file(root / "events.json", R"json({"events": {}})json");
+
+    nlohmann::json config = {
+        {"model_path", ""},
+        {"turns_per_period", 3},
+        {"save_directory", (root / "saves").string()},
+    };
+    write_file(root / "config.json", config.dump(2));
+
+    return scenario;
+}
+
 nlohmann::json event_condition_json(std::string type, std::vector<std::string> args) {
     return nlohmann::json{{"type", std::move(type)}, {"args", std::move(args)}};
 }
@@ -688,6 +760,188 @@ TEST_F(GameEngineTest, PeriodTransitionRendersOnceWhenThresholdCrosses) {
     EXPECT_EQ(engine.world().clock.period, TimePeriod::Afternoon);
     EXPECT_EQ(renderer->time_advance_count, 1);
     EXPECT_EQ(renderer->last_time_advance.period, TimePeriod::Afternoon);
+}
+
+TEST_F(GameEngineTest, LockedExitBlocksMovement) {
+    auto *renderer = mock_renderer.get();
+    auto scenario = make_locked_exit_engine_scenario("locked_exit_blocks_movement");
+    GameEngine engine((scenario.root / "config.json").string(), scenario.files,
+                      std::move(mock_renderer));
+
+    trigger_go(engine, "north");
+
+    EXPECT_EQ(engine.world().player.current_location, "start");
+    ASSERT_FALSE(renderer->errors.empty());
+    EXPECT_EQ(renderer->errors.back(), "The way north is locked.");
+    EXPECT_EQ(engine.world().clock.total_turns, 0);
+}
+
+TEST_F(GameEngineTest, UseUnlocksLockedExitByDirectionDestinationIdAndName) {
+    for (const auto &target : {"north", "dock", "Tide-Gate Pier"}) {
+        auto scenario = make_locked_exit_engine_scenario(std::string("use_unlocks_") + target);
+        auto renderer = std::make_unique<MockEngineRenderer>();
+        auto *renderer_ptr = renderer.get();
+        GameEngine engine((scenario.root / "config.json").string(), scenario.files,
+                          std::move(renderer));
+
+        ParsedCommand take;
+        take.verb = CommandVerb::Take;
+        take.primary_arg = "Gate Key";
+        engine.handle_command(take);
+
+        ParsedCommand use;
+        use.verb = CommandVerb::Use;
+        use.primary_arg = "gate_key";
+        use.secondary_arg = target;
+        engine.handle_command(use);
+
+        EXPECT_FALSE(
+            std::ranges::contains(engine.world().locations.at("start").locked_exits, "north"))
+            << target;
+        EXPECT_EQ(engine.world().clock.total_turns, 2) << target;
+        EXPECT_TRUE(contains_action(*renderer_ptr, "You unlock the north exit.")) << target;
+    }
+}
+
+TEST_F(GameEngineTest, UseRejectsInvalidAttemptsWithoutUnlocking) {
+    {
+        auto scenario = make_locked_exit_engine_scenario("use_without_item");
+        auto renderer = std::make_unique<MockEngineRenderer>();
+        auto *renderer_ptr = renderer.get();
+        GameEngine engine((scenario.root / "config.json").string(), scenario.files,
+                          std::move(renderer));
+
+        ParsedCommand use;
+        use.verb = CommandVerb::Use;
+        use.primary_arg = "Gate Key";
+        use.secondary_arg = "north";
+        engine.handle_command(use);
+
+        ASSERT_FALSE(renderer_ptr->errors.empty());
+        EXPECT_EQ(renderer_ptr->errors.back(), "You aren't carrying that.");
+        EXPECT_TRUE(
+            std::ranges::contains(engine.world().locations.at("start").locked_exits, "north"));
+        EXPECT_EQ(engine.world().clock.total_turns, 0);
+    }
+
+    {
+        auto scenario = make_locked_exit_engine_scenario("use_missing_target");
+        auto renderer = std::make_unique<MockEngineRenderer>();
+        auto *renderer_ptr = renderer.get();
+        GameEngine engine((scenario.root / "config.json").string(), scenario.files,
+                          std::move(renderer));
+
+        ParsedCommand take;
+        take.verb = CommandVerb::Take;
+        take.primary_arg = "Gate Key";
+        engine.handle_command(take);
+
+        ParsedCommand use;
+        use.verb = CommandVerb::Use;
+        use.primary_arg = "Gate Key";
+        engine.handle_command(use);
+
+        ASSERT_FALSE(renderer_ptr->errors.empty());
+        EXPECT_EQ(renderer_ptr->errors.back(), "Use it on what?");
+        EXPECT_TRUE(
+            std::ranges::contains(engine.world().locations.at("start").locked_exits, "north"));
+        EXPECT_EQ(engine.world().clock.total_turns, 1);
+    }
+
+    {
+        auto scenario = make_locked_exit_engine_scenario("use_target_not_locked");
+        auto renderer = std::make_unique<MockEngineRenderer>();
+        auto *renderer_ptr = renderer.get();
+        GameEngine engine((scenario.root / "config.json").string(), scenario.files,
+                          std::move(renderer));
+
+        ParsedCommand take;
+        take.verb = CommandVerb::Take;
+        take.primary_arg = "Gate Key";
+        engine.handle_command(take);
+
+        ParsedCommand use;
+        use.verb = CommandVerb::Use;
+        use.primary_arg = "Gate Key";
+        use.secondary_arg = "garden";
+        engine.handle_command(use);
+
+        ASSERT_FALSE(renderer_ptr->errors.empty());
+        EXPECT_EQ(renderer_ptr->errors.back(), "That target is not locked.");
+        EXPECT_TRUE(
+            std::ranges::contains(engine.world().locations.at("start").locked_exits, "north"));
+        EXPECT_EQ(engine.world().clock.total_turns, 1);
+    }
+
+    {
+        auto scenario = make_locked_exit_engine_scenario("use_wrong_item");
+        auto renderer = std::make_unique<MockEngineRenderer>();
+        auto *renderer_ptr = renderer.get();
+        GameEngine engine((scenario.root / "config.json").string(), scenario.files,
+                          std::move(renderer));
+
+        ParsedCommand take;
+        take.verb = CommandVerb::Take;
+        take.primary_arg = "Wrong Key";
+        engine.handle_command(take);
+
+        ParsedCommand use;
+        use.verb = CommandVerb::Use;
+        use.primary_arg = "Wrong Key";
+        use.secondary_arg = "north";
+        engine.handle_command(use);
+
+        ASSERT_FALSE(renderer_ptr->errors.empty());
+        EXPECT_EQ(renderer_ptr->errors.back(), "That doesn't unlock the north exit.");
+        EXPECT_TRUE(
+            std::ranges::contains(engine.world().locations.at("start").locked_exits, "north"));
+        EXPECT_EQ(engine.world().clock.total_turns, 1);
+    }
+}
+
+TEST_F(GameEngineTest, UnlockStateSurvivesSaveLoad) {
+    auto scenario = make_locked_exit_engine_scenario("unlock_save_load");
+    GameEngine engine((scenario.root / "config.json").string(), scenario.files,
+                      std::move(mock_renderer));
+
+    ParsedCommand take;
+    take.verb = CommandVerb::Take;
+    take.primary_arg = "Gate Key";
+    engine.handle_command(take);
+
+    ParsedCommand use;
+    use.verb = CommandVerb::Use;
+    use.primary_arg = "Gate Key";
+    use.secondary_arg = "north";
+    engine.handle_command(use);
+    ASSERT_FALSE(std::ranges::contains(engine.world().locations.at("start").locked_exits, "north"));
+
+    ParsedCommand save;
+    save.verb = CommandVerb::Save;
+    engine.handle_command(save);
+
+    ParsedCommand load;
+    load.verb = CommandVerb::Load;
+    engine.handle_command(load);
+
+    EXPECT_FALSE(std::ranges::contains(engine.world().locations.at("start").locked_exits, "north"));
+    trigger_go(engine, "north");
+    EXPECT_EQ(engine.world().player.current_location, "dock");
+}
+
+TEST_F(GameEngineTest, LighthouseVeilTideGateUsesAuthoredUnlockData) {
+    auto root = std::filesystem::path(CHRONICLE_SOURCE_DIR) / "examples" / "lighthouse_veil";
+    WorldFileSet files{.world = root / "world.json",
+                       .npcs = root / "npcs.json",
+                       .facts = root / "facts.json",
+                       .flags = root / "flags.json",
+                       .events = root / "events.json"};
+    GameEngine engine((root / "config.json").string(), files, std::move(mock_renderer));
+
+    const auto &square = engine.world().locations.at("village_square");
+    ASSERT_TRUE(std::ranges::contains(square.locked_exits, "west"));
+    EXPECT_EQ(square.exits.at("west"), "dock_pier");
+    EXPECT_EQ(engine.world().items.at("tide_gate_key").unlock_target, "dock_pier");
 }
 
 TEST_F(GameEngineTest, ScriptedEventConditionsHaveTrueAndFalseCases) {

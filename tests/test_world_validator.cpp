@@ -83,6 +83,26 @@ TEST(WorldValidatorTest, RejectsNpcKnowledgeWhenFactRegistryIsEmpty) {
     EXPECT_TRUE(has_error_containing(report, "knowledge references fact 'fact_known'"));
 }
 
+TEST(WorldValidatorTest, RejectsLockedExitWithoutMatchingExit) {
+    auto world = make_valid_world();
+    world.locations.at("tavern").locked_exits = {"north"};
+
+    auto report = validate_world(world);
+
+    EXPECT_FALSE(report.ok);
+    EXPECT_TRUE(has_error_containing(report, "locked_exit 'north'"));
+}
+
+TEST(WorldValidatorTest, RejectsItemUnlockTargetMissingLocation) {
+    auto world = make_valid_world();
+    world.items.at("note").unlock_target = "missing_location";
+
+    auto report = validate_world(world);
+
+    EXPECT_FALSE(report.ok);
+    EXPECT_TRUE(has_error_containing(report, "unlock_target 'missing_location'"));
+}
+
 TEST(WorldValidatorTest, RejectsInvalidEventConditions) {
     auto world = make_valid_world();
     world.events[0].conditions = {

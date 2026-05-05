@@ -205,7 +205,9 @@ Location fields:
 - `exits`: maps direction strings (`north`, `upstairs`, anything) to
   destination location IDs. Validation rejects unknown targets.
 - `locked_exits`: list of direction strings (keys from `exits`) that start
-  locked.
+  locked. A player cannot traverse a locked exit until an inventory item with
+  a matching `unlock_target` is used on that direction, destination ID, or
+  destination display name.
 - `items`, `npcs`: entities initially present. NPC starting locations are
   driven by `state.current_location` in `npcs.json`; the loader cross-
   references those into the location's `npcs` list automatically. Leave the
@@ -217,8 +219,8 @@ Item fields:
 - `key_item`: plot-critical. `take_item` refuses to take key items back.
 - `hidden`: omitted from ambient room descriptions; must be revealed
   explicitly.
-- `unlock_target`: ID of the exit/unlockable this item opens. Empty for
-  items with no unlock effect.
+- `unlock_target`: destination location ID this item opens when used on a
+  matching locked exit. Empty for items with no unlock effect.
 - `properties`: extensible string-to-string metadata. The runtime currently
   recognises `readable: "true"` paired with `text` to render document
   contents. The validator warns when `readable=true` is set but `text` is

@@ -158,6 +158,21 @@ class GameEngine {
     /// @return The item's ID if found, @c std::nullopt otherwise.
     std::optional<std::string> find_accessible_item_id(const std::string &query) const;
 
+    /// @brief Find an item in the player's inventory by ID or display name.
+    std::optional<std::string> find_inventory_item_id(const std::string &query) const;
+
+    struct LockedExitMatch {
+        std::string direction;
+        std::string destination_id;
+        std::string destination_name;
+    };
+
+    /// @brief Find a locked exit in the current location matching a target query.
+    std::optional<LockedExitMatch> find_locked_exit_match(const std::string &query) const;
+
+    /// @brief Handle `use <item> on/with <target>` for authored unlocks.
+    void handle_use(const std::string &item_query, const std::string &target_query);
+
     /// @brief Parse a save/load slot number from a string argument.
     ///
     /// @details Returns @c 1 if the string is empty (default slot).  Returns

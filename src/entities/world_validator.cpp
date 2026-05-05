@@ -57,6 +57,12 @@ ValidationReport validate_world(const World &world) {
                       "' which does not exist in world.locations");
             }
         }
+        for (const auto &direction : loc.locked_exits) {
+            if (!loc.exits.contains(direction)) {
+                error("Location '" + loc_id + "' locked_exit '" + direction +
+                      "' does not exist in that location's exits");
+            }
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -68,6 +74,13 @@ ValidationReport validate_world(const World &world) {
                 error("Location '" + loc_id + "' references item '" + item_id +
                       "' which does not exist in world.items");
             }
+        }
+    }
+
+    for (const auto &[item_id, item] : world.items) {
+        if (!item.unlock_target.empty() && !world.locations.contains(item.unlock_target)) {
+            error("Item '" + item_id + "' unlock_target '" + item.unlock_target +
+                  "' does not exist in world.locations");
         }
     }
 

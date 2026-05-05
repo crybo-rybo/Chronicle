@@ -47,6 +47,8 @@ std::string template_key(MutationRequest::Type type) {
         return "player_take";
     case MutationRequest::Type::PlayerDrop:
         return "player_drop";
+    case MutationRequest::Type::UnlockExit:
+        return "unlock_exit";
     case MutationRequest::Type::SpawnItem:
         return "spawn_item";
     }

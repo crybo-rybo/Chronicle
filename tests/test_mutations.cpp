@@ -43,6 +43,8 @@ class MutationsTest : public ::testing::Test {
         tavern.id = "tavern";
         tavern.npcs = {"marcus"};
         tavern.items = {"coin"};
+        tavern.exits = {{"north", "market"}};
+        tavern.locked_exits = {"north"};
         world.locations["tavern"] = tavern;
 
         Location market;
@@ -137,6 +139,7 @@ TEST_F(MutationsTest, MalformedMutationsReturnFalseWithoutThrowing) {
         {Type::RevealKnowledge, Source::Npc, "marcus", {}},
         {Type::AddMemory, Source::Npc, "marcus", {{"summary", "missing importance"}}},
         {Type::SetFlag, Source::Npc, "", {}},
+        {Type::UnlockExit, Source::Player, "player", {{"location_id", "missing"}}},
     };
 
     for (const auto &req : bad_requests) {
@@ -191,6 +194,24 @@ TEST_F(MutationsTest, ApplyPlayerDrop) {
 
 TEST_F(MutationsTest, ApplyPlayerDropNotInInventory) {
     MutationRequest req{Type::PlayerDrop, Source::Player, "player", {{"item_id", "apple"}}};
+    EXPECT_FALSE(apply_mutation(world, req));
+}
+
+TEST_F(MutationsTest, ApplyUnlockExit) {
+    MutationRequest req{Type::UnlockExit,
+                        Source::Player,
+                        "player",
+                        {{"location_id", "tavern"}, {"direction", "north"}}};
+    EXPECT_TRUE(apply_mutation(world, req));
+    EXPECT_FALSE(std::ranges::contains(world.locations["tavern"].locked_exits, "north"));
+}
+
+TEST_F(MutationsTest, ApplyUnlockExitReturnsFalseWhenAlreadyUnlocked) {
+    MutationRequest req{Type::UnlockExit,
+                        Source::Player,
+                        "player",
+                        {{"location_id", "tavern"}, {"direction", "north"}}};
+    EXPECT_TRUE(apply_mutation(world, req));
     EXPECT_FALSE(apply_mutation(world, req));
 }
 
