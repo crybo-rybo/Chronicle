@@ -1,8 +1,12 @@
 # Chronicle Scenario Authoring Guide
 
 This guide walks a new author through building a Chronicle scenario package
-end-to-end. Every JSON snippet is taken directly from the bundled sample at
-[`data/`](../data) so you can compare the guide to a working package as you read.
+end-to-end. The core walkthrough snippets are taken directly from the bundled
+sample at [`data/`](../data) so you can compare the guide to a working package
+as you read.
+
+For the smallest copyable starting point, use
+[`examples/minimal_scenario/`](../examples/minimal_scenario).
 
 Chronicle's v1 public contract is the CLI plus the JSON scenario package
 schema. C++ APIs are not part of the contract. For the formal contract see
@@ -82,6 +86,9 @@ inside it. Absolute paths and `..` escapes are rejected by
 `load_scenario_package` ([`src/entities/scenario.cpp`](../src/entities/scenario.cpp)).
 Subdirectories are allowed (`"world": "world/world.json"`).
 
+If you are starting from scratch, copy `examples/minimal_scenario/` and rename
+the package fields before expanding the world.
+
 **Entity IDs come from JSON map keys.** When you author `npcs.json`,
 `world.json`'s `locations`/`items`, `facts.json`, `flags.json`, or
 `events.json`, the key in the map *is* the entity's ID. The world loader
@@ -90,7 +97,7 @@ injects that key into the entity object after parsing — do not repeat the
 [`src/entities/world_loader.cpp`](../src/entities/world_loader.cpp).
 
 Pick stable, lowercase, snake_case IDs (`tavern`, `marcus`,
-`fact_thief_identity`, `flag_secret_revealed`).
+`fact_thief_identity`, `cargo_inquiry_public`).
 
 ## 3. `config.json`
 
@@ -180,7 +187,7 @@ location.
     },
     "market_square": {
       "name": "Market Square",
-      "base_description": "A wide cobblestone square surrounded by merchant stalls and trade offices.",
+      "base_description": "A wide cobblestone square surrounded by merchant stalls and trade offices. The air buzzes with haggling voices.",
       "exits": { "south": "tavern" },
       "items": [],
       "npcs": [],
@@ -198,6 +205,27 @@ location.
       "properties": {
         "readable": "true",
         "text": "Don't trust the innkeeper."
+      }
+    },
+    "tavern_key": {
+      "name": "Tavern Key",
+      "description": "A heavy iron key with a broken wheel emblem on the bow.",
+      "takeable": true,
+      "key_item": true,
+      "hidden": false,
+      "unlock_target": "",
+      "properties": {}
+    },
+    "cargo_manifest": {
+      "name": "Cargo Manifest",
+      "description": "A detailed list of goods, quantities, and destinations. Several entries are crossed out.",
+      "takeable": true,
+      "key_item": true,
+      "hidden": false,
+      "unlock_target": "",
+      "properties": {
+        "readable": "true",
+        "text": "Shipment 47: 12 bolts silk, 3 casks Elvari wine, 1 sealed chest (CONTENTS UNKNOWN). Status: MISSING."
       }
     }
   }
@@ -262,7 +290,7 @@ pipeline applies validated tool calls.
           ],
           "allowed_items": ["tavern_key", "cargo_manifest", "crumpled_note"],
           "allowed_facts": ["fact_stolen_cargo", "fact_thief_identity"],
-          "allowed_flags": [],
+          "allowed_flags": ["cargo_inquiry_public"],
           "allowed_locations": ["tavern", "market_square"]
         }
       },
@@ -271,7 +299,16 @@ pipeline applies validated tool calls.
         "mood": "neutral",
         "trust_toward_player": 0,
         "inventory": ["tavern_key", "cargo_manifest"],
-        "memories": [],
+        "memories": [
+          {
+            "timestamp": "Night, Day 0",
+            "type": "observation",
+            "summary": "A dockworker argued with a merchant about a sealed chest on the night the cargo vanished.",
+            "importance": 6,
+            "related_npc": "",
+            "related_item": "cargo_manifest"
+          }
+        ],
         "has_met_player": false,
         "secret_revealed": false
       }
@@ -304,7 +341,7 @@ pipeline applies validated tool calls.
   pipeline.
 - `inventory`: item IDs initially held. Subject to the unique-ownership
   invariant.
-- `memories`: usually empty at scenario load; populated at runtime only by
+- `memories`: optional authored seed memories plus runtime entries from
   explicit `remember` tool calls. Chronicle 1.0 does not run automatic memory
   extraction after conversations.
 - `has_met_player`, `secret_revealed`: maintained by the engine.
@@ -367,15 +404,15 @@ Authoring rule: every fact ID listed in any NPC's `knowledge` or any
 ## 7. `flags.json`
 
 Flags are author-declared boolean milestones used by NPC tools and event
-conditions. The sample leaves the flag map empty; here is the canonical
-shape:
+conditions. The sample declares the public cargo inquiry flag that its first
+scripted event sets:
 
 ```json
 {
   "flags": {
-    "secret_revealed": {
+    "cargo_inquiry_public": {
       "default": false,
-      "description": "Set to true once Marcus admits to helping the thief."
+      "description": "Set when the market guards publicly start questioning traders about the missing cargo."
     }
   }
 }
@@ -405,6 +442,13 @@ When all conditions are true (AND semantics), the actions run.
       ],
       "actions": [
         {
+          "type": "set_flag",
+          "params": {
+            "flag_id": "cargo_inquiry_public",
+            "value": "true"
+          }
+        },
+        {
           "type": "narrate",
           "params": {
             "text": "A commotion breaks out near the merchant stalls. Guards are questioning traders about the missing cargo."
@@ -420,6 +464,11 @@ When all conditions are true (AND semantics), the actions run.
 
 `once: true` (the default) disables the trigger after firing. `fired` is
 runtime state — author it as `false`.
+
+The bundled sample also contains `cargo_trail_goes_cold`, an `end_game` event
+that fires once `cargo_inquiry_public` is true and enough turns have elapsed.
+That is the smallest deterministic resolution pattern: one event sets a flag,
+and a later event ends the scenario when the flag and pacing condition match.
 
 `once: false` keeps `fired` as `false` and lets the trigger fire on every
 post-turn evaluation where its conditions remain true. Use an authored flag
@@ -575,6 +624,8 @@ debugging sessions where cancellation would hide the issue you are inspecting.
 
 - [`data/`](../data) — canonical small sample package. Read it end-to-end
   before authoring your own.
+- [`examples/minimal_scenario/`](../examples/minimal_scenario) — smallest
+  copyable starter package.
 - [`examples/lighthouse_veil/`](../examples/lighthouse_veil) — richer
   reference package showing multi-location authoring, scoped NPC policies, and
   event chains.

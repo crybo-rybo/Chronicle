@@ -536,4 +536,12 @@ TEST(ScenarioPackageTest, ValidatesLighthouseVeilScenario) {
     EXPECT_TRUE(report.errors.empty());
 }
 
+TEST(ScenarioPackageTest, ValidatesMinimalScenarioExample) {
+    auto report = validate_scenario_package(std::filesystem::path(CHRONICLE_SOURCE_DIR) /
+                                            "examples" / "minimal_scenario");
+
+    EXPECT_TRUE(report.ok);
+    EXPECT_TRUE(report.errors.empty());
+}
+
 } // namespace chronicle

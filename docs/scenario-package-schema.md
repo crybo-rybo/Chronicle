@@ -31,6 +31,8 @@ body; when it is accepted, it is optional and should match the map key.
 ## Minimal Valid Package
 
 The following examples together form a valid two-room, one-NPC package.
+A copyable starter with these same pieces lives at
+[`examples/minimal_scenario/`](../examples/minimal_scenario).
 
 ### `scenario.json`
 
@@ -230,7 +232,7 @@ State fields:
 | `mood` | no | `""` | Runtime mood string. Authoring should use `neutral`, `suspicious`, `friendly`, `hostile`, `fearful`, or `grieving`. |
 | `trust_toward_player` | no | `0` | Trust score. Mutations clamp it to `[-100, 100]`. |
 | `inventory` | no | `[]` | Item IDs initially held by the NPC. |
-| `memories` | no | `[]` | Explicit `remember` entries persisted in saves. Usually empty in authored packages; Chronicle 1.0 does not auto-extract memories. |
+| `memories` | no | `[]` | Explicit `remember` entries persisted in saves. Authors may seed important memories; Chronicle 1.0 does not auto-extract memories. |
 | `has_met_player` | no | `false` | Runtime encounter state. Usually false in authored packages. |
 | `secret_revealed` | no | `false` | Runtime secret state. Usually false in authored packages. |
 

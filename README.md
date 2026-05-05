@@ -62,6 +62,8 @@ Validate a scenario package without starting play:
 
 ```bash
 ./build/src/chronicle validate --scenario data
+./build/src/chronicle validate --scenario examples/minimal_scenario
+./build/src/chronicle validate --scenario examples/lighthouse_veil
 ```
 
 Once the runtime starts, type `help` for the in-game command list.
@@ -92,7 +94,11 @@ appear in debug output.
 
 ## Scenario Packages
 
-A scenario package is a directory containing `scenario.json` plus JSON files for config, world, NPCs, facts, flags, and events. The bundled `data/` directory is the canonical small sample package.
+A scenario package is a directory containing `scenario.json` plus JSON files for
+config, world, NPCs, facts, flags, and events. The bundled `data/` directory is
+the canonical small sample package. `examples/minimal_scenario/` is the
+smallest copyable starter, while `examples/lighthouse_veil/` demonstrates
+richer locked-exit, multi-NPC, and event-chain mechanics.
 
 `scenario.json` declares package metadata and file paths:
 
@@ -132,6 +138,7 @@ ctest --test-dir build --output-on-failure
 ```
 src/           C++ source code (engine, entities, AI, rendering, persistence)
 data/          Bundled sample scenario package (JSON)
+examples/      Copyable and richer reference scenario packages
 tests/         Unit and integration tests
 docs/          Design documents and specifications
 ```
