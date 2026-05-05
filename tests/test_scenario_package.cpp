@@ -1,4 +1,5 @@
 #include "entities/scenario.hpp"
+#include <array>
 #include <filesystem>
 #include <fstream>
 #include <gtest/gtest.h>
@@ -50,9 +51,23 @@ void write_manifest(const std::filesystem::path &dir, int schema_version = 1,
                                           "}\n");
 }
 
+void make_valid_package(const std::filesystem::path &dir) {
+    copy_fixture_files(dir);
+    write_manifest(dir);
+}
+
 bool has_error_containing(const ValidationReport &report, std::string_view needle) {
     for (const auto &error : report.errors) {
         if (error.find(needle) != std::string::npos) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool has_warning_containing(const ValidationReport &report, std::string_view needle) {
+    for (const auto &warning : report.warnings) {
+        if (warning.find(needle) != std::string::npos) {
             return true;
         }
     }
@@ -63,8 +78,7 @@ bool has_error_containing(const ValidationReport &report, std::string_view needl
 
 TEST(ScenarioPackageTest, LoadsManifestAndResolvesPackagePaths) {
     auto dir = make_temp_scenario_dir("manifest_load");
-    copy_fixture_files(dir);
-    write_manifest(dir);
+    make_valid_package(dir);
 
     auto package = load_scenario_package(dir);
 
@@ -79,12 +93,35 @@ TEST(ScenarioPackageTest, LoadsManifestAndResolvesPackagePaths) {
     EXPECT_EQ(package.world_files.events, dir / "events.json");
 }
 
+TEST(ScenarioPackageTest, ValidationReportsMissingScenarioDirectory) {
+    auto dir = std::filesystem::temp_directory_path() / "chronicle_missing_scenario_directory";
+    std::filesystem::remove_all(dir);
+
+    auto report = validate_scenario_package(dir);
+
+    EXPECT_FALSE(report.ok);
+    EXPECT_TRUE(has_error_containing(report, "scenario directory does not exist"));
+    EXPECT_TRUE(has_error_containing(report, dir.string()));
+}
+
 TEST(ScenarioPackageTest, ValidationReportsMissingManifest) {
     auto dir = make_temp_scenario_dir("missing_manifest");
 
     auto report = validate_scenario_package(dir);
 
     EXPECT_FALSE(report.ok);
+    EXPECT_TRUE(has_error_containing(report, "scenario.json"));
+}
+
+TEST(ScenarioPackageTest, ValidationReportsMalformedManifestJson) {
+    auto dir = make_temp_scenario_dir("malformed_manifest");
+    copy_fixture_files(dir);
+    write_file(dir / "scenario.json", "{\n");
+
+    auto report = validate_scenario_package(dir);
+
+    EXPECT_FALSE(report.ok);
+    EXPECT_TRUE(has_error_containing(report, "failed to parse"));
     EXPECT_TRUE(has_error_containing(report, "scenario.json"));
 }
 
@@ -97,6 +134,51 @@ TEST(ScenarioPackageTest, ValidationReportsBadSchemaVersion) {
 
     EXPECT_FALSE(report.ok);
     EXPECT_TRUE(has_error_containing(report, "schema version"));
+    EXPECT_TRUE(has_error_containing(report, "999"));
+    EXPECT_TRUE(has_error_containing(report, "expected current version 1"));
+}
+
+TEST(ScenarioPackageTest, ValidationReportsManifestIdentityAndMetadataErrors) {
+    auto missing_id = make_temp_scenario_dir("missing_manifest_id");
+    copy_fixture_files(missing_id);
+    write_file(missing_id / "scenario.json", R"json({
+  "name": "Test Scenario",
+  "version": "0.1.0",
+  "chronicle_schema_version": 1
+})json");
+
+    auto missing_id_report = validate_scenario_package(missing_id);
+    EXPECT_FALSE(missing_id_report.ok);
+    EXPECT_TRUE(has_error_containing(missing_id_report, "missing required field 'id'"));
+
+    auto empty_name = make_temp_scenario_dir("empty_manifest_name");
+    copy_fixture_files(empty_name);
+    write_file(empty_name / "scenario.json", R"json({
+  "id": "test_scenario",
+  "name": "",
+  "version": "0.1.0",
+  "chronicle_schema_version": 1
+})json");
+
+    auto empty_name_report = validate_scenario_package(empty_name);
+    EXPECT_FALSE(empty_name_report.ok);
+    EXPECT_TRUE(has_error_containing(empty_name_report, "field 'name' must be non-empty"));
+
+    auto bad_metadata = make_temp_scenario_dir("bad_manifest_metadata");
+    copy_fixture_files(bad_metadata);
+    write_file(bad_metadata / "scenario.json", R"json({
+  "id": "test_scenario",
+  "name": "Test Scenario",
+  "version": "0.1.0",
+  "chronicle_schema_version": 1,
+  "metadata": {
+    "author": ["not", "a", "string"]
+  }
+})json");
+
+    auto bad_metadata_report = validate_scenario_package(bad_metadata);
+    EXPECT_FALSE(bad_metadata_report.ok);
+    EXPECT_TRUE(has_error_containing(bad_metadata_report, "metadata.'author' must be a string"));
 }
 
 TEST(ScenarioPackageTest, ValidationReportsMissingReferencedFile) {
@@ -130,6 +212,183 @@ TEST(ScenarioPackageTest, ValidationRejectsManifestPathsOutsidePackage) {
 
     EXPECT_FALSE(report.ok);
     EXPECT_TRUE(has_error_containing(report, "package"));
+}
+
+TEST(ScenarioPackageTest, ValidationReportsMalformedWorldDataFilesWithFileContext) {
+    constexpr std::array<std::string_view, 5> files = {"world.json", "npcs.json", "facts.json",
+                                                       "flags.json", "events.json"};
+
+    for (auto file : files) {
+        SCOPED_TRACE(file);
+        auto dir = make_temp_scenario_dir("malformed_" + std::string(file));
+        make_valid_package(dir);
+        write_file(dir / file, "{\n");
+
+        auto report = validate_scenario_package(dir);
+
+        EXPECT_FALSE(report.ok);
+        EXPECT_TRUE(has_error_containing(report, "failed to parse"));
+        EXPECT_TRUE(has_error_containing(report, file));
+    }
+}
+
+TEST(ScenarioPackageTest, ValidationSurfacesMissingLocationReference) {
+    auto dir = make_temp_scenario_dir("missing_location_reference");
+    make_valid_package(dir);
+    write_file(dir / "npcs.json", R"json({
+  "npcs": {
+    "test_npc": {
+      "identity": {
+        "name": "Test NPC",
+        "knowledge": ["fact_test"]
+      },
+      "state": {
+        "current_location": "missing_room",
+        "mood": "friendly"
+      }
+    }
+  }
+})json");
+
+    auto report = validate_scenario_package(dir);
+
+    EXPECT_FALSE(report.ok);
+    EXPECT_TRUE(has_error_containing(report, "NPC 'test_npc' current_location 'missing_room'"));
+}
+
+TEST(ScenarioPackageTest, ValidationSurfacesDuplicateItemOwnership) {
+    auto dir = make_temp_scenario_dir("duplicate_item_ownership");
+    make_valid_package(dir);
+    write_file(dir / "npcs.json", R"json({
+  "npcs": {
+    "test_npc": {
+      "identity": {
+        "name": "Test NPC",
+        "knowledge": ["fact_test"]
+      },
+      "state": {
+        "current_location": "test_room",
+        "mood": "friendly",
+        "inventory": ["test_item"]
+      }
+    }
+  }
+})json");
+
+    auto report = validate_scenario_package(dir);
+
+    EXPECT_FALSE(report.ok);
+    EXPECT_TRUE(has_error_containing(report, "Item 'test_item' has duplicate ownership"));
+}
+
+TEST(ScenarioPackageTest, ValidationSurfacesNpcToolPolicyErrors) {
+    auto dir = make_temp_scenario_dir("npc_tool_policy_errors");
+    make_valid_package(dir);
+    write_file(dir / "npcs.json", R"json({
+  "npcs": {
+    "test_npc": {
+      "identity": {
+        "name": "Test NPC",
+        "knowledge": ["fact_test"],
+        "tool_policy": {
+          "allowed_tools": ["say", "invent_magic"],
+          "allowed_items": ["missing_item"],
+          "allowed_facts": ["missing_fact"],
+          "allowed_flags": ["missing_flag"],
+          "allowed_locations": ["missing_location"]
+        }
+      },
+      "state": {
+        "current_location": "test_room",
+        "mood": "friendly"
+      }
+    }
+  }
+})json");
+
+    auto report = validate_scenario_package(dir);
+
+    EXPECT_FALSE(report.ok);
+    EXPECT_TRUE(has_error_containing(report, "unknown tool 'invent_magic'"));
+    EXPECT_TRUE(has_error_containing(report, "allowed_items references missing item"));
+    EXPECT_TRUE(has_error_containing(report, "allowed_facts references missing fact"));
+    EXPECT_TRUE(has_error_containing(report, "allowed_flags references missing flag"));
+    EXPECT_TRUE(has_error_containing(report, "allowed_locations references missing location"));
+}
+
+TEST(ScenarioPackageTest, ValidationSurfacesInvalidEventConditionArgumentCount) {
+    auto dir = make_temp_scenario_dir("invalid_event_condition_arg_count");
+    make_valid_package(dir);
+    write_file(dir / "events.json", R"json({
+  "events": {
+    "bad_condition": {
+      "conditions": [
+        {"type": "player_at", "args": []}
+      ],
+      "actions": [
+        {"type": "narrate", "params": {"text": "This should not validate."}}
+      ]
+    }
+  }
+})json");
+
+    auto report = validate_scenario_package(dir);
+
+    EXPECT_FALSE(report.ok);
+    EXPECT_TRUE(has_error_containing(report, "Event 'bad_condition' condition #0 (player_at)"));
+    EXPECT_TRUE(has_error_containing(report, "requires 1 arg(s), got 0"));
+}
+
+TEST(ScenarioPackageTest, ValidationSurfacesInvalidEventActionType) {
+    auto dir = make_temp_scenario_dir("invalid_event_action_type");
+    make_valid_package(dir);
+    write_file(dir / "events.json", R"json({
+  "events": {
+    "bad_action": {
+      "conditions": [
+        {"type": "player_at", "args": ["test_room"]}
+      ],
+      "actions": [
+        {"type": "teleport", "params": {}}
+      ]
+    }
+  }
+})json");
+
+    auto report = validate_scenario_package(dir);
+
+    EXPECT_FALSE(report.ok);
+    EXPECT_TRUE(has_error_containing(report, "Event 'bad_action' action #0 (teleport)"));
+    EXPECT_TRUE(has_error_containing(report, "unknown action type 'teleport'"));
+}
+
+TEST(ScenarioPackageTest, ValidationReportsWarningsWithoutFailingValidPackage) {
+    auto dir = make_temp_scenario_dir("warning_readable_without_text");
+    make_valid_package(dir);
+    write_file(dir / "world.json", R"json({
+  "start_location": "test_room",
+  "locations": {
+    "test_room": {
+      "name": "Test Room",
+      "items": ["test_item"]
+    }
+  },
+  "items": {
+    "test_item": {
+      "name": "Test Item",
+      "properties": {
+        "readable": "true"
+      }
+    }
+  }
+})json");
+
+    auto report = validate_scenario_package(dir);
+
+    EXPECT_TRUE(report.ok);
+    EXPECT_TRUE(report.errors.empty());
+    EXPECT_TRUE(has_warning_containing(report, "readable=true"));
+    EXPECT_TRUE(has_warning_containing(report, "test_item"));
 }
 
 TEST(ScenarioPackageTest, ValidatesBundledSampleScenario) {
