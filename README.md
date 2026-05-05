@@ -106,7 +106,7 @@ richer locked-exit, multi-NPC, and event-chain mechanics.
 {
   "id": "broken_wheel_sample",
   "name": "Broken Wheel Sample",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "chronicle_schema_version": 1,
   "files": {
     "config": "config.json",

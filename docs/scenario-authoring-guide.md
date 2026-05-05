@@ -47,7 +47,7 @@ A complete `scenario.json` from the sample package:
 {
   "id": "broken_wheel_sample",
   "name": "Broken Wheel Sample",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "chronicle_schema_version": 1,
   "files": {
     "config": "config.json",
