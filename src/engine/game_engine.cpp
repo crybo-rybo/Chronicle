@@ -60,39 +60,11 @@ std::string_view command_verb_name(CommandVerb verb) {
     return "unknown";
 }
 
-std::string_view mutation_type_name(MutationRequest::Type type) {
-    switch (type) {
-    case MutationRequest::Type::GiveItemToPlayer:
-        return "give_item_to_player";
-    case MutationRequest::Type::TakeItemFromPlayer:
-        return "take_item_from_player";
-    case MutationRequest::Type::UpdateNpcMood:
-        return "update_npc_mood";
-    case MutationRequest::Type::UpdateNpcTrust:
-        return "update_npc_trust";
-    case MutationRequest::Type::MoveNpc:
-        return "move_npc";
-    case MutationRequest::Type::RevealKnowledge:
-        return "reveal_knowledge";
-    case MutationRequest::Type::AddMemory:
-        return "add_memory";
-    case MutationRequest::Type::SetFlag:
-        return "set_flag";
-    case MutationRequest::Type::PlayerMove:
-        return "player_move";
-    case MutationRequest::Type::PlayerTake:
-        return "player_take";
-    case MutationRequest::Type::PlayerDrop:
-        return "player_drop";
-    case MutationRequest::Type::UnlockExit:
-        return "unlock_exit";
-    case MutationRequest::Type::SpawnItem:
-        return "spawn_item";
-    }
-    return "unknown";
-}
-
 constexpr std::string_view kLocalModelDocs = "CONTRIBUTING.md#local-model-paths";
+
+constexpr std::string_view kDialogueFailureMessage =
+    "Dialogue failed or timed out. You can try again, say 'bye' to leave, or use "
+    "save/load/help.";
 
 std::string help_text(GamePhase phase) {
     switch (phase) {
@@ -192,14 +164,6 @@ std::string format_params(const std::map<std::string, std::string> &params) {
     }
     oss << "}";
     return oss.str();
-}
-
-std::optional<std::string> event_param(const EventAction &action, const std::string &key) {
-    auto it = action.params.find(key);
-    if (it == action.params.end() || it->second.empty()) {
-        return std::nullopt;
-    }
-    return it->second;
 }
 
 bool event_condition_matches(const World &world, const Condition &condition) {
@@ -604,8 +568,8 @@ void GameEngine::evaluate_scripted_events() {
         bool entered_resolution = false;
         for (const auto &action : event.actions) {
             if (action.type == "move_npc") {
-                auto npc_id = event_param(action, "npc_id");
-                auto location_id = event_param(action, "location_id");
+                auto npc_id = param_value(action.params, "npc_id");
+                auto location_id = param_value(action.params, "location_id");
                 if (!npc_id || !location_id) {
                     logging::write(logging::Level::Warning, "events",
                                    "skipping malformed move_npc action event=" + event.id);
@@ -618,8 +582,8 @@ void GameEngine::evaluate_scripted_events() {
                     .params = {{"location_id", *location_id}},
                 });
             } else if (action.type == "set_flag") {
-                auto flag_id = event_param(action, "flag_id");
-                auto value = event_param(action, "value");
+                auto flag_id = param_value(action.params, "flag_id");
+                auto value = param_value(action.params, "value");
                 if (!flag_id || !value) {
                     logging::write(logging::Level::Warning, "events",
                                    "skipping malformed set_flag action event=" + event.id);
@@ -632,8 +596,8 @@ void GameEngine::evaluate_scripted_events() {
                     .params = {{"flag_id", *flag_id}, {"value", *value}},
                 });
             } else if (action.type == "spawn_item") {
-                auto item_id = event_param(action, "item_id");
-                auto location_id = event_param(action, "location_id");
+                auto item_id = param_value(action.params, "item_id");
+                auto location_id = param_value(action.params, "location_id");
                 if (!item_id || !location_id) {
                     logging::write(logging::Level::Warning, "events",
                                    "skipping malformed spawn_item action event=" + event.id);
@@ -646,13 +610,13 @@ void GameEngine::evaluate_scripted_events() {
                     .params = {{"item_id", *item_id}, {"location_id", *location_id}},
                 });
             } else if (action.type == "narrate") {
-                if (auto text = event_param(action, "text")) {
+                if (auto text = param_value(action.params, "text")) {
                     renderer_->render_action(*text);
                 }
             } else if (action.type == "end_game") {
                 phase_ = GamePhase::GameOver;
                 renderer_->render_resolution(
-                    event_param(action, "text").value_or(generic_ending_text()));
+                    param_value(action.params, "text").value_or(generic_ending_text()));
                 entered_resolution = true;
                 break;
             } else {
@@ -753,9 +717,7 @@ void GameEngine::handle_dialogue(const std::string &npc_id, const std::string &i
             tool_registry_->clear_all();
             logging::write(logging::Level::Error, "dialogue",
                            "agent chat failed npc=" + npc_id + " error=" + result.error_message);
-            renderer_->render_error(
-                "Dialogue failed or timed out. You can try again, say 'bye' to leave, or use "
-                "save/load/help.");
+            renderer_->render_error(std::string(kDialogueFailureMessage));
         }
 
     } catch (const std::exception &e) {
@@ -763,9 +725,7 @@ void GameEngine::handle_dialogue(const std::string &npc_id, const std::string &i
         tool_registry_->clear_all();
         logging::write(logging::Level::Error, "dialogue",
                        "dialogue exception npc=" + npc_id + " error=" + e.what());
-        renderer_->render_error(
-            "Dialogue failed or timed out. You can try again, say 'bye' to leave, or use "
-            "save/load/help.");
+        renderer_->render_error(std::string(kDialogueFailureMessage));
     }
 }
 
@@ -802,7 +762,7 @@ std::optional<std::string> GameEngine::find_visible_npc_id(const std::string &qu
     return std::nullopt;
 }
 
-std::optional<std::string> GameEngine::find_accessible_item_id(const std::string &query) const {
+std::optional<std::string> GameEngine::find_inventory_item_id(const std::string &query) const {
     for (const auto &item_id : world_.player.inventory) {
         auto item_it = world_.items.find(item_id);
         if (item_it != world_.items.end() &&
@@ -810,6 +770,13 @@ std::optional<std::string> GameEngine::find_accessible_item_id(const std::string
              text::contains_normalized(item_id, query))) {
             return item_id;
         }
+    }
+    return std::nullopt;
+}
+
+std::optional<std::string> GameEngine::find_accessible_item_id(const std::string &query) const {
+    if (auto inv_match = find_inventory_item_id(query)) {
+        return inv_match;
     }
 
     auto loc_it = world_.locations.find(world_.player.current_location);
@@ -820,18 +787,6 @@ std::optional<std::string> GameEngine::find_accessible_item_id(const std::string
     for (const auto &item_id : loc_it->second.items) {
         auto item_it = world_.items.find(item_id);
         if (item_it != world_.items.end() && !item_it->second.hidden &&
-            (text::contains_normalized(item_it->second.name, query) ||
-             text::contains_normalized(item_id, query))) {
-            return item_id;
-        }
-    }
-    return std::nullopt;
-}
-
-std::optional<std::string> GameEngine::find_inventory_item_id(const std::string &query) const {
-    for (const auto &item_id : world_.player.inventory) {
-        auto item_it = world_.items.find(item_id);
-        if (item_it != world_.items.end() &&
             (text::contains_normalized(item_it->second.name, query) ||
              text::contains_normalized(item_id, query))) {
             return item_id;

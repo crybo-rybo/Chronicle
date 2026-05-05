@@ -532,9 +532,6 @@ TEST(PromptBuilderTest, SystemPromptDiscouragedSpuriousToolCalls) {
 
     std::string prompt = builder.build_system_prompt(identity, state, world);
 
-    // The rules block must tell NPCs not to call tools for casual conversation.
-    // The substring "do not call tools for greetings" appears verbatim in the
-    // rule added in prompt_builder.cpp — verified as lowercase so find() matches.
     EXPECT_NE(prompt.find("do not call tools for greetings"), std::string::npos);
     EXPECT_NE(prompt.find("Speak to the player using normal dialogue text"), std::string::npos);
     EXPECT_NE(prompt.find("Use remember only for durable, future-relevant details"),

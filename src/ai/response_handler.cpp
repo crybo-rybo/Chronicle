@@ -2,9 +2,9 @@
  * @file response_handler.cpp
  * @brief Implementation of @ref ResponseHandler — token forwarding and mutation narration.
  *
- * @details Implements the template-based mutation narration pipeline, including
- * the @c replace_all helper and the @c template_key dispatcher that maps
- * @ref MutationRequest::Type values to their string template keys.
+ * @details Implements the template-based mutation narration pipeline.  Template
+ * keys are looked up via @ref mutation_type_name so the engine and response
+ * handler share a single canonical mapping.
  */
 
 #include "ai/response_handler.hpp"
@@ -23,38 +23,6 @@ std::string replace_all(std::string input, std::string_view needle, std::string_
     return input;
 }
 
-std::string template_key(MutationRequest::Type type) {
-    switch (type) {
-    case MutationRequest::Type::GiveItemToPlayer:
-        return "give_item_to_player";
-    case MutationRequest::Type::TakeItemFromPlayer:
-        return "take_item_from_player";
-    case MutationRequest::Type::UpdateNpcMood:
-        return "update_npc_mood";
-    case MutationRequest::Type::UpdateNpcTrust:
-        return "update_npc_trust";
-    case MutationRequest::Type::MoveNpc:
-        return "move_npc";
-    case MutationRequest::Type::RevealKnowledge:
-        return "reveal_knowledge";
-    case MutationRequest::Type::AddMemory:
-        return "add_memory";
-    case MutationRequest::Type::SetFlag:
-        return "set_flag";
-    case MutationRequest::Type::PlayerMove:
-        return "player_move";
-    case MutationRequest::Type::PlayerTake:
-        return "player_take";
-    case MutationRequest::Type::PlayerDrop:
-        return "player_drop";
-    case MutationRequest::Type::UnlockExit:
-        return "unlock_exit";
-    case MutationRequest::Type::SpawnItem:
-        return "spawn_item";
-    }
-    return "";
-}
-
 } // namespace
 
 ResponseHandler::ResponseHandler(ActionNarrator action_narrator, TokenQueue &token_queue,
@@ -70,8 +38,7 @@ void ResponseHandler::on_token(std::string_view token) {
 
 std::string ResponseHandler::describe_mutation(const MutationRequest &m,
                                                const std::string &npc_name) const {
-    auto key = template_key(m.type);
-    auto template_it = templates_.find(key);
+    auto template_it = templates_.find(std::string(mutation_type_name(m.type)));
     if (template_it == templates_.end() || template_it->second.empty()) {
         return "";
     }

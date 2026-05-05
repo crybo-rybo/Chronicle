@@ -4,10 +4,25 @@
  */
 
 #pragma once
+#include <map>
 #include <optional>
 #include <string>
 
 namespace chronicle {
+
+/// @brief Look up a string parameter in a name→value map.
+///
+/// @details Returns @c std::nullopt if the key is missing or its value is empty,
+/// so callers can treat both cases as "not provided".
+inline std::optional<std::string>
+param_value(const std::map<std::string, std::string> &params, const std::string &key) {
+    auto it = params.find(key);
+    if (it == params.end() || it->second.empty()) {
+        return std::nullopt;
+    }
+    return it->second;
+}
+
 
 /// @brief Strictly parse a boolean string.
 ///

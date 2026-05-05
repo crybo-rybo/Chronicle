@@ -27,6 +27,9 @@
 
 namespace chronicle {
 
+/// @brief Default per-request inference timeout in milliseconds (two minutes).
+inline constexpr int kDefaultInferenceTimeoutMs = 120000;
+
 /// @brief Wraps a @c zoo::Agent to satisfy the @ref AgentInterface contract.
 class ZooAgentAdapter : public AgentInterface {
   public:
@@ -35,7 +38,8 @@ class ZooAgentAdapter : public AgentInterface {
     /// @param agent                A non-null @c zoo::Agent to wrap.
     /// @param inference_timeout_ms Per-request timeout in milliseconds; @c 0 disables.
     /// @throws std::invalid_argument if @p agent is @c nullptr.
-    explicit ZooAgentAdapter(std::unique_ptr<zoo::Agent> agent, int inference_timeout_ms = 120000);
+    explicit ZooAgentAdapter(std::unique_ptr<zoo::Agent> agent,
+                             int inference_timeout_ms = kDefaultInferenceTimeoutMs);
 
     /// @brief Set the system prompt on the underlying @c zoo::Agent.
     void set_system_prompt(std::string_view prompt) override;
@@ -83,7 +87,7 @@ class ZooAgentAdapter : public AgentInterface {
   private:
     std::unique_ptr<zoo::Agent> agent_;                ///< The wrapped Zoo-Keeper agent.
     ToolRegistry *registered_tool_registry_ = nullptr; ///< Tracks the last registered registry.
-    int inference_timeout_ms_ = 120000;                ///< Per-request timeout; 0 disables.
+    int inference_timeout_ms_ = kDefaultInferenceTimeoutMs; ///< Per-request timeout; 0 disables.
 };
 
 } // namespace chronicle
