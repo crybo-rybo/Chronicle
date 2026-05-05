@@ -24,6 +24,14 @@ cmake --preset debug-logging
 cmake --build --preset debug-logging
 ```
 
+For day-to-day local development, the repo also includes convenience wrappers:
+
+```bash
+scripts/build.sh
+scripts/format.sh
+scripts/test.sh
+```
+
 ## Running
 
 Run the bundled sample scenario:
