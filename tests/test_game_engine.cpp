@@ -14,6 +14,8 @@ class MockEngineRenderer : public Renderer {
     std::vector<std::string> tokens;
     std::vector<std::string> examined_items;
     int render_scene_count = 0;
+    int time_advance_count = 0;
+    Clock last_time_advance;
     std::string last_move_dir;
     std::string last_move_loc;
 
@@ -35,7 +37,10 @@ class MockEngineRenderer : public Renderer {
     void render_system(std::string_view message) override {
         systems.push_back(std::string(message));
     }
-    void render_time_advance(const Clock &) override {}
+    void render_time_advance(const Clock &clock) override {
+        ++time_advance_count;
+        last_time_advance = clock;
+    }
     void render_resolution(std::string_view) override {}
     std::string get_player_input(std::string_view) override { return ""; }
     void clear_input_line() override {}
@@ -134,6 +139,8 @@ TEST_F(GameEngineTest, HandlesGoCommandValid) {
 
     EXPECT_EQ(engine.phase(), GamePhase::Playing);
     EXPECT_EQ(engine.world().player.current_location, "market_square");
+    EXPECT_EQ(engine.world().clock.total_turns, 1);
+    EXPECT_EQ(engine.world().total_turns_elapsed, 1);
 }
 
 TEST_F(GameEngineTest, GoInvalidExitRendersError) {
@@ -181,6 +188,8 @@ TEST_F(GameEngineTest, DropMovesItemFromInventoryBackToLocation) {
 
     EXPECT_FALSE(std::ranges::contains(engine.world().player.inventory, "test_item"));
     EXPECT_TRUE(std::ranges::contains(engine.world().locations.at("test_room").items, "test_item"));
+    EXPECT_EQ(engine.world().clock.total_turns, 2);
+    EXPECT_EQ(engine.world().total_turns_elapsed, 2);
 }
 
 TEST_F(GameEngineTest, ExamineVisibleLocationItemRendersItem) {
@@ -223,6 +232,7 @@ TEST_F(GameEngineTest, SaveAndLoadDefaultSlotRoundtripsWorld) {
     engine.handle_command(load);
 
     EXPECT_TRUE(std::ranges::contains(engine.world().player.inventory, "test_item"));
+    EXPECT_EQ(engine.world().clock.total_turns, 1);
     std::filesystem::remove(save_dir / "slot_1.json");
 }
 
@@ -251,6 +261,7 @@ TEST_F(GameEngineTest, DialogueUsesCurrentConversationNpcAndStreamsTokens) {
     EXPECT_TRUE(std::ranges::contains(engine.world().player.inventory, "cargo_manifest"));
     EXPECT_FALSE(
         std::ranges::contains(engine.world().npcs.at("marcus").state.inventory, "cargo_manifest"));
+    EXPECT_EQ(engine.world().clock.total_turns, 1);
     ASSERT_FALSE(renderer_ptr->actions.empty());
     EXPECT_EQ(renderer_ptr->actions.back(), "Marcus hands you the Cargo Manifest.");
 }
@@ -365,6 +376,7 @@ TEST_F(GameEngineTest, MultiTurnDialogueDoesNotReacquireAgent) {
     EXPECT_EQ(fake_agent_ptr->register_tools_call_count, 1);
     EXPECT_EQ(fake_agent_ptr->clear_history_call_count, 1);
     EXPECT_EQ(fake_agent_ptr->system_messages.size(), 2u);
+    EXPECT_EQ(engine.world().clock.total_turns, 2);
     ASSERT_EQ(fake_agent_ptr->user_messages.size(), 2u);
     EXPECT_EQ(fake_agent_ptr->user_messages[0].find("[Current state]"), std::string::npos);
     EXPECT_EQ(fake_agent_ptr->user_messages[1].find("[Current state]"), std::string::npos);
@@ -391,4 +403,62 @@ TEST_F(GameEngineTest, LeaveConversationReleasesAgent) {
 
     EXPECT_EQ(fake_agent_ptr->clear_history_call_count, 2);
     EXPECT_EQ(engine.phase(), GamePhase::Playing);
+}
+
+TEST_F(GameEngineTest, NonAdvancingCommandsDoNotChangeClock) {
+    auto *renderer = mock_renderer.get();
+    GameEngine engine((fixture_root() / "config.json").string(), fixture_world_files(),
+                      std::move(mock_renderer));
+
+    ParsedCommand look;
+    look.verb = CommandVerb::Look;
+    engine.handle_command(look);
+
+    ParsedCommand inventory;
+    inventory.verb = CommandVerb::Inventory;
+    engine.handle_command(inventory);
+
+    ParsedCommand examine;
+    examine.verb = CommandVerb::Examine;
+    examine.primary_arg = "test item";
+    engine.handle_command(examine);
+
+    ParsedCommand failed_take;
+    failed_take.verb = CommandVerb::Take;
+    failed_take.primary_arg = "missing";
+    engine.handle_command(failed_take);
+
+    ParsedCommand talk;
+    talk.verb = CommandVerb::Talk;
+    talk.primary_arg = "test_npc";
+    engine.handle_command(talk);
+
+    ParsedCommand leave;
+    leave.verb = CommandVerb::Dialogue;
+    leave.raw_input = "bye";
+    engine.handle_command(leave);
+
+    EXPECT_EQ(engine.world().clock.total_turns, 0);
+    EXPECT_EQ(engine.world().total_turns_elapsed, 0);
+    EXPECT_EQ(renderer->time_advance_count, 0);
+}
+
+TEST_F(GameEngineTest, PeriodTransitionRendersOnceWhenThresholdCrosses) {
+    auto *renderer = mock_renderer.get();
+    GameEngine engine((sample_root() / "config.json").string(), sample_world_files(),
+                      std::move(mock_renderer));
+
+    const std::vector<std::string> directions = {"north", "south", "north", "south", "north"};
+    for (const auto &direction : directions) {
+        ParsedCommand go;
+        go.verb = CommandVerb::Go;
+        go.primary_arg = direction;
+        engine.handle_command(go);
+    }
+
+    EXPECT_EQ(engine.world().clock.total_turns, 5);
+    EXPECT_EQ(engine.world().clock.turns_this_period, 0);
+    EXPECT_EQ(engine.world().clock.period, TimePeriod::Afternoon);
+    EXPECT_EQ(renderer->time_advance_count, 1);
+    EXPECT_EQ(renderer->last_time_advance.period, TimePeriod::Afternoon);
 }

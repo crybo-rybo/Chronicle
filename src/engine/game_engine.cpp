@@ -163,8 +163,6 @@ void GameEngine::run() {
 
         auto cmd = parser_.parse(input, phase_);
         handle_command(cmd);
-
-        process_pending_mutations();
     }
 }
 
@@ -234,7 +232,7 @@ void GameEngine::handle_command(const ParsedCommand &cmd) {
             auto dir = req.params.at("direction");
             auto dest_id = req.params.at("location_id");
             pending_mutations_.push_back(std::move(req));
-            process_pending_mutations();
+            run_post_turn_pipeline();
             auto dest_it = world_.locations.find(dest_id);
             std::string name = dest_it != world_.locations.end() ? dest_it->second.name : dest_id;
             renderer_->render_move(dir, name);
@@ -261,7 +259,7 @@ void GameEngine::handle_command(const ParsedCommand &cmd) {
             auto &req = std::get<MutationRequest>(result);
             auto item_id = req.params.at("item_id");
             pending_mutations_.push_back(std::move(req));
-            process_pending_mutations();
+            run_post_turn_pipeline();
             auto w_it = world_.items.find(item_id);
             renderer_->render_action(
                 "You take the " + (w_it != world_.items.end() ? w_it->second.name : item_id) + ".");
@@ -277,7 +275,7 @@ void GameEngine::handle_command(const ParsedCommand &cmd) {
             auto &req = std::get<MutationRequest>(result);
             auto item_id = req.params.at("item_id");
             pending_mutations_.push_back(std::move(req));
-            process_pending_mutations();
+            run_post_turn_pipeline();
             auto w_it = world_.items.find(item_id);
             renderer_->render_action(
                 "You drop the " + (w_it != world_.items.end() ? w_it->second.name : item_id) + ".");
@@ -385,12 +383,31 @@ void GameEngine::process_pending_mutations() {
     }
 }
 
+void GameEngine::run_post_turn_pipeline() {
+    process_pending_mutations();
+
+    const auto previous_period = world_.clock.period;
+    const auto previous_day = world_.clock.day;
+    world_.clock.advance_turn(config_.turns_per_period);
+    world_.total_turns_elapsed = world_.clock.total_turns;
+
+    if (world_.clock.period != previous_period || world_.clock.day != previous_day) {
+        renderer_->render_time_advance(world_.clock);
+    }
+
+    evaluate_scripted_events();
+    process_pending_mutations();
+}
+
+void GameEngine::evaluate_scripted_events() {}
+
 void GameEngine::handle_dialogue(const std::string &npc_id, const std::string &input) {
     if (!active_conversation_handle_) {
         if (!agent_pool_) {
             logging::write(logging::Level::Warning, "dialogue",
                            "agent pool unavailable; using stub dialogue for npc=" + npc_id);
             renderer_->render_system("Dialogue stub: " + input + " (AI not initialized)");
+            run_post_turn_pipeline();
             return;
         }
         logging::write(logging::Level::Error, "dialogue",
@@ -458,15 +475,19 @@ void GameEngine::handle_dialogue(const std::string &npc_id, const std::string &i
         }
         renderer_->flush_dialogue();
 
-        process_pending_mutations();
-
-        if (!result.success) {
+        if (result.success) {
+            run_post_turn_pipeline();
+        } else {
+            pending_mutations_.clear();
+            tool_registry_->clear_all();
             logging::write(logging::Level::Error, "dialogue",
                            "agent chat failed npc=" + npc_id + " error=" + result.error_message);
             renderer_->render_error("Agent chat failed: " + result.error_message);
         }
 
     } catch (const std::exception &e) {
+        pending_mutations_.clear();
+        tool_registry_->clear_all();
         logging::write(logging::Level::Error, "dialogue",
                        "dialogue exception npc=" + npc_id + " error=" + e.what());
         renderer_->render_error(std::string("Dialogue error: ") + e.what());

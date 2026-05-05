@@ -16,7 +16,7 @@
  * 3. Read one line of player input.
  * 4. Parse it with @ref CommandParser.
  * 5. Dispatch to @ref handle_command (which may invoke the AI layer).
- * 6. Apply pending mutations via @ref process_pending_mutations.
+ * 6. Successful significant actions run the post-turn pipeline.
  * 7. Repeat until @c running_ is @c false.
  *
  * ### Design invariant
@@ -185,6 +185,12 @@ class GameEngine {
     ///
     /// @param input The raw player input to test.
     bool is_conversation_exit(std::string_view input) const;
+
+    /// Apply pending mutations, advance time once, and run post-turn systems.
+    void run_post_turn_pipeline();
+
+    /// Evaluate scripted events. Task 6 fills in the event execution logic.
+    void evaluate_scripted_events();
 };
 
 } // namespace chronicle

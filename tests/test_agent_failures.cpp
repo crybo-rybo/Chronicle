@@ -105,6 +105,7 @@ TEST_F(AgentFailureTest, ThrowOnChatKeepsGameAlive) {
     // World state unchanged — no pending mutations leaked
     EXPECT_TRUE(engine->world().player.inventory.empty() ||
                 engine->world().player.inventory == std::vector<std::string>{});
+    EXPECT_EQ(engine->world().clock.total_turns, 0);
 }
 
 TEST_F(AgentFailureTest, ReturnFailureRendersError) {
@@ -122,6 +123,7 @@ TEST_F(AgentFailureTest, ReturnFailureRendersError) {
         }
     }
     EXPECT_TRUE(has_error);
+    EXPECT_EQ(engine->world().clock.total_turns, 0);
 }
 
 TEST_F(AgentFailureTest, StreamEmptyNoMutationsLeaked) {
