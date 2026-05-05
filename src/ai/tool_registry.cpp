@@ -10,6 +10,7 @@
 #include "ai/tool_registry.hpp"
 #include "diagnostics/logger.hpp"
 #include "engine/parse_utils.hpp"
+#include "engine/text_utils.hpp"
 #include <algorithm>
 #include <sstream>
 #include <zoo/agent.hpp>
@@ -270,14 +271,16 @@ ToolRegistry::ValidationResult ToolRegistry::validate_add_memory(const std::stri
         return "Error: NPC '" + npc_id + "' does not exist.";
     if (auto err = policy_tool_error(npc_id, "remember"))
         return *err;
-    if (summary.empty())
+    auto trimmed_summary = text::trim_copy(summary);
+    if (trimmed_summary.empty())
         return "Error: Memory summary must not be empty.";
 
     int clamped = std::clamp(importance, 1, 10);
-    return MutationRequest{MutationRequest::Type::AddMemory,
-                           MutationRequest::Source::Npc,
-                           npc_id,
-                           {{"summary", summary}, {"importance", std::to_string(clamped)}}};
+    return MutationRequest{
+        MutationRequest::Type::AddMemory,
+        MutationRequest::Source::Npc,
+        npc_id,
+        {{"summary", std::move(trimmed_summary)}, {"importance", std::to_string(clamped)}}};
 }
 
 ToolRegistry::ValidationResult ToolRegistry::validate_set_flag(const std::string &flag_id,
@@ -569,8 +572,13 @@ void ToolRegistry::register_tools(zoo::Agent &agent, const std::string &npc_id) 
             return error;
         }
     };
-    (void)agent.register_tool("remember", "Save a memory of an event or interaction",
-                              {"summary", "importance"}, std::move(remember_func));
+    (void)agent.register_tool(
+        "remember",
+        "Create a durable NPC memory only for future-relevant details such as clues, promises, "
+        "commitments, relationship changes, or major emotional shifts. Do not use this for "
+        "greetings, filler, or every player message. Provide a concise summary and an importance "
+        "from 1 to 10.",
+        {"summary", "importance"}, std::move(remember_func));
 
     auto set_flag_func = [this](std::string flag_id, std::string value_str) -> std::string {
         logging::write(logging::Level::Info, "tools",

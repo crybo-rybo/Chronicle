@@ -57,6 +57,8 @@ class MockEngineRenderer : public Renderer {
 
 class FakeDialogueAgent : public AgentInterface {
   public:
+    enum class ChatBehavior { GiveCargoManifest, Remember };
+
     ToolRegistry *registry = nullptr;
     std::string active_npc_id;
     std::string last_system_prompt;
@@ -66,6 +68,9 @@ class FakeDialogueAgent : public AgentInterface {
     int clear_history_call_count = 0;
     int register_tools_call_count = 0;
     int set_system_prompt_call_count = 0;
+    ChatBehavior behavior = ChatBehavior::GiveCargoManifest;
+    std::string memory_summary = "Player asked about cargo";
+    int memory_importance = 7;
 
     void set_system_prompt(std::string_view prompt) override {
         last_system_prompt = std::string(prompt);
@@ -91,11 +96,20 @@ class FakeDialogueAgent : public AgentInterface {
                                    AgentInterface::PollCallback poll) override {
         last_user_message = std::string(user_message);
         user_messages.push_back(last_user_message);
-        on_token("Take ");
-        poll();
-        on_token("this.");
-        poll();
-        registry->register_give_item(active_npc_id, "cargo_manifest");
+        switch (behavior) {
+        case ChatBehavior::GiveCargoManifest:
+            on_token("Take ");
+            poll();
+            on_token("this.");
+            poll();
+            registry->register_give_item(active_npc_id, "cargo_manifest");
+            break;
+        case ChatBehavior::Remember:
+            on_token("I will remember.");
+            poll();
+            registry->register_add_memory(active_npc_id, memory_summary, memory_importance);
+            break;
+        }
         return AgentChatResult{true, ""};
     }
 };
@@ -594,6 +608,129 @@ TEST_F(GameEngineTest, DialogueInjectsDynamicContextAsSystemMessageAndKeepsUserT
     EXPECT_NE(
         fake_agent_ptr->last_user_message.find("The player says: \"Can I see the manifest?\""),
         std::string::npos);
+}
+
+TEST_F(GameEngineTest, DialogueRememberToolPersistsMemorySilently) {
+    auto renderer = std::make_unique<MockEngineRenderer>();
+    auto *renderer_ptr = renderer.get();
+    auto fake_agent = std::make_unique<FakeDialogueAgent>();
+    fake_agent->behavior = FakeDialogueAgent::ChatBehavior::Remember;
+    fake_agent->memory_summary = "  Player noticed the tide ledger  ";
+    fake_agent->memory_importance = 15;
+    auto pool = std::make_unique<NpcAgentPool>(std::move(fake_agent));
+    GameEngine engine((fixture_root() / "config.json").string(), fixture_world_files(),
+                      std::move(renderer), std::move(pool));
+
+    ParsedCommand talk;
+    talk.verb = CommandVerb::Talk;
+    talk.primary_arg = "test_npc";
+    engine.handle_command(talk);
+
+    ParsedCommand dialogue;
+    dialogue.verb = CommandVerb::Dialogue;
+    dialogue.raw_input = "Remember this detail.";
+    dialogue.primary_arg = "Remember this detail.";
+    engine.handle_command(dialogue);
+
+    const auto &memories = engine.world().npcs.at("test_npc").state.memories;
+    ASSERT_EQ(memories.size(), 1u);
+    EXPECT_EQ(memories[0].summary, "Player noticed the tide ledger");
+    EXPECT_EQ(memories[0].importance, 10);
+    EXPECT_EQ(memories[0].type, "observation");
+    EXPECT_EQ(engine.world().clock.total_turns, 1);
+    EXPECT_TRUE(renderer_ptr->actions.empty());
+}
+
+TEST_F(GameEngineTest, NpcMemoriesSurviveSaveLoad) {
+    auto save_dir = std::filesystem::path("/tmp/chronicle_saves");
+    std::filesystem::remove(save_dir / "slot_7.json");
+
+    auto renderer = std::make_unique<MockEngineRenderer>();
+    auto fake_agent = std::make_unique<FakeDialogueAgent>();
+    auto *fake_agent_ptr = fake_agent.get();
+    fake_agent->behavior = FakeDialogueAgent::ChatBehavior::Remember;
+    fake_agent->memory_summary = "Player asked about the cargo route";
+    fake_agent->memory_importance = 8;
+    auto pool = std::make_unique<NpcAgentPool>(std::move(fake_agent));
+    GameEngine engine((fixture_root() / "config.json").string(), fixture_world_files(),
+                      std::move(renderer), std::move(pool));
+
+    ParsedCommand talk;
+    talk.verb = CommandVerb::Talk;
+    talk.primary_arg = "test_npc";
+    engine.handle_command(talk);
+
+    ParsedCommand dialogue;
+    dialogue.verb = CommandVerb::Dialogue;
+    dialogue.raw_input = "Remember the cargo route.";
+    dialogue.primary_arg = "Remember the cargo route.";
+    engine.handle_command(dialogue);
+    ASSERT_EQ(engine.world().npcs.at("test_npc").state.memories.size(), 1u);
+
+    ParsedCommand save;
+    save.verb = CommandVerb::Save;
+    save.primary_arg = "7";
+    engine.handle_command(save);
+
+    fake_agent_ptr->memory_summary = "Temporary memory after save";
+    fake_agent_ptr->memory_importance = 3;
+    dialogue.raw_input = "Remember a temporary detail.";
+    dialogue.primary_arg = "Remember a temporary detail.";
+    engine.handle_command(dialogue);
+    ASSERT_EQ(engine.world().npcs.at("test_npc").state.memories.size(), 2u);
+
+    ParsedCommand load;
+    load.verb = CommandVerb::Load;
+    load.primary_arg = "7";
+    engine.handle_command(load);
+
+    const auto &memories = engine.world().npcs.at("test_npc").state.memories;
+    ASSERT_EQ(memories.size(), 1u);
+    EXPECT_EQ(memories[0].summary, "Player asked about the cargo route");
+    EXPECT_EQ(memories[0].importance, 8);
+    std::filesystem::remove(save_dir / "slot_7.json");
+}
+
+TEST_F(GameEngineTest, ReenteringConversationIncludesPriorMemoryInDynamicContext) {
+    auto renderer = std::make_unique<MockEngineRenderer>();
+    auto fake_agent = std::make_unique<FakeDialogueAgent>();
+    auto *fake_agent_ptr = fake_agent.get();
+    fake_agent->behavior = FakeDialogueAgent::ChatBehavior::Remember;
+    fake_agent->memory_summary = "Player promised to return with proof";
+    fake_agent->memory_importance = 9;
+    auto pool = std::make_unique<NpcAgentPool>(std::move(fake_agent));
+    GameEngine engine((fixture_root() / "config.json").string(), fixture_world_files(),
+                      std::move(renderer), std::move(pool));
+
+    ParsedCommand talk;
+    talk.verb = CommandVerb::Talk;
+    talk.primary_arg = "test_npc";
+    engine.handle_command(talk);
+
+    ParsedCommand dialogue;
+    dialogue.verb = CommandVerb::Dialogue;
+    dialogue.raw_input = "I will return with proof.";
+    dialogue.primary_arg = "I will return with proof.";
+    engine.handle_command(dialogue);
+    ASSERT_EQ(engine.world().npcs.at("test_npc").state.memories.size(), 1u);
+
+    ParsedCommand bye;
+    bye.verb = CommandVerb::Dialogue;
+    bye.raw_input = "bye";
+    bye.primary_arg = "bye";
+    engine.handle_command(bye);
+
+    engine.handle_command(talk);
+    dialogue.raw_input = "What do you remember?";
+    dialogue.primary_arg = "What do you remember?";
+    engine.handle_command(dialogue);
+
+    ASSERT_GE(fake_agent_ptr->system_messages.size(), 2u);
+    const auto &context = fake_agent_ptr->system_messages.back();
+    EXPECT_NE(context.find("What you remember:"), std::string::npos);
+    EXPECT_NE(context.find("Player promised to return with proof"), std::string::npos);
+    EXPECT_EQ(fake_agent_ptr->last_user_message.find("Player promised to return with proof"),
+              std::string::npos);
 }
 
 TEST_F(GameEngineTest, DialogueExitClearsConversation) {

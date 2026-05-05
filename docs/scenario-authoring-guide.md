@@ -300,8 +300,9 @@ pipeline applies validated tool calls.
   pipeline.
 - `inventory`: item IDs initially held. Subject to the unique-ownership
   invariant.
-- `memories`: usually empty at scenario load; populated at runtime by the
-  `remember` tool.
+- `memories`: usually empty at scenario load; populated at runtime only by
+  explicit `remember` tool calls. Chronicle 1.0 does not run automatic memory
+  extraction after conversations.
 - `has_met_player`, `secret_revealed`: maintained by the engine.
 
 **Valid moods** (`kValidMoods`): `fearful`, `friendly`, `grieving`,
@@ -503,7 +504,7 @@ methods in [`src/ai/tool_registry.cpp`](../src/ai/tool_registry.cpp).
 | `update_trust`     | `delta`                           | `UpdateNpcTrust`             | Delta clamped so trust stays in `[-100, 100]`.                              |
 | `move_self`        | `location_id`                     | `MoveNpc`                    | Location must exist and be in `allowed_locations` if scoped.                |
 | `reveal_knowledge` | `fact_id`                         | `RevealKnowledge`            | Fact must be in NPC's `identity.knowledge`.                                 |
-| `remember`         | `summary`, `importance` (1-10)    | `AddMemory`                  | Summary non-empty; importance clamped to `[1, 10]`.                         |
+| `remember`         | `summary`, `importance` (1-10)    | `AddMemory`                  | Durable future-relevant memory only; summary non-empty; importance clamped to `[1, 10]`. |
 | `set_flag`         | `flag_id`, `value`                | `SetFlag`                    | Flag must be declared in `flags.json`.                                      |
 | `inspect_item`     | `item_id`                         | (none — read-only response)  | Item must be in NPC inventory; returns description and properties.          |
 
