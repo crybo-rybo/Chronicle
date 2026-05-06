@@ -23,13 +23,21 @@
 #pragma once
 #include "ai/agent_interface.hpp"
 #include <memory>
+
+#ifndef CHRONICLE_ENABLE_ZOO
+#define CHRONICLE_ENABLE_ZOO 1
+#endif
+
+#if CHRONICLE_ENABLE_ZOO
 #include <zoo/agent.hpp>
+#endif
 
 namespace chronicle {
 
 /// @brief Default per-request inference timeout in milliseconds (two minutes).
 inline constexpr int kDefaultInferenceTimeoutMs = 120000;
 
+#if CHRONICLE_ENABLE_ZOO
 /// @brief Wraps a @c zoo::Agent to satisfy the @ref AgentInterface contract.
 class ZooAgentAdapter : public AgentInterface {
   public:
@@ -89,5 +97,6 @@ class ZooAgentAdapter : public AgentInterface {
     ToolRegistry *registered_tool_registry_ = nullptr; ///< Tracks the last registered registry.
     int inference_timeout_ms_ = kDefaultInferenceTimeoutMs; ///< Per-request timeout; 0 disables.
 };
+#endif
 
 } // namespace chronicle

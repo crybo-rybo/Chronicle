@@ -7,6 +7,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Compiler warning flags for Chronicle-owned targets (not vendored dependencies)
 option(CHRONICLE_WERROR "Treat compiler warnings as errors" OFF)
+option(CHRONICLE_ENABLE_ZOO "Build live Zoo-Keeper/llama.cpp model integration" ON)
 option(CHRONICLE_ENABLE_LOGGING "Enable Chronicle diagnostic logging by default" OFF)
 option(CHRONICLE_ENABLE_ZOO_LOGGING "Enable Zoo-Keeper logging when Chronicle logging is enabled" ON)
 set(CHRONICLE_WARNING_FLAGS -Wall -Wextra -Wpedantic)
@@ -14,7 +15,7 @@ if(CHRONICLE_WERROR)
     list(APPEND CHRONICLE_WARNING_FLAGS -Werror)
 endif()
 
-if(CHRONICLE_ENABLE_LOGGING AND CHRONICLE_ENABLE_ZOO_LOGGING)
+if(CHRONICLE_ENABLE_ZOO AND CHRONICLE_ENABLE_LOGGING AND CHRONICLE_ENABLE_ZOO_LOGGING)
     set(ZOO_ENABLE_LOGGING ON CACHE BOOL "Enable Zoo-Keeper debug logging to stderr" FORCE)
 endif()
 
@@ -28,13 +29,15 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(json)
 
-# Zoo-Keeper via FetchContent
-FetchContent_Declare(
-    zoo-keeper
-    GIT_REPOSITORY https://github.com/crybo-rybo/zoo-keeper.git
-    GIT_TAG v1.1.4
-)
-FetchContent_MakeAvailable(zoo-keeper)
+if(CHRONICLE_ENABLE_ZOO)
+    # Zoo-Keeper via FetchContent
+    FetchContent_Declare(
+        zoo-keeper
+        GIT_REPOSITORY https://github.com/crybo-rybo/zoo-keeper.git
+        GIT_TAG v1.1.4
+    )
+    FetchContent_MakeAvailable(zoo-keeper)
+endif()
 
 # Main executable
 add_subdirectory(src)

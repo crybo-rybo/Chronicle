@@ -8,15 +8,23 @@
  */
 
 #include "ai/npc_agent_pool.hpp"
-#include "ai/zoo_agent_adapter.hpp"
 #include "diagnostics/logger.hpp"
 #include "entities/config.hpp"
 #include <stdexcept>
+
+#ifndef CHRONICLE_ENABLE_ZOO
+#define CHRONICLE_ENABLE_ZOO 1
+#endif
+
+#if CHRONICLE_ENABLE_ZOO
+#include "ai/zoo_agent_adapter.hpp"
 #include <zoo/agent.hpp>
 #include <zoo/log.hpp>
+#endif
 
 namespace chronicle {
 
+#if CHRONICLE_ENABLE_ZOO
 namespace {
 
 logging::Level to_chronicle_level(zoo::LogLevel level) {
@@ -49,6 +57,7 @@ void install_zoo_log_bridge_if_enabled() {
 }
 
 } // namespace
+#endif
 
 // ---------------------------------------------------------------------------
 // NpcAgentHandle
@@ -96,6 +105,7 @@ NpcAgentPool NpcAgentPool::from_config(const Config &config) {
             "Set model_path in the scenario config file to a valid GGUF model file.");
     }
 
+#if CHRONICLE_ENABLE_ZOO
     install_zoo_log_bridge_if_enabled();
     logging::write(logging::Level::Info, "ai",
                    "creating zoo agent model_path=" + config.model_path +
@@ -130,6 +140,13 @@ NpcAgentPool NpcAgentPool::from_config(const Config &config) {
     logging::write(logging::Level::Info, "ai", "zoo agent created");
     return NpcAgentPool(
         std::make_unique<ZooAgentAdapter>(std::move(*result), config.inference_timeout_ms));
+#else
+    logging::write(logging::Level::Error, "ai",
+                   "model_path was configured but Chronicle was built without Zoo-Keeper support");
+    throw std::runtime_error(
+        "NpcAgentPool::from_config: Chronicle was built without Zoo-Keeper support. "
+        "Reconfigure with -DCHRONICLE_ENABLE_ZOO=ON to use local model inference.");
+#endif
 }
 
 NpcAgentHandle NpcAgentPool::acquire(const std::string &npc_id) {

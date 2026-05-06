@@ -25,12 +25,7 @@ jobs:
           cmake -B build
           -DCMAKE_BUILD_TYPE=Release
           -DCHRONICLE_WERROR=ON
-          -DGGML_LLAMAFILE=OFF
-          -DGGML_NATIVE=OFF
-          -DZOO_ENABLE_METAL=OFF
-          -DGGML_ACCELERATE=OFF
-          -DGGML_BLAS=OFF
-          -DGGML_OPENMP=OFF
+          -DCHRONICLE_ENABLE_ZOO=OFF
 
       - name: Build
         run: cmake --build build --parallel

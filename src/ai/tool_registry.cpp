@@ -13,16 +13,26 @@
 #include "engine/text_utils.hpp"
 #include <algorithm>
 #include <sstream>
+#include <stdexcept>
+
+#ifndef CHRONICLE_ENABLE_ZOO
+#define CHRONICLE_ENABLE_ZOO 1
+#endif
+
+#if CHRONICLE_ENABLE_ZOO
 #include <zoo/agent.hpp>
+#endif
 
 namespace chronicle {
 
 namespace {
 
+#if CHRONICLE_ENABLE_ZOO
 void log_tool_result(std::string_view tool_name, const std::string &result) {
     const auto level = result == "OK" ? logging::Level::Info : logging::Level::Warning;
     logging::write(level, "tools", "tool=" + std::string(tool_name) + " result=\"" + result + "\"");
 }
+#endif
 
 } // namespace
 
@@ -469,6 +479,7 @@ std::string ToolRegistry::format_item_details(const std::string &item_id) const 
 
 void ToolRegistry::register_tools(zoo::Agent &agent, const std::string &npc_id) {
     set_active_npc_id(npc_id);
+#if CHRONICLE_ENABLE_ZOO
     logging::write(logging::Level::Info, "tools", "registering tools npc=" + npc_id);
 
     auto give_item_func = [this](std::string item_id) -> std::string {
@@ -599,6 +610,11 @@ void ToolRegistry::register_tools(zoo::Agent &agent, const std::string &npc_id) 
     };
     (void)agent.register_tool("inspect_item", "Examine an item in your inventory", {"item_id"},
                               std::move(inspect_item_func));
+#else
+    (void)agent;
+    throw std::runtime_error("ToolRegistry::register_tools requires Chronicle to be built with "
+                             "-DCHRONICLE_ENABLE_ZOO=ON.");
+#endif
 }
 
 } // namespace chronicle
