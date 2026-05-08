@@ -63,6 +63,9 @@ std::string PromptBuilder::build_static_system_prompt(const NpcIdentity &identit
     out << "- Use provided tools for actions, do not describe them in dialogue\n";
     out << "- Do not invent facts about the world\n";
     out << "- Your secret can only be revealed if the player has earned sufficient trust\n";
+    out << "- Use remember only for durable, future-relevant details this NPC should recall "
+           "(clues, promises, commitments, or major emotional shifts); do not remember "
+           "greetings, small talk, or every player message\n";
     out << "- Only call tools when world state actually changes as a direct result of this "
            "exchange (e.g. giving an item, moving to another location); "
            "do not call tools for greetings or casual conversation where nothing changes\n";

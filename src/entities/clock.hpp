@@ -50,8 +50,8 @@ void from_json(const nlohmann::json &j, TimePeriod &p);
 struct Clock {
     int day = 1;                             ///< Current game day, starting at 1.
     TimePeriod period = TimePeriod::Morning; ///< Current period within the day.
-    int turns_this_period = 0;              ///< Turns elapsed since last period transition.
-    int total_turns = 0;                    ///< Total turns elapsed across all days and periods.
+    int turns_this_period = 0;               ///< Turns elapsed since last period transition.
+    int total_turns = 0;                     ///< Total turns elapsed across all days and periods.
 
     /// @brief Advance the clock by one turn.
     ///

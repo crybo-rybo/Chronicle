@@ -1,0 +1,20 @@
+{
+  "events": {
+    "ledger_points_to_study": {
+      "conditions": [
+        {"type": "item_in_player_inv", "args": ["visitor_ledger"]},
+        {"type": "player_at", "args": ["study"]}
+      ],
+      "actions": [
+        {
+          "type": "end_game",
+          "params": {
+            "text": "With the ledger in hand, the quiet study gives up its first lead."
+          }
+        }
+      ],
+      "once": true,
+      "fired": false
+    }
+  }
+}

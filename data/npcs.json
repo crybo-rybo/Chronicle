@@ -26,7 +26,7 @@
           ],
           "allowed_items": ["tavern_key", "cargo_manifest", "crumpled_note"],
           "allowed_facts": ["fact_stolen_cargo", "fact_thief_identity"],
-          "allowed_flags": [],
+          "allowed_flags": ["cargo_inquiry_public"],
           "allowed_locations": ["tavern", "market_square"]
         }
       },
@@ -35,7 +35,16 @@
         "mood": "neutral",
         "trust_toward_player": 0,
         "inventory": ["tavern_key", "cargo_manifest"],
-        "memories": [],
+        "memories": [
+          {
+            "timestamp": "Night, Day 0",
+            "type": "observation",
+            "summary": "A dockworker argued with a merchant about a sealed chest on the night the cargo vanished.",
+            "importance": 6,
+            "related_npc": "",
+            "related_item": "cargo_manifest"
+          }
+        ],
         "has_met_player": false,
         "secret_revealed": false
       }

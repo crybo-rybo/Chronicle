@@ -41,9 +41,8 @@ inline std::string trim_copy(std::string_view input) {
 /// @return A new @c std::string with all ASCII characters lower-cased.
 inline std::string to_lower_copy(std::string_view input) {
     std::string result(input);
-    std::ranges::transform(result, result.begin(), [](unsigned char c) {
-        return static_cast<char>(std::tolower(c));
-    });
+    std::ranges::transform(result, result.begin(),
+                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     return result;
 }
 
@@ -62,9 +61,8 @@ inline std::string trim_and_lower(std::string_view input) {
     const auto end = input.find_last_not_of(" \t\n\r");
     auto trimmed = input.substr(begin, end - begin + 1);
     std::string result(trimmed);
-    std::ranges::transform(result, result.begin(), [](unsigned char c) {
-        return static_cast<char>(std::tolower(c));
-    });
+    std::ranges::transform(result, result.begin(),
+                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     return result;
 }
 
@@ -83,9 +81,7 @@ inline bool contains_normalized(std::string_view haystack, std::string_view need
     if (needle.empty() || needle.size() > haystack.size()) {
         return false;
     }
-    auto to_lower = [](unsigned char c) -> char {
-        return static_cast<char>(std::tolower(c));
-    };
+    auto to_lower = [](unsigned char c) -> char { return static_cast<char>(std::tolower(c)); };
     auto end = haystack.size() - needle.size() + 1;
     for (std::size_t i = 0; i < end; ++i) {
         bool match = true;

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://chronicle.dev/schemas/world.schema.json",
   "title": "Chronicle World File",
-  "description": "Location graph, item registry, and player start. Mirrors world.json parsing in src/entities/world_loader.cpp plus Location and Item structs.",
+  "description": "Location graph, item registry, and player start for the v1 scenario package contract.",
   "type": "object",
   "additionalProperties": true,
   "required": ["start_location", "locations", "items"],
@@ -56,7 +56,7 @@
         },
         "locked_exits": {
           "type": "array",
-          "description": "Names of exits that are currently locked.",
+          "description": "Names of exits that start locked. Each entry must match a key in this location's exits map.",
           "items": { "type": "string" }
         }
       }
@@ -77,7 +77,7 @@
         "hidden": { "type": "boolean", "default": false },
         "unlock_target": {
           "type": "string",
-          "description": "ID of the location exit unlocked by this item, or empty for none."
+          "description": "Destination location ID unlocked by this item when used on a matching locked exit, or empty for none."
         },
         "properties": {
           "type": "object",

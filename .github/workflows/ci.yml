@@ -21,7 +21,11 @@ jobs:
           submodules: recursive
 
       - name: Configure
-        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCHRONICLE_WERROR=ON
+        run: >
+          cmake -B build
+          -DCMAKE_BUILD_TYPE=Release
+          -DCHRONICLE_WERROR=ON
+          -DCHRONICLE_ENABLE_ZOO=OFF
 
       - name: Build
         run: cmake --build build --parallel
@@ -31,3 +35,9 @@ jobs:
 
       - name: Validate bundled scenario
         run: ./build/src/chronicle validate --scenario data
+
+      - name: Validate lighthouse example
+        run: ./build/src/chronicle validate --scenario examples/lighthouse_veil
+
+      - name: Validate minimal starter example
+        run: ./build/src/chronicle validate --scenario examples/minimal_scenario

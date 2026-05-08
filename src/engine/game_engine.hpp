@@ -16,7 +16,7 @@
  * 3. Read one line of player input.
  * 4. Parse it with @ref CommandParser.
  * 5. Dispatch to @ref handle_command (which may invoke the AI layer).
- * 6. Apply pending mutations via @ref process_pending_mutations.
+ * 6. Successful significant actions run the post-turn pipeline.
  * 7. Repeat until @c running_ is @c false.
  *
  * ### Design invariant
@@ -158,6 +158,21 @@ class GameEngine {
     /// @return The item's ID if found, @c std::nullopt otherwise.
     std::optional<std::string> find_accessible_item_id(const std::string &query) const;
 
+    /// @brief Find an item in the player's inventory by ID or display name.
+    std::optional<std::string> find_inventory_item_id(const std::string &query) const;
+
+    struct LockedExitMatch {
+        std::string direction;
+        std::string destination_id;
+        std::string destination_name;
+    };
+
+    /// @brief Find a locked exit in the current location matching a target query.
+    std::optional<LockedExitMatch> find_locked_exit_match(const std::string &query) const;
+
+    /// @brief Handle `use <item> on/with <target>` for authored unlocks.
+    void handle_use(const std::string &item_query, const std::string &target_query);
+
     /// @brief Parse a save/load slot number from a string argument.
     ///
     /// @details Returns @c 1 if the string is empty (default slot).  Returns
@@ -185,6 +200,12 @@ class GameEngine {
     ///
     /// @param input The raw player input to test.
     bool is_conversation_exit(std::string_view input) const;
+
+    /// Apply pending mutations, advance time once, and run post-turn systems.
+    void run_post_turn_pipeline();
+
+    /// Evaluate eligible scripted events after a significant turn.
+    void evaluate_scripted_events();
 };
 
 } // namespace chronicle

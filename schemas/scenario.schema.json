@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://chronicle.dev/schemas/scenario.schema.json",
   "title": "Chronicle Scenario Manifest",
-  "description": "Author-facing scenario manifest loaded from scenario.json. Mirrors ScenarioManifest in src/entities/scenario.hpp.",
+  "description": "Author-facing scenario manifest loaded from scenario.json for the v1 scenario package contract.",
   "type": "object",
   "additionalProperties": true,
   "required": ["id", "name", "version", "chronicle_schema_version", "files"],

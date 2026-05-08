@@ -1,0 +1,35 @@
+{
+  "start_location": "foyer",
+  "locations": {
+    "foyer": {
+      "name": "Foyer",
+      "base_description": "A narrow entry hall with a cold draft.",
+      "exits": { "east": "study" },
+      "items": ["ledger"],
+      "npcs": [],
+      "locked_exits": []
+    },
+    "study": {
+      "name": "Study",
+      "base_description": "A quiet room lined with ledgers.",
+      "exits": { "west": "foyer" },
+      "items": [],
+      "npcs": [],
+      "locked_exits": []
+    }
+  },
+  "items": {
+    "ledger": {
+      "name": "Ledger",
+      "description": "A plain visitor ledger.",
+      "takeable": true,
+      "key_item": false,
+      "hidden": false,
+      "unlock_target": "",
+      "properties": {
+        "readable": "true",
+        "text": "Only two names are written on today's page."
+      }
+    }
+  }
+}

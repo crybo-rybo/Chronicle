@@ -26,10 +26,16 @@ cmake --build --preset debug-logging
 CHRONICLE_LOG_FILE=chronicle.log ./build-logging/src/chronicle
 ```
 
-`CHRONICLE_LOG_LEVEL` accepts `debug`, `info`, `warning`, or `error`.
-`CHRONICLE_LOG=off` disables Chronicle logging at runtime even in a logging
-build. Pass `-DCHRONICLE_ENABLE_ZOO_LOGGING=OFF` during configure if you need
-Chronicle diagnostics without Zoo-Keeper diagnostics.
+`CHRONICLE_LOG_FILE` appends logs to the named file. `CHRONICLE_LOG_LEVEL`
+accepts `debug`, `info`, `warning`, or `error`. `CHRONICLE_LOG=off` disables
+Chronicle logging at runtime even in a logging build, while
+`CHRONICLE_LOG=debug|info|warning|error` enables logging at that level. Pass
+`-DCHRONICLE_ENABLE_ZOO_LOGGING=OFF` during configure if you need Chronicle
+diagnostics without Zoo-Keeper diagnostics.
+
+Logs are local diagnostics, not release artifacts. Review or redact local paths,
+player input, model setup details, and scenario secrets before sharing a log
+file outside your machine.
 
 Manual Zoo-Keeper smoke tests are opt-in because they require a local model:
 

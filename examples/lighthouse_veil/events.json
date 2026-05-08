@@ -70,6 +70,22 @@
       ],
       "once": true,
       "fired": false
+    },
+    "tide_erases_the_trail": {
+      "conditions": [
+        {"type": "clock_is", "args": ["evening"]},
+        {"type": "turn_ge", "args": ["12"]}
+      ],
+      "actions": [
+        {
+          "type": "end_game",
+          "params": {
+            "text": "Evening closes over Saltmere before the pier can be opened. The tide lifts under the sealed chest, the last boats pull away, and whatever proof Aldric Thorne guarded disappears into the dark water."
+          }
+        }
+      ],
+      "once": true,
+      "fired": false
     }
   }
 }

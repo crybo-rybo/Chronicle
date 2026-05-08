@@ -224,7 +224,7 @@ TEST_F(ToolRegistryTest, RevealKnowledgeRejected_UnknownFact) {
 
 TEST_F(ToolRegistryTest, AddMemoryAccepted) {
     ToolRegistry reg(world);
-    auto result = reg.validate_add_memory("marcus", "Player asked about cargo", 7);
+    auto result = reg.validate_add_memory("marcus", "  Player asked about cargo  ", 7);
     ASSERT_TRUE(std::holds_alternative<MutationRequest>(result));
     auto &req = std::get<MutationRequest>(result);
     EXPECT_EQ(req.type, MutationRequest::Type::AddMemory);
@@ -239,12 +239,27 @@ TEST_F(ToolRegistryTest, AddMemoryRejected_EmptySummary) {
     EXPECT_FALSE(std::get<std::string>(result).empty());
 }
 
+TEST_F(ToolRegistryTest, AddMemoryRejected_WhitespaceSummary) {
+    ToolRegistry reg(world);
+    auto result = reg.validate_add_memory("marcus", "   \t", 5);
+    ASSERT_TRUE(std::holds_alternative<std::string>(result));
+    EXPECT_FALSE(std::get<std::string>(result).empty());
+}
+
 TEST_F(ToolRegistryTest, AddMemoryClamps_Importance) {
     ToolRegistry reg(world);
     auto result = reg.validate_add_memory("marcus", "test", 15);
     ASSERT_TRUE(std::holds_alternative<MutationRequest>(result));
     auto &req = std::get<MutationRequest>(result);
     EXPECT_EQ(req.params.at("importance"), "10");
+}
+
+TEST_F(ToolRegistryTest, AddMemoryClampsLowImportance) {
+    ToolRegistry reg(world);
+    auto result = reg.validate_add_memory("marcus", "test", -4);
+    ASSERT_TRUE(std::holds_alternative<MutationRequest>(result));
+    auto &req = std::get<MutationRequest>(result);
+    EXPECT_EQ(req.params.at("importance"), "1");
 }
 
 // ---------------------------------------------------------------------------

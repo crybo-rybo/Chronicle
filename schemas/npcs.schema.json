@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://chronicle.dev/schemas/npcs.schema.json",
   "title": "Chronicle NPCs File",
-  "description": "NPC identity, initial state, and per-NPC tool policy. Mirrors Npc, NpcIdentity, NpcState, and NpcToolPolicy in src/entities/npc.hpp.",
+  "description": "NPC identity, initial state, and per-NPC tool policy for the v1 scenario package contract.",
   "type": "object",
   "additionalProperties": true,
   "required": ["npcs"],

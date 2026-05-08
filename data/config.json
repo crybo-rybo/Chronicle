@@ -4,6 +4,7 @@
   "n_gpu_layers": -1,
   "temperature": 0.7,
   "max_response_tokens": 512,
+  "inference_timeout_ms": 120000,
   "turns_per_period": 5,
   "total_periods": 12,
   "max_memory_tokens": 800,

@@ -1,13 +1,22 @@
 # Chronicle Scenario Authoring Guide
 
 This guide walks a new author through building a Chronicle scenario package
-end-to-end. Every JSON snippet is taken directly from the bundled sample at
-[`data/`](../data) so you can compare the guide to a working package as you read.
+end-to-end. The core walkthrough snippets are taken directly from the bundled
+sample at [`data/`](../data) so you can compare the guide to a working package
+as you read.
+
+For the smallest copyable starting point, use
+[`examples/minimal_scenario/`](../examples/minimal_scenario).
 
 Chronicle's v1 public contract is the CLI plus the JSON scenario package
 schema. C++ APIs are not part of the contract. For the formal contract see
-[`docs/chronicle-scenario-sdk-pivot.md`](chronicle-scenario-sdk-pivot.md); for
-the canonical type definitions see [`src/entities/`](../src/entities).
+[`docs/chronicle-scenario-sdk-pivot.md`](chronicle-scenario-sdk-pivot.md).
+The C++ sources can help explain current implementation behavior, but the
+author-facing contract is the CLI, this guide, the JSON schemas, and validator
+diagnostics.
+
+For a concise field-by-field reference, see
+[`docs/scenario-package-schema.md`](scenario-package-schema.md).
 
 ## 1. Overview
 
@@ -38,7 +47,7 @@ A complete `scenario.json` from the sample package:
 {
   "id": "broken_wheel_sample",
   "name": "Broken Wheel Sample",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "chronicle_schema_version": 1,
   "files": {
     "config": "config.json",
@@ -77,6 +86,9 @@ inside it. Absolute paths and `..` escapes are rejected by
 `load_scenario_package` ([`src/entities/scenario.cpp`](../src/entities/scenario.cpp)).
 Subdirectories are allowed (`"world": "world/world.json"`).
 
+If you are starting from scratch, copy `examples/minimal_scenario/` and rename
+the package fields before expanding the world.
+
 **Entity IDs come from JSON map keys.** When you author `npcs.json`,
 `world.json`'s `locations`/`items`, `facts.json`, `flags.json`, or
 `events.json`, the key in the map *is* the entity's ID. The world loader
@@ -85,7 +97,7 @@ injects that key into the entity object after parsing — do not repeat the
 [`src/entities/world_loader.cpp`](../src/entities/world_loader.cpp).
 
 Pick stable, lowercase, snake_case IDs (`tavern`, `marcus`,
-`fact_thief_identity`, `flag_secret_revealed`).
+`fact_thief_identity`, `cargo_inquiry_public`).
 
 ## 3. `config.json`
 
@@ -99,6 +111,9 @@ differently.
   three days at four periods each).
 - `max_response_tokens`, `context_size`, `temperature`: model prompt and
   sampling budgets.
+- `inference_timeout_ms` (int, default `120000`): wall-clock timeout for one
+  model request. Set to `0` only when debugging a local model and you want to
+  disable cancellation.
 - `max_memory_tokens`, `max_world_tokens`, `max_history_tokens`: prompt-budget
   caps `PromptBuilder` enforces.
 - `mutation_narration_templates` (object): per-mutation narration templates.
@@ -131,6 +146,7 @@ The sample's `config.json`:
   "n_gpu_layers": -1,
   "temperature": 0.7,
   "max_response_tokens": 512,
+  "inference_timeout_ms": 120000,
   "turns_per_period": 5,
   "total_periods": 12,
   "max_memory_tokens": 800,
@@ -171,7 +187,7 @@ location.
     },
     "market_square": {
       "name": "Market Square",
-      "base_description": "A wide cobblestone square surrounded by merchant stalls and trade offices.",
+      "base_description": "A wide cobblestone square surrounded by merchant stalls and trade offices. The air buzzes with haggling voices.",
       "exits": { "south": "tavern" },
       "items": [],
       "npcs": [],
@@ -190,6 +206,27 @@ location.
         "readable": "true",
         "text": "Don't trust the innkeeper."
       }
+    },
+    "tavern_key": {
+      "name": "Tavern Key",
+      "description": "A heavy iron key with a broken wheel emblem on the bow.",
+      "takeable": true,
+      "key_item": true,
+      "hidden": false,
+      "unlock_target": "",
+      "properties": {}
+    },
+    "cargo_manifest": {
+      "name": "Cargo Manifest",
+      "description": "A detailed list of goods, quantities, and destinations. Several entries are crossed out.",
+      "takeable": true,
+      "key_item": true,
+      "hidden": false,
+      "unlock_target": "",
+      "properties": {
+        "readable": "true",
+        "text": "Shipment 47: 12 bolts silk, 3 casks Elvari wine, 1 sealed chest (CONTENTS UNKNOWN). Status: MISSING."
+      }
     }
   }
 }
@@ -200,7 +237,9 @@ Location fields:
 - `exits`: maps direction strings (`north`, `upstairs`, anything) to
   destination location IDs. Validation rejects unknown targets.
 - `locked_exits`: list of direction strings (keys from `exits`) that start
-  locked.
+  locked. A player cannot traverse a locked exit until an inventory item with
+  a matching `unlock_target` is used on that direction, destination ID, or
+  destination display name.
 - `items`, `npcs`: entities initially present. NPC starting locations are
   driven by `state.current_location` in `npcs.json`; the loader cross-
   references those into the location's `npcs` list automatically. Leave the
@@ -212,8 +251,8 @@ Item fields:
 - `key_item`: plot-critical. `take_item` refuses to take key items back.
 - `hidden`: omitted from ambient room descriptions; must be revealed
   explicitly.
-- `unlock_target`: ID of the exit/unlockable this item opens. Empty for
-  items with no unlock effect.
+- `unlock_target`: destination location ID this item opens when used on a
+  matching locked exit. Empty for items with no unlock effect.
 - `properties`: extensible string-to-string metadata. The runtime currently
   recognises `readable: "true"` paired with `text` to render document
   contents. The validator warns when `readable=true` is set but `text` is
@@ -251,7 +290,7 @@ pipeline applies validated tool calls.
           ],
           "allowed_items": ["tavern_key", "cargo_manifest", "crumpled_note"],
           "allowed_facts": ["fact_stolen_cargo", "fact_thief_identity"],
-          "allowed_flags": [],
+          "allowed_flags": ["cargo_inquiry_public"],
           "allowed_locations": ["tavern", "market_square"]
         }
       },
@@ -260,7 +299,16 @@ pipeline applies validated tool calls.
         "mood": "neutral",
         "trust_toward_player": 0,
         "inventory": ["tavern_key", "cargo_manifest"],
-        "memories": [],
+        "memories": [
+          {
+            "timestamp": "Night, Day 0",
+            "type": "observation",
+            "summary": "A dockworker argued with a merchant about a sealed chest on the night the cargo vanished.",
+            "importance": 6,
+            "related_npc": "",
+            "related_item": "cargo_manifest"
+          }
+        ],
         "has_met_player": false,
         "secret_revealed": false
       }
@@ -293,8 +341,9 @@ pipeline applies validated tool calls.
   pipeline.
 - `inventory`: item IDs initially held. Subject to the unique-ownership
   invariant.
-- `memories`: usually empty at scenario load; populated at runtime by the
-  `remember` tool.
+- `memories`: optional authored seed memories plus runtime entries from
+  explicit `remember` tool calls. Chronicle 1.0 does not run automatic memory
+  extraction after conversations.
 - `has_met_player`, `secret_revealed`: maintained by the engine.
 
 **Valid moods** (`kValidMoods`): `fearful`, `friendly`, `grieving`,
@@ -355,21 +404,21 @@ Authoring rule: every fact ID listed in any NPC's `knowledge` or any
 ## 7. `flags.json`
 
 Flags are author-declared boolean milestones used by NPC tools and event
-conditions. The sample leaves the flag map empty; here is the canonical
-shape:
+conditions. The sample declares the public cargo inquiry flag that its first
+scripted event sets:
 
 ```json
 {
   "flags": {
-    "secret_revealed": {
-      "default_value": false,
-      "description": "Set to true once Marcus admits to helping the thief."
+    "cargo_inquiry_public": {
+      "default": false,
+      "description": "Set when the market guards publicly start questioning traders about the missing cargo."
     }
   }
 }
 ```
 
-- `default_value`: initial value loaded into `World::flags`.
+- `default`: initial value loaded into the runtime's flag state.
 - `description`: authoring note. Not currently surfaced at runtime; useful
   for keeping a registry of what each flag means.
 
@@ -393,6 +442,13 @@ When all conditions are true (AND semantics), the actions run.
       ],
       "actions": [
         {
+          "type": "set_flag",
+          "params": {
+            "flag_id": "cargo_inquiry_public",
+            "value": "true"
+          }
+        },
+        {
           "type": "narrate",
           "params": {
             "text": "A commotion breaks out near the merchant stalls. Guards are questioning traders about the missing cargo."
@@ -408,6 +464,15 @@ When all conditions are true (AND semantics), the actions run.
 
 `once: true` (the default) disables the trigger after firing. `fired` is
 runtime state — author it as `false`.
+
+The bundled sample also contains `cargo_trail_goes_cold`, an `end_game` event
+that fires once `cargo_inquiry_public` is true and enough turns have elapsed.
+That is the smallest deterministic resolution pattern: one event sets a flag,
+and a later event ends the scenario when the flag and pacing condition match.
+
+`once: false` keeps `fired` as `false` and lets the trigger fire on every
+post-turn evaluation where its conditions remain true. Use an authored flag
+condition/action if a repeating event needs its own cooldown or gate.
 
 Condition types validated by `validate_world` in
 [`src/entities/world_validator.cpp`](../src/entities/world_validator.cpp):
@@ -432,7 +497,7 @@ Action types:
 | `set_flag`   | `flag_id`, `value` (`"true"`/`"false"`)  | Set a declared flag.                         |
 | `spawn_item` | `item_id`, `location_id`                 | Place an existing item ID into a location.   |
 | `narrate`    | `text`                                   | Print narration to the player.               |
-| `end_game`   | (none)                                   | Trigger the resolution pathway.              |
+| `end_game`   | optional `text`                          | Trigger the resolution pathway.              |
 
 Unknown action types are validation errors. Required `params` keys must be
 non-empty strings.
@@ -492,7 +557,7 @@ methods in [`src/ai/tool_registry.cpp`](../src/ai/tool_registry.cpp).
 | `update_trust`     | `delta`                           | `UpdateNpcTrust`             | Delta clamped so trust stays in `[-100, 100]`.                              |
 | `move_self`        | `location_id`                     | `MoveNpc`                    | Location must exist and be in `allowed_locations` if scoped.                |
 | `reveal_knowledge` | `fact_id`                         | `RevealKnowledge`            | Fact must be in NPC's `identity.knowledge`.                                 |
-| `remember`         | `summary`, `importance` (1-10)    | `AddMemory`                  | Summary non-empty; importance clamped to `[1, 10]`.                         |
+| `remember`         | `summary`, `importance` (1-10)    | `AddMemory`                  | Durable future-relevant memory only; summary non-empty; importance clamped to `[1, 10]`. |
 | `set_flag`         | `flag_id`, `value`                | `SetFlag`                    | Flag must be declared in `flags.json`.                                      |
 | `inspect_item`     | `item_id`                         | (none — read-only response)  | Item must be in NPC inventory; returns description and properties.          |
 
@@ -549,17 +614,27 @@ the "Local Model Paths" section of [`CONTRIBUTING.md`](../CONTRIBUTING.md)
 for override mechanisms (`.secret/`, environment variables, gitignored local
 config).
 
+If a model request exceeds `inference_timeout_ms`, Chronicle requests
+Zoo-Keeper cancellation, discards NPC tool mutations from that failed turn, and
+keeps deterministic commands such as save, load, help, and leaving the
+conversation available. Set `inference_timeout_ms` to `0` only for local model
+debugging sessions where cancellation would hide the issue you are inspecting.
+
 ## 12. Where to look next
 
 - [`data/`](../data) — canonical small sample package. Read it end-to-end
   before authoring your own.
-- `examples/` — richer reference scenarios. (Landing in parallel; may not
-  yet be present in your tree.)
-- `schemas/` — JSON Schema files for each scenario file. (Also landing in
-  parallel; useful for editor integration once present.)
-- [`src/entities/`](../src/entities) — source-of-truth structs for every
-  scenario file. When in doubt about a field's meaning or default, the
-  `*.hpp` is authoritative.
+- [`examples/minimal_scenario/`](../examples/minimal_scenario) — smallest
+  copyable starter package.
+- [`examples/lighthouse_veil/`](../examples/lighthouse_veil) — richer
+  reference package showing multi-location authoring, scoped NPC policies, and
+  event chains.
+- [`schemas/`](../schemas) — JSON Schema files for each scenario file, useful
+  for editor integration.
+- [`docs/scenario-package-schema.md`](scenario-package-schema.md) — concise
+  field-by-field package contract reference.
+- [`src/entities/`](../src/entities) — implementation code for the current
+  loader and validator. Treat it as explanatory, not as a stable public API.
 - [`src/entities/world_validator.cpp`](../src/entities/world_validator.cpp) —
   exact, exhaustive list of validation rules.
 - [`src/ai/tool_registry.cpp`](../src/ai/tool_registry.cpp) — exact tool

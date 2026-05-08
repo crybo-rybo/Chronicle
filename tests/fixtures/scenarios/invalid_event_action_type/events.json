@@ -1,0 +1,14 @@
+{
+  "events": {
+    "intro_narration": {
+      "conditions": [
+        {"type": "player_at", "args": ["foyer"]}
+      ],
+      "actions": [
+        {"type": "teleport", "params": {}}
+      ],
+      "once": true,
+      "fired": false
+    }
+  }
+}

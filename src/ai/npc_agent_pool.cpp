@@ -8,15 +8,20 @@
  */
 
 #include "ai/npc_agent_pool.hpp"
-#include "ai/zoo_agent_adapter.hpp"
+#include "ai/zoo_compat.hpp"
 #include "diagnostics/logger.hpp"
 #include "entities/config.hpp"
 #include <stdexcept>
+
+#if CHRONICLE_ENABLE_ZOO
+#include "ai/zoo_agent_adapter.hpp"
 #include <zoo/agent.hpp>
 #include <zoo/log.hpp>
+#endif
 
 namespace chronicle {
 
+#if CHRONICLE_ENABLE_ZOO
 namespace {
 
 logging::Level to_chronicle_level(zoo::LogLevel level) {
@@ -49,6 +54,7 @@ void install_zoo_log_bridge_if_enabled() {
 }
 
 } // namespace
+#endif
 
 // ---------------------------------------------------------------------------
 // NpcAgentHandle
@@ -96,6 +102,7 @@ NpcAgentPool NpcAgentPool::from_config(const Config &config) {
             "Set model_path in the scenario config file to a valid GGUF model file.");
     }
 
+#if CHRONICLE_ENABLE_ZOO
     install_zoo_log_bridge_if_enabled();
     logging::write(logging::Level::Info, "ai",
                    "creating zoo agent model_path=" + config.model_path +
@@ -103,7 +110,8 @@ NpcAgentPool NpcAgentPool::from_config(const Config &config) {
                        " n_gpu_layers=" + std::to_string(config.n_gpu_layers) +
                        " max_response_tokens=" + std::to_string(config.max_response_tokens) +
                        " temperature=" + std::to_string(config.temperature) +
-                       " max_tool_iterations=" + std::to_string(config.max_tool_iterations));
+                       " max_tool_iterations=" + std::to_string(config.max_tool_iterations) +
+                       " inference_timeout_ms=" + std::to_string(config.inference_timeout_ms));
 
     zoo::ModelConfig model_config{
         .model_path = config.model_path,
@@ -127,7 +135,13 @@ NpcAgentPool NpcAgentPool::from_config(const Config &config) {
     }
 
     logging::write(logging::Level::Info, "ai", "zoo agent created");
-    return NpcAgentPool(std::make_unique<ZooAgentAdapter>(std::move(*result)));
+    return NpcAgentPool(
+        std::make_unique<ZooAgentAdapter>(std::move(*result), config.inference_timeout_ms));
+#else
+    logging::write(logging::Level::Error, "ai",
+                   "model_path was configured but Chronicle was built without Zoo-Keeper support");
+    throw_zoo_disabled("NpcAgentPool::from_config");
+#endif
 }
 
 NpcAgentHandle NpcAgentPool::acquire(const std::string &npc_id) {

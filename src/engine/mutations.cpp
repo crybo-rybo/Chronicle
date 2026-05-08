@@ -4,7 +4,7 @@
  *
  * @details Each @c apply_* function applies a single validated
  * @ref MutationRequest to the given @ref World.  Internal helpers
- * (@c get_param, @c parse_int, @c parse_bool, @c add_unique) centralise
+ * (@c parse_int, @c parse_bool, @c param_value, @c add_unique) centralise
  * parameter extraction and deduplication logic shared across multiple
  * mutation types.
  */
@@ -16,14 +16,6 @@
 namespace chronicle {
 
 namespace {
-
-std::optional<std::string> get_param(const MutationRequest &mutation, const std::string &key) {
-    auto it = mutation.params.find(key);
-    if (it == mutation.params.end() || it->second.empty()) {
-        return std::nullopt;
-    }
-    return it->second;
-}
 
 bool add_unique(std::vector<std::string> &values, const std::string &value) {
     if (std::ranges::contains(values, value)) {
@@ -53,7 +45,7 @@ bool item_is_owned(const World &world, const std::string &item_id) {
 } // namespace
 
 bool apply_give_item_to_player(World &world, const MutationRequest &mutation) {
-    auto item_id = get_param(mutation, "item_id");
+    auto item_id = param_value(mutation.params, "item_id");
     if (!item_id) {
         return false;
     }
@@ -75,7 +67,7 @@ bool apply_give_item_to_player(World &world, const MutationRequest &mutation) {
 }
 
 bool apply_take_item_from_player(World &world, const MutationRequest &mutation) {
-    auto item_id = get_param(mutation, "item_id");
+    auto item_id = param_value(mutation.params, "item_id");
     if (!item_id) {
         return false;
     }
@@ -97,7 +89,7 @@ bool apply_take_item_from_player(World &world, const MutationRequest &mutation) 
 }
 
 bool apply_update_npc_mood(World &world, const MutationRequest &mutation) {
-    auto mood = get_param(mutation, "mood");
+    auto mood = param_value(mutation.params, "mood");
     if (!mood) {
         return false;
     }
@@ -114,7 +106,7 @@ bool apply_update_npc_mood(World &world, const MutationRequest &mutation) {
 }
 
 bool apply_update_npc_trust(World &world, const MutationRequest &mutation) {
-    auto delta_param = get_param(mutation, "delta");
+    auto delta_param = param_value(mutation.params, "delta");
     if (!delta_param) {
         return false;
     }
@@ -136,7 +128,7 @@ bool apply_update_npc_trust(World &world, const MutationRequest &mutation) {
 }
 
 bool apply_move_npc(World &world, const MutationRequest &mutation) {
-    auto location_id = get_param(mutation, "location_id");
+    auto location_id = param_value(mutation.params, "location_id");
     if (!location_id) {
         return false;
     }
@@ -169,7 +161,7 @@ bool apply_move_npc(World &world, const MutationRequest &mutation) {
 }
 
 bool apply_reveal_knowledge(World &world, const MutationRequest &mutation) {
-    auto fact_id = get_param(mutation, "fact_id");
+    auto fact_id = param_value(mutation.params, "fact_id");
     if (!fact_id || !world.npcs.contains(mutation.actor_id)) {
         return false;
     }
@@ -177,8 +169,8 @@ bool apply_reveal_knowledge(World &world, const MutationRequest &mutation) {
 }
 
 bool apply_add_memory(World &world, const MutationRequest &mutation) {
-    auto summary = get_param(mutation, "summary");
-    auto importance_param = get_param(mutation, "importance");
+    auto summary = param_value(mutation.params, "summary");
+    auto importance_param = param_value(mutation.params, "importance");
     if (!summary || !importance_param) {
         return false;
     }
@@ -202,8 +194,8 @@ bool apply_add_memory(World &world, const MutationRequest &mutation) {
 }
 
 bool apply_set_flag(World &world, const MutationRequest &mutation) {
-    auto flag_id = get_param(mutation, "flag_id");
-    auto value_param = get_param(mutation, "value");
+    auto flag_id = param_value(mutation.params, "flag_id");
+    auto value_param = param_value(mutation.params, "value");
     if (!flag_id || !value_param) {
         return false;
     }
@@ -223,7 +215,7 @@ bool apply_set_flag(World &world, const MutationRequest &mutation) {
 }
 
 bool apply_player_move(World &world, const MutationRequest &mutation) {
-    auto location_id = get_param(mutation, "location_id");
+    auto location_id = param_value(mutation.params, "location_id");
     if (!location_id || !world.locations.contains(*location_id)) {
         return false;
     }
@@ -232,7 +224,7 @@ bool apply_player_move(World &world, const MutationRequest &mutation) {
 }
 
 bool apply_player_take(World &world, const MutationRequest &mutation) {
-    auto item_id = get_param(mutation, "item_id");
+    auto item_id = param_value(mutation.params, "item_id");
     if (!item_id || !world.items.contains(*item_id)) {
         return false;
     }
@@ -251,7 +243,7 @@ bool apply_player_take(World &world, const MutationRequest &mutation) {
 }
 
 bool apply_player_drop(World &world, const MutationRequest &mutation) {
-    auto item_id = get_param(mutation, "item_id");
+    auto item_id = param_value(mutation.params, "item_id");
     if (!item_id || !world.items.contains(*item_id)) {
         return false;
     }
@@ -268,9 +260,28 @@ bool apply_player_drop(World &world, const MutationRequest &mutation) {
     return true;
 }
 
+bool apply_unlock_exit(World &world, const MutationRequest &mutation) {
+    auto location_id = param_value(mutation.params, "location_id");
+    auto direction = param_value(mutation.params, "direction");
+    if (!location_id || !direction) {
+        return false;
+    }
+    auto loc_it = world.locations.find(*location_id);
+    if (loc_it == world.locations.end()) {
+        return false;
+    }
+    auto &locked_exits = loc_it->second.locked_exits;
+    auto it = std::ranges::find(locked_exits, *direction);
+    if (it == locked_exits.end()) {
+        return false;
+    }
+    locked_exits.erase(it);
+    return true;
+}
+
 bool apply_spawn_item(World &world, const MutationRequest &mutation) {
-    auto item_id = get_param(mutation, "item_id");
-    auto location_id = get_param(mutation, "location_id");
+    auto item_id = param_value(mutation.params, "item_id");
+    auto location_id = param_value(mutation.params, "location_id");
     if (!item_id || !location_id) {
         return false;
     }
@@ -307,6 +318,8 @@ bool apply_mutation(World &world, const MutationRequest &mutation) {
         return apply_player_take(world, mutation);
     case MutationRequest::Type::PlayerDrop:
         return apply_player_drop(world, mutation);
+    case MutationRequest::Type::UnlockExit:
+        return apply_unlock_exit(world, mutation);
     case MutationRequest::Type::SpawnItem:
         return apply_spawn_item(world, mutation);
     }

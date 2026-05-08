@@ -6,7 +6,6 @@
 #include "entities/world_validator.hpp"
 #include "engine/parse_utils.hpp"
 #include "entities/clock.hpp"
-#include <algorithm>
 #include <unordered_map>
 
 namespace chronicle {
@@ -57,6 +56,12 @@ ValidationReport validate_world(const World &world) {
                       "' which does not exist in world.locations");
             }
         }
+        for (const auto &direction : loc.locked_exits) {
+            if (!loc.exits.contains(direction)) {
+                error("Location '" + loc_id + "' locked_exit '" + direction +
+                      "' does not exist in that location's exits");
+            }
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -68,6 +73,13 @@ ValidationReport validate_world(const World &world) {
                 error("Location '" + loc_id + "' references item '" + item_id +
                       "' which does not exist in world.items");
             }
+        }
+    }
+
+    for (const auto &[item_id, item] : world.items) {
+        if (!item.unlock_target.empty() && !world.locations.contains(item.unlock_target)) {
+            error("Item '" + item_id + "' unlock_target '" + item.unlock_target +
+                  "' does not exist in world.locations");
         }
     }
 
@@ -164,13 +176,12 @@ ValidationReport validate_world(const World &world) {
     auto require_param = [&](const EventTrigger &event, std::size_t index,
                              const EventAction &action,
                              const std::string &key) -> std::optional<std::string> {
-        auto it = action.params.find(key);
-        if (it == action.params.end() || it->second.empty()) {
-            error(action_context(event, index, action.type) + " requires non-empty '" + key +
-                  "' param");
-            return std::nullopt;
+        if (auto value = param_value(action.params, key)) {
+            return value;
         }
-        return it->second;
+        error(action_context(event, index, action.type) + " requires non-empty '" + key +
+              "' param");
+        return std::nullopt;
     };
 
     for (const auto &event : world.events) {
@@ -288,7 +299,7 @@ ValidationReport validate_world(const World &world) {
             } else if (action.type == "narrate") {
                 (void)require_param(event, i, action, "text");
             } else if (action.type == "end_game") {
-                // Control-only action; no world mutation parameters are required.
+                // Control-only action; optional text is used as final narration.
             } else {
                 error(action_context(event, i, action.type) + " has unknown action type '" +
                       action.type + "'");

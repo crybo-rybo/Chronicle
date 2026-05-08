@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://chronicle.dev/schemas/events.schema.json",
   "title": "Chronicle Events File",
-  "description": "Deterministic event triggers. Mirrors EventTrigger, Condition, ConditionType, and EventAction in src/entities/event.hpp. Map keys are injected as trigger ids.",
+  "description": "Deterministic event triggers for the v1 scenario package contract. Map keys are injected as trigger ids.",
   "type": "object",
   "additionalProperties": true,
   "required": ["events"],

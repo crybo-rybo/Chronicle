@@ -21,6 +21,7 @@ TEST(ConfigTest, LoadFromFixture) {
     EXPECT_EQ(cfg.max_memory_tokens, 400);
     EXPECT_EQ(cfg.max_world_tokens, 200);
     EXPECT_EQ(cfg.max_history_tokens, 300);
+    EXPECT_EQ(cfg.inference_timeout_ms, 1500);
     EXPECT_EQ(cfg.save_directory, "/tmp/chronicle_saves");
     EXPECT_FALSE(cfg.use_tui);
     EXPECT_TRUE(cfg.use_color);
@@ -51,6 +52,7 @@ TEST(ConfigTest, SaveReloadRoundtrip) {
     EXPECT_EQ(reloaded.max_memory_tokens, original.max_memory_tokens);
     EXPECT_EQ(reloaded.max_world_tokens, original.max_world_tokens);
     EXPECT_EQ(reloaded.max_history_tokens, original.max_history_tokens);
+    EXPECT_EQ(reloaded.inference_timeout_ms, original.inference_timeout_ms);
     EXPECT_EQ(reloaded.save_directory, original.save_directory);
     EXPECT_EQ(reloaded.use_tui, original.use_tui);
     EXPECT_EQ(reloaded.use_color, original.use_color);
@@ -83,6 +85,7 @@ TEST(ConfigTest, DefaultConstruction) {
     EXPECT_EQ(cfg.max_memory_tokens, 800);
     EXPECT_EQ(cfg.max_world_tokens, 400);
     EXPECT_EQ(cfg.max_history_tokens, 600);
+    EXPECT_EQ(cfg.inference_timeout_ms, 120000);
     EXPECT_TRUE(cfg.save_directory.empty());
     EXPECT_FALSE(cfg.use_tui);
     EXPECT_TRUE(cfg.use_color);
@@ -96,7 +99,7 @@ TEST(ConfigTest, DefaultConstruction) {
 
 TEST(ConfigTest, LoadMalformedJsonThrows) {
     auto tmp = std::filesystem::temp_directory_path() / "chronicle_test_malformed.json";
-    std::FILE* f = std::fopen(tmp.string().c_str(), "w");
+    std::FILE *f = std::fopen(tmp.string().c_str(), "w");
     if (f) {
         std::fputs("{bad json", f);
         std::fclose(f);
@@ -112,6 +115,19 @@ TEST(ConfigTest, LoadMalformedJsonThrows) {
 TEST(ConfigTest, DefaultMaxToolIterations) {
     Config cfg;
     EXPECT_EQ(cfg.max_tool_iterations, 5);
+}
+
+TEST(ConfigTest, ZeroInferenceTimeoutDisablesCancellation) {
+    Config cfg;
+    cfg.inference_timeout_ms = 0;
+
+    std::filesystem::path tmp =
+        std::filesystem::temp_directory_path() / "chronicle_test_config_timeout.json";
+    cfg.save(tmp);
+    Config reloaded = Config::load(tmp);
+
+    EXPECT_EQ(reloaded.inference_timeout_ms, 0);
+    std::filesystem::remove(tmp);
 }
 
 TEST(ConfigTest, LoadFromFixtureMaxToolIterations) {

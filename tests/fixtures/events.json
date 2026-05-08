@@ -2,7 +2,7 @@
   "events": {
     "test_event": {
       "conditions": [
-        {"type": "player_at", "args": ["test_room"]}
+        {"type": "flag_set", "args": ["test_flag", "true"]}
       ],
       "actions": [
         {"type": "narrate", "params": {"text": "Test event fires."}}

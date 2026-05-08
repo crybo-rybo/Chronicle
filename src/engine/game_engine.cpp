@@ -12,6 +12,7 @@
 #include "diagnostics/logger.hpp"
 #include "engine/mutation_gate.hpp"
 #include "engine/mutations.hpp"
+#include "engine/parse_utils.hpp"
 #include "engine/text_utils.hpp"
 #include "entities/world_loader.hpp"
 #include "rendering/terminal_renderer.hpp"
@@ -59,34 +60,95 @@ std::string_view command_verb_name(CommandVerb verb) {
     return "unknown";
 }
 
-std::string_view mutation_type_name(MutationRequest::Type type) {
-    switch (type) {
-    case MutationRequest::Type::GiveItemToPlayer:
-        return "give_item_to_player";
-    case MutationRequest::Type::TakeItemFromPlayer:
-        return "take_item_from_player";
-    case MutationRequest::Type::UpdateNpcMood:
-        return "update_npc_mood";
-    case MutationRequest::Type::UpdateNpcTrust:
-        return "update_npc_trust";
-    case MutationRequest::Type::MoveNpc:
-        return "move_npc";
-    case MutationRequest::Type::RevealKnowledge:
-        return "reveal_knowledge";
-    case MutationRequest::Type::AddMemory:
-        return "add_memory";
-    case MutationRequest::Type::SetFlag:
-        return "set_flag";
-    case MutationRequest::Type::PlayerMove:
-        return "player_move";
-    case MutationRequest::Type::PlayerTake:
-        return "player_take";
-    case MutationRequest::Type::PlayerDrop:
-        return "player_drop";
-    case MutationRequest::Type::SpawnItem:
-        return "spawn_item";
+constexpr std::string_view kLocalModelDocs = "CONTRIBUTING.md#local-model-paths";
+
+constexpr std::string_view kDialogueFailureMessage =
+    "Dialogue failed or timed out. You can try again, say 'bye' to leave, or use "
+    "save/load/help.";
+
+std::string help_text(GamePhase phase) {
+    switch (phase) {
+    case GamePhase::Playing:
+        return "Commands: go <direction>, look, examine <item>, take <item>, drop <item>, "
+               "use <item> on/with <target>, talk <npc>, inventory, save [slot], load [slot], "
+               "help, quit.";
+    case GamePhase::InConversation:
+        return "Commands: type a message to speak, bye/goodbye/leave to end the conversation, "
+               "look, inventory, save [slot], load [slot], help, quit.";
+    case GamePhase::Resolution:
+        return "Commands: load [slot], help, quit.";
+    case GamePhase::GameOver:
+        return "Commands: load [slot], help, quit.";
     }
-    return "unknown";
+    return "Commands: help, quit.";
+}
+
+std::string game_over_command_error() {
+    return "The scenario has ended. Use help, load [slot], or quit.";
+}
+
+std::string unknown_command_error(GamePhase phase) {
+    switch (phase) {
+    case GamePhase::Playing:
+        return "I don't understand that command. Type help for commands.";
+    case GamePhase::InConversation:
+        return "I don't understand that in this conversation. Type a reply, use bye to leave, "
+               "or use help.";
+    case GamePhase::Resolution:
+        return game_over_command_error();
+    case GamePhase::GameOver:
+        return game_over_command_error();
+    }
+    return "I don't understand that command.";
+}
+
+std::string conversation_command_error() {
+    return "You are in a conversation. Type a reply, use bye to leave, or use help.";
+}
+
+std::string unsupported_give_error() {
+    return "Giving items directly is not supported. Use dialogue when an NPC can exchange items.";
+}
+
+bool allowed_in_conversation(CommandVerb verb) {
+    return verb == CommandVerb::Dialogue || verb == CommandVerb::Look ||
+           verb == CommandVerb::Inventory || verb == CommandVerb::Save ||
+           verb == CommandVerb::Load || verb == CommandVerb::Quit || verb == CommandVerb::Help;
+}
+
+std::string stub_intro_message(bool empty_model_path) {
+    if (empty_model_path) {
+        return "AI dialogue is using stub output because no local model is configured. "
+               "NPC replies are placeholders. See " +
+               std::string(kLocalModelDocs) + ".";
+    }
+    return "AI dialogue is using stub output because the configured local model could not be "
+           "initialized. Check logs and see " +
+           std::string(kLocalModelDocs) + ".";
+}
+
+std::string stub_dialogue_message(std::string_view npc_name, bool empty_model_path) {
+    if (empty_model_path) {
+        return "AI dialogue stub: " + std::string(npc_name) +
+               " cannot generate a model-backed reply because no local model is configured. See " +
+               std::string(kLocalModelDocs) + ".";
+    }
+    return "AI dialogue stub: " + std::string(npc_name) +
+           " cannot generate a model-backed reply because the configured local model is "
+           "unavailable. Check logs and see " +
+           std::string(kLocalModelDocs) + ".";
+}
+
+std::string npc_display_name(const World &world, const std::string &npc_id) {
+    auto npc_it = world.npcs.find(npc_id);
+    if (npc_it != world.npcs.end()) {
+        return npc_it->second.identity.name;
+    }
+    return npc_id;
+}
+
+std::string generic_ending_text() {
+    return "The scenario has reached its conclusion.";
 }
 
 std::string format_params(const std::map<std::string, std::string> &params) {
@@ -102,6 +164,64 @@ std::string format_params(const std::map<std::string, std::string> &params) {
     }
     oss << "}";
     return oss.str();
+}
+
+bool event_condition_matches(const World &world, const Condition &condition) {
+    switch (condition.type) {
+    case ConditionType::ClockIs:
+        if (condition.args.size() != 1) {
+            return false;
+        }
+        try {
+            return world.clock.period == string_to_time_period(condition.args[0]);
+        } catch (const std::exception &) {
+            return false;
+        }
+    case ConditionType::PlayerAt:
+        return condition.args.size() == 1 && world.player.current_location == condition.args[0];
+    case ConditionType::FlagSet: {
+        if (condition.args.size() != 2) {
+            return false;
+        }
+        auto flag_it = world.flags.find(condition.args[0]);
+        auto expected = parse_bool(condition.args[1]);
+        return flag_it != world.flags.end() && expected && flag_it->second == *expected;
+    }
+    case ConditionType::NpcTrustGe: {
+        if (condition.args.size() != 2) {
+            return false;
+        }
+        auto npc_it = world.npcs.find(condition.args[0]);
+        auto threshold = parse_int(condition.args[1]);
+        return npc_it != world.npcs.end() && threshold &&
+               npc_it->second.state.trust_toward_player >= *threshold;
+    }
+    case ConditionType::NpcAt: {
+        if (condition.args.size() != 2) {
+            return false;
+        }
+        auto npc_it = world.npcs.find(condition.args[0]);
+        return npc_it != world.npcs.end() &&
+               npc_it->second.state.current_location == condition.args[1];
+    }
+    case ConditionType::ItemInPlayerInv:
+        return condition.args.size() == 1 &&
+               std::ranges::contains(world.player.inventory, condition.args[0]);
+    case ConditionType::TurnGe: {
+        if (condition.args.size() != 1) {
+            return false;
+        }
+        auto threshold = parse_int(condition.args[0]);
+        return threshold && world.total_turns_elapsed >= *threshold;
+    }
+    }
+    return false;
+}
+
+bool event_conditions_match(const World &world, const EventTrigger &event) {
+    return std::ranges::all_of(event.conditions, [&](const Condition &condition) {
+        return event_condition_matches(world, condition);
+    });
 }
 
 } // namespace
@@ -163,8 +283,6 @@ void GameEngine::run() {
 
         auto cmd = parser_.parse(input, phase_);
         handle_command(cmd);
-
-        process_pending_mutations();
     }
 }
 
@@ -194,8 +312,19 @@ void GameEngine::handle_command(const ParsedCommand &cmd) {
                        " raw_input=\"" + cmd.raw_input + "\" primary_arg=\"" + cmd.primary_arg +
                        "\"");
 
+    if (cmd.verb == CommandVerb::Help) {
+        renderer_->render_system(help_text(phase_));
+        return;
+    }
+
+    if (phase_ == GamePhase::GameOver && cmd.verb != CommandVerb::Load &&
+        cmd.verb != CommandVerb::Quit) {
+        renderer_->render_error(game_over_command_error());
+        return;
+    }
+
     if (cmd.verb == CommandVerb::Unknown) {
-        renderer_->render_error("I don't understand that command.");
+        renderer_->render_error(unknown_command_error(phase_));
         return;
     }
 
@@ -219,6 +348,11 @@ void GameEngine::handle_command(const ParsedCommand &cmd) {
         return;
     }
 
+    if (phase_ == GamePhase::InConversation && !allowed_in_conversation(cmd.verb)) {
+        renderer_->render_error(conversation_command_error());
+        return;
+    }
+
     if (cmd.verb == CommandVerb::Quit) {
         renderer_->render_system("Thanks for playing!");
         running_ = false;
@@ -234,7 +368,10 @@ void GameEngine::handle_command(const ParsedCommand &cmd) {
             auto dir = req.params.at("direction");
             auto dest_id = req.params.at("location_id");
             pending_mutations_.push_back(std::move(req));
-            process_pending_mutations();
+            run_post_turn_pipeline();
+            if (phase_ == GamePhase::GameOver) {
+                return;
+            }
             auto dest_it = world_.locations.find(dest_id);
             std::string name = dest_it != world_.locations.end() ? dest_it->second.name : dest_id;
             renderer_->render_move(dir, name);
@@ -261,7 +398,10 @@ void GameEngine::handle_command(const ParsedCommand &cmd) {
             auto &req = std::get<MutationRequest>(result);
             auto item_id = req.params.at("item_id");
             pending_mutations_.push_back(std::move(req));
-            process_pending_mutations();
+            run_post_turn_pipeline();
+            if (phase_ == GamePhase::GameOver) {
+                return;
+            }
             auto w_it = world_.items.find(item_id);
             renderer_->render_action(
                 "You take the " + (w_it != world_.items.end() ? w_it->second.name : item_id) + ".");
@@ -277,11 +417,19 @@ void GameEngine::handle_command(const ParsedCommand &cmd) {
             auto &req = std::get<MutationRequest>(result);
             auto item_id = req.params.at("item_id");
             pending_mutations_.push_back(std::move(req));
-            process_pending_mutations();
+            run_post_turn_pipeline();
+            if (phase_ == GamePhase::GameOver) {
+                return;
+            }
             auto w_it = world_.items.find(item_id);
             renderer_->render_action(
                 "You drop the " + (w_it != world_.items.end() ? w_it->second.name : item_id) + ".");
         }
+        return;
+    }
+
+    if (cmd.verb == CommandVerb::Use) {
+        handle_use(cmd.primary_arg, cmd.secondary_arg);
         return;
     }
 
@@ -341,6 +489,11 @@ void GameEngine::handle_command(const ParsedCommand &cmd) {
         return;
     }
 
+    if (cmd.verb == CommandVerb::Give) {
+        renderer_->render_error(unsupported_give_error());
+        return;
+    }
+
     renderer_->render_error("You can't do that right now.");
 }
 
@@ -385,12 +538,111 @@ void GameEngine::process_pending_mutations() {
     }
 }
 
+void GameEngine::run_post_turn_pipeline() {
+    process_pending_mutations();
+
+    const auto previous_period = world_.clock.period;
+    const auto previous_day = world_.clock.day;
+    world_.clock.advance_turn(config_.turns_per_period);
+    world_.total_turns_elapsed = world_.clock.total_turns;
+
+    if (world_.clock.period != previous_period || world_.clock.day != previous_day) {
+        renderer_->render_time_advance(world_.clock);
+    }
+
+    evaluate_scripted_events();
+    process_pending_mutations();
+}
+
+void GameEngine::evaluate_scripted_events() {
+    for (auto &event : world_.events) {
+        if (event.once && event.fired) {
+            continue;
+        }
+        if (!event_conditions_match(world_, event)) {
+            continue;
+        }
+
+        logging::write(logging::Level::Info, "events", "triggering event=" + event.id);
+
+        bool entered_resolution = false;
+        for (const auto &action : event.actions) {
+            if (action.type == "move_npc") {
+                auto npc_id = param_value(action.params, "npc_id");
+                auto location_id = param_value(action.params, "location_id");
+                if (!npc_id || !location_id) {
+                    logging::write(logging::Level::Warning, "events",
+                                   "skipping malformed move_npc action event=" + event.id);
+                    continue;
+                }
+                pending_mutations_.push_back(MutationRequest{
+                    .type = MutationRequest::Type::MoveNpc,
+                    .source = MutationRequest::Source::System,
+                    .actor_id = *npc_id,
+                    .params = {{"location_id", *location_id}},
+                });
+            } else if (action.type == "set_flag") {
+                auto flag_id = param_value(action.params, "flag_id");
+                auto value = param_value(action.params, "value");
+                if (!flag_id || !value) {
+                    logging::write(logging::Level::Warning, "events",
+                                   "skipping malformed set_flag action event=" + event.id);
+                    continue;
+                }
+                pending_mutations_.push_back(MutationRequest{
+                    .type = MutationRequest::Type::SetFlag,
+                    .source = MutationRequest::Source::System,
+                    .actor_id = event.id,
+                    .params = {{"flag_id", *flag_id}, {"value", *value}},
+                });
+            } else if (action.type == "spawn_item") {
+                auto item_id = param_value(action.params, "item_id");
+                auto location_id = param_value(action.params, "location_id");
+                if (!item_id || !location_id) {
+                    logging::write(logging::Level::Warning, "events",
+                                   "skipping malformed spawn_item action event=" + event.id);
+                    continue;
+                }
+                pending_mutations_.push_back(MutationRequest{
+                    .type = MutationRequest::Type::SpawnItem,
+                    .source = MutationRequest::Source::System,
+                    .actor_id = event.id,
+                    .params = {{"item_id", *item_id}, {"location_id", *location_id}},
+                });
+            } else if (action.type == "narrate") {
+                if (auto text = param_value(action.params, "text")) {
+                    renderer_->render_action(*text);
+                }
+            } else if (action.type == "end_game") {
+                phase_ = GamePhase::GameOver;
+                renderer_->render_resolution(
+                    param_value(action.params, "text").value_or(generic_ending_text()));
+                entered_resolution = true;
+                break;
+            } else {
+                logging::write(logging::Level::Warning, "events",
+                               "skipping unknown action type=" + action.type +
+                                   " event=" + event.id);
+            }
+        }
+
+        if (event.once) {
+            event.fired = true;
+        }
+        if (entered_resolution) {
+            break;
+        }
+    }
+}
+
 void GameEngine::handle_dialogue(const std::string &npc_id, const std::string &input) {
     if (!active_conversation_handle_) {
         if (!agent_pool_) {
             logging::write(logging::Level::Warning, "dialogue",
                            "agent pool unavailable; using stub dialogue for npc=" + npc_id);
-            renderer_->render_system("Dialogue stub: " + input + " (AI not initialized)");
+            renderer_->render_system(stub_dialogue_message(npc_display_name(world_, npc_id),
+                                                           config_.model_path.empty()));
+            run_post_turn_pipeline();
             return;
         }
         logging::write(logging::Level::Error, "dialogue",
@@ -458,18 +710,22 @@ void GameEngine::handle_dialogue(const std::string &npc_id, const std::string &i
         }
         renderer_->flush_dialogue();
 
-        process_pending_mutations();
-
-        if (!result.success) {
+        if (result.success) {
+            run_post_turn_pipeline();
+        } else {
+            pending_mutations_.clear();
+            tool_registry_->clear_all();
             logging::write(logging::Level::Error, "dialogue",
                            "agent chat failed npc=" + npc_id + " error=" + result.error_message);
-            renderer_->render_error("Agent chat failed: " + result.error_message);
+            renderer_->render_error(std::string(kDialogueFailureMessage));
         }
 
     } catch (const std::exception &e) {
+        pending_mutations_.clear();
+        tool_registry_->clear_all();
         logging::write(logging::Level::Error, "dialogue",
                        "dialogue exception npc=" + npc_id + " error=" + e.what());
-        renderer_->render_error(std::string("Dialogue error: ") + e.what());
+        renderer_->render_error(std::string(kDialogueFailureMessage));
     }
 }
 
@@ -506,7 +762,7 @@ std::optional<std::string> GameEngine::find_visible_npc_id(const std::string &qu
     return std::nullopt;
 }
 
-std::optional<std::string> GameEngine::find_accessible_item_id(const std::string &query) const {
+std::optional<std::string> GameEngine::find_inventory_item_id(const std::string &query) const {
     for (const auto &item_id : world_.player.inventory) {
         auto item_it = world_.items.find(item_id);
         if (item_it != world_.items.end() &&
@@ -514,6 +770,13 @@ std::optional<std::string> GameEngine::find_accessible_item_id(const std::string
              text::contains_normalized(item_id, query))) {
             return item_id;
         }
+    }
+    return std::nullopt;
+}
+
+std::optional<std::string> GameEngine::find_accessible_item_id(const std::string &query) const {
+    if (auto inv_match = find_inventory_item_id(query)) {
+        return inv_match;
     }
 
     auto loc_it = world_.locations.find(world_.player.current_location);
@@ -530,6 +793,72 @@ std::optional<std::string> GameEngine::find_accessible_item_id(const std::string
         }
     }
     return std::nullopt;
+}
+
+std::optional<GameEngine::LockedExitMatch>
+GameEngine::find_locked_exit_match(const std::string &query) const {
+    auto loc_it = world_.locations.find(world_.player.current_location);
+    if (loc_it == world_.locations.end()) {
+        return std::nullopt;
+    }
+
+    const auto &loc = loc_it->second;
+    for (const auto &direction : loc.locked_exits) {
+        auto exit_it = loc.exits.find(direction);
+        if (exit_it == loc.exits.end()) {
+            continue;
+        }
+        const auto &destination_id = exit_it->second;
+        std::string destination_name = destination_id;
+        if (auto dest_it = world_.locations.find(destination_id);
+            dest_it != world_.locations.end()) {
+            destination_name = dest_it->second.name;
+        }
+
+        if (text::contains_normalized(direction, query) ||
+            text::contains_normalized(destination_id, query) ||
+            text::contains_normalized(destination_name, query)) {
+            return LockedExitMatch{direction, destination_id, destination_name};
+        }
+    }
+    return std::nullopt;
+}
+
+void GameEngine::handle_use(const std::string &item_query, const std::string &target_query) {
+    auto item_id = find_inventory_item_id(item_query);
+    if (!item_id) {
+        renderer_->render_error("You aren't carrying that.");
+        return;
+    }
+    if (text::trim_copy(target_query).empty()) {
+        renderer_->render_error("Use it on what?");
+        return;
+    }
+
+    auto locked_exit = find_locked_exit_match(target_query);
+    if (!locked_exit) {
+        renderer_->render_error("That target is not locked.");
+        return;
+    }
+
+    const auto &item = world_.items.at(*item_id);
+    if (item.unlock_target != locked_exit->destination_id) {
+        renderer_->render_error("That doesn't unlock the " + locked_exit->direction + " exit.");
+        return;
+    }
+
+    pending_mutations_.push_back(MutationRequest{
+        .type = MutationRequest::Type::UnlockExit,
+        .source = MutationRequest::Source::Player,
+        .actor_id = "player",
+        .params = {{"location_id", world_.player.current_location},
+                   {"direction", locked_exit->direction}},
+    });
+    run_post_turn_pipeline();
+    if (phase_ == GamePhase::GameOver) {
+        return;
+    }
+    renderer_->render_action("You unlock the " + locked_exit->direction + " exit.");
 }
 
 std::optional<int> GameEngine::parse_slot(const std::string &slot_text) const {
@@ -563,6 +892,7 @@ bool GameEngine::start_conversation(const std::string &npc_id) {
         phase_ = GamePhase::InConversation;
         current_conversation_npc_id_ = npc_id;
         renderer_->render_system("You are now talking to " + npc_it->second.identity.name + ".");
+        renderer_->render_system(stub_intro_message(config_.model_path.empty()));
         return true;
     }
 

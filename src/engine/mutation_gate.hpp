@@ -19,9 +19,9 @@ namespace chronicle {
 
 /// @brief Validate a player movement command.
 ///
-/// @details Checks that the player is in a known location and that
-/// @p direction is an exact exit key from that location.  Locked-exit behavior
-/// is expected to be enforced as the interaction system matures.
+/// @details Checks that the player is in a known location, that @p direction
+/// is an exact exit key from that location, and that the exit is not currently
+/// locked.
 ///
 /// @param world     Current world state to inspect without mutation.
 /// @param direction Exit direction supplied by the parser.

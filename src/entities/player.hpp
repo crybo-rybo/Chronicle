@@ -54,12 +54,12 @@ struct Player {
     /// @brief Test whether the player currently holds a specific item.
     /// @param item_id The item ID to search for.
     /// @return @c true if @p item_id appears in @c inventory.
-    bool has_item(const std::string& item_id) const;
+    bool has_item(const std::string &item_id) const;
 
     /// @brief Test whether the player has already learned a specific fact.
     /// @param fact_id The fact ID to search for.
     /// @return @c true if @p fact_id appears in @c known_facts.
-    bool knows_fact(const std::string& fact_id) const;
+    bool knows_fact(const std::string &fact_id) const;
 };
 
 /// @cond INTERNAL

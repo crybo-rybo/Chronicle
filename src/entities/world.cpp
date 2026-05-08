@@ -9,10 +9,14 @@ namespace chronicle {
 
 void to_json(nlohmann::json &j, const World &w) {
     j = nlohmann::json{
-        {"clock", w.clock},   {"locations", w.locations},
-        {"npcs", w.npcs},     {"items", w.items},
-        {"player", w.player}, {"facts", w.facts},
-        {"flags", w.flags},   {"events", w.events},
+        {"clock", w.clock},
+        {"locations", w.locations},
+        {"npcs", w.npcs},
+        {"items", w.items},
+        {"player", w.player},
+        {"facts", w.facts},
+        {"flags", w.flags},
+        {"events", w.events},
         {"total_turns_elapsed", w.total_turns_elapsed},
     };
 }

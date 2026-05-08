@@ -88,14 +88,14 @@ class TerminalRenderer : public Renderer {
     std::istream &in_;  ///< Source input stream.
     bool use_color_;    ///< Whether ANSI escape codes are emitted.
     std::unordered_map<std::string, int> npc_color_indices_; ///< NPC name → palette index.
-    int next_color_index_ = 0; ///< Next available palette index.
+    int next_color_index_ = 0;                               ///< Next available palette index.
 
     // ANSI SGR escape codes (compile-time constants).
-    static constexpr std::string_view kReset      = "\033[0m";
-    static constexpr std::string_view kBold       = "\033[1m";
-    static constexpr std::string_view kItalic     = "\033[3m";
-    static constexpr std::string_view kDim        = "\033[2m";
-    static constexpr std::string_view kBoldCyan   = "\033[1;36m";
+    static constexpr std::string_view kReset = "\033[0m";
+    static constexpr std::string_view kBold = "\033[1m";
+    static constexpr std::string_view kItalic = "\033[3m";
+    static constexpr std::string_view kDim = "\033[2m";
+    static constexpr std::string_view kBoldCyan = "\033[1;36m";
     static constexpr std::string_view kSoftYellow = "\033[33m";
 
     /// @brief Six-colour NPC palette in bold ANSI colours.

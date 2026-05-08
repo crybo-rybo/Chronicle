@@ -148,6 +148,19 @@ bool apply_player_take(World &world, const MutationRequest &mutation);
 /// @return @c true if the item left the player's inventory.
 bool apply_player_drop(World &world, const MutationRequest &mutation);
 
+/// @brief Unlock a locked exit in a location.
+///
+/// @details Removes @c direction from @ref Location::locked_exits for the
+/// given @c location_id.  The movement graph itself is unchanged; this only
+/// updates the persistent runtime lock state.
+///
+/// @param world    The world to mutate.
+/// @param mutation Must have @c type == @c UnlockExit,
+///                 @c params["location_id"] set to an existing location ID,
+///                 and @c params["direction"] set to a locked exit direction.
+/// @return @c true if the exit was locked and is now unlocked.
+bool apply_unlock_exit(World &world, const MutationRequest &mutation);
+
 /// @brief Place an item into a location (system/event use).
 ///
 /// @details Places an existing registry item into a location only when that

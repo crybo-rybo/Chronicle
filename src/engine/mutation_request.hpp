@@ -12,6 +12,7 @@
 #include <functional>
 #include <map>
 #include <string>
+#include <string_view>
 
 namespace chronicle {
 
@@ -24,7 +25,7 @@ namespace chronicle {
 struct MutationRequest {
     /// @brief Who initiated the mutation.
     enum class Source {
-        Player, ///< Player command (go, take, drop).
+        Player, ///< Player command (go, take, drop, use).
         Npc,    ///< NPC tool call during inference.
         System  ///< Engine event or scripted action.
     };
@@ -43,6 +44,7 @@ struct MutationRequest {
     /// - @c PlayerMove: @c location_id and @c direction.
     /// - @c PlayerTake: @c item_id.
     /// - @c PlayerDrop: @c item_id.
+    /// - @c UnlockExit: @c location_id and @c direction.
     /// - @c SpawnItem: @c item_id and @c location_id.
     enum class Type {
         // NPC-originated
@@ -59,6 +61,7 @@ struct MutationRequest {
         PlayerMove, ///< Move the player to a connected location.
         PlayerTake, ///< Take an item from the current location.
         PlayerDrop, ///< Drop an item from the player's inventory.
+        UnlockExit, ///< Unlock a locked exit in the current location.
 
         // System/event-originated
         SpawnItem, ///< Create or place an item in a location.
@@ -84,5 +87,42 @@ struct MutationRequest {
 /// accepted requests to @ref GameEngine without gaining direct write access to
 /// @ref World.
 using MutationSink = std::function<void(MutationRequest)>;
+
+/// @brief Canonical string key for a @ref MutationRequest::Type.
+///
+/// @details The same key is used for logging, tool dispatch, and narration
+/// template lookup, so callers should always go through this helper rather
+/// than maintain parallel switches.
+inline std::string_view mutation_type_name(MutationRequest::Type type) {
+    switch (type) {
+    case MutationRequest::Type::GiveItemToPlayer:
+        return "give_item_to_player";
+    case MutationRequest::Type::TakeItemFromPlayer:
+        return "take_item_from_player";
+    case MutationRequest::Type::UpdateNpcMood:
+        return "update_npc_mood";
+    case MutationRequest::Type::UpdateNpcTrust:
+        return "update_npc_trust";
+    case MutationRequest::Type::MoveNpc:
+        return "move_npc";
+    case MutationRequest::Type::RevealKnowledge:
+        return "reveal_knowledge";
+    case MutationRequest::Type::AddMemory:
+        return "add_memory";
+    case MutationRequest::Type::SetFlag:
+        return "set_flag";
+    case MutationRequest::Type::PlayerMove:
+        return "player_move";
+    case MutationRequest::Type::PlayerTake:
+        return "player_take";
+    case MutationRequest::Type::PlayerDrop:
+        return "player_drop";
+    case MutationRequest::Type::UnlockExit:
+        return "unlock_exit";
+    case MutationRequest::Type::SpawnItem:
+        return "spawn_item";
+    }
+    return "";
+}
 
 } // namespace chronicle

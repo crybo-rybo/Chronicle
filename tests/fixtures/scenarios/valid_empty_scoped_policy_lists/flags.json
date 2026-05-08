@@ -1,0 +1,8 @@
+{
+  "flags": {
+    "intro_complete": {
+      "default": false,
+      "description": "Set after the introductory beat."
+    }
+  }
+}

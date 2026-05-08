@@ -11,13 +11,75 @@
 #include "ai/zoo_agent_adapter.hpp"
 #include "ai/tool_registry.hpp"
 #include "diagnostics/logger.hpp"
+#include <algorithm>
 #include <chrono>
+#include <optional>
 #include <stdexcept>
 #include <thread>
 
 namespace chronicle {
 
-ZooAgentAdapter::ZooAgentAdapter(std::unique_ptr<zoo::Agent> agent) : agent_(std::move(agent)) {
+namespace {
+
+constexpr auto kPollInterval = std::chrono::milliseconds(10);
+constexpr auto kCancelDrainTimeout = std::chrono::milliseconds(250);
+
+std::string timeout_error_message(int timeout_ms) {
+    return "Inference timed out after " + std::to_string(timeout_ms) + " ms.";
+}
+
+template <typename Handle>
+std::optional<AgentChatResult> poll_until_ready_or_timeout(Handle &handle,
+                                                           const AgentInterface::PollCallback &poll,
+                                                           int timeout_ms, std::string_view phase) {
+    const bool timeout_enabled = timeout_ms > 0;
+    const auto started_at = std::chrono::steady_clock::now();
+
+    while (!handle.ready()) {
+        if (poll) {
+            poll();
+        }
+        if (handle.ready()) {
+            break;
+        }
+        if (timeout_enabled && std::chrono::steady_clock::now() - started_at >=
+                                   std::chrono::milliseconds(timeout_ms)) {
+            logging::write(logging::Level::Warning, "ai",
+                           std::string(phase) + " timed out; requesting Zoo-Keeper cancellation");
+            handle.cancel();
+
+            const auto cancel_started_at = std::chrono::steady_clock::now();
+            while (!handle.ready() &&
+                   std::chrono::steady_clock::now() - cancel_started_at < kCancelDrainTimeout) {
+                if (poll) {
+                    poll();
+                }
+                std::this_thread::sleep_for(kPollInterval);
+            }
+
+            if (handle.ready()) {
+                auto cancelled_result = handle.await_result();
+                if (!cancelled_result) {
+                    logging::write(logging::Level::Info, "ai",
+                                   "cancelled " + std::string(phase) +
+                                       " result: " + cancelled_result.error().to_string());
+                }
+            }
+            if (poll) {
+                poll();
+            }
+            return AgentChatResult{false, timeout_error_message(timeout_ms)};
+        }
+        std::this_thread::sleep_for(kPollInterval);
+    }
+
+    return std::nullopt;
+}
+
+} // namespace
+
+ZooAgentAdapter::ZooAgentAdapter(std::unique_ptr<zoo::Agent> agent, int inference_timeout_ms)
+    : agent_(std::move(agent)), inference_timeout_ms_(std::max(0, inference_timeout_ms)) {
     if (!agent_) {
         throw std::invalid_argument("ZooAgentAdapter: agent must not be null");
     }
@@ -64,11 +126,8 @@ AgentChatResult ZooAgentAdapter::chat_streaming(std::string_view user_message,
     logging::write(logging::Level::Info, "ai",
                    "starting zoo chat user_message_chars=" + std::to_string(user_message.size()));
     auto handle = agent_->chat(user_message, {}, on_token);
-    while (!handle.ready()) {
-        if (poll) {
-            poll();
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    if (auto timeout = poll_until_ready_or_timeout(handle, poll, inference_timeout_ms_, "chat")) {
+        return *timeout;
     }
 
     if (poll) {
@@ -92,11 +151,9 @@ AgentChatResult ZooAgentAdapter::chat_streaming(std::string_view user_message,
             logging::write(logging::Level::Warning, "ai",
                            "tool loop limit reached; issuing no-tool nudge");
             auto nudge_handle = agent_->chat(kNudge, {}, on_token);
-            while (!nudge_handle.ready()) {
-                if (poll) {
-                    poll();
-                }
-                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            if (auto timeout = poll_until_ready_or_timeout(
+                    nudge_handle, poll, inference_timeout_ms_, "tool-loop nudge")) {
+                return *timeout;
             }
 
             if (poll) {

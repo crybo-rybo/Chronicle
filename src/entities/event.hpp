@@ -81,7 +81,7 @@ void from_json(const nlohmann::json &j, Condition &c);
 /// - @c "set_flag": @c flag_id, @c value (@c "true" or @c "false").
 /// - @c "spawn_item": @c item_id, @c location_id.
 /// - @c "narrate": @c text.
-/// - @c "end_game": no required parameters.
+/// - @c "end_game": optional @c text.
 ///
 /// The validator checks action names and required references before gameplay.
 struct EventAction {
