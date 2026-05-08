@@ -9,11 +9,9 @@ For the smallest copyable starting point, use
 [`examples/minimal_scenario/`](../examples/minimal_scenario).
 
 Chronicle's v1 public contract is the CLI plus the JSON scenario package
-schema. C++ APIs are not part of the contract. For the formal contract see
-[`docs/chronicle-scenario-sdk-pivot.md`](chronicle-scenario-sdk-pivot.md).
-The C++ sources can help explain current implementation behavior, but the
-author-facing contract is the CLI, this guide, the JSON schemas, and validator
-diagnostics.
+schema. C++ APIs are not part of the contract. The C++ sources can help
+explain current implementation behavior, but the author-facing contract is
+the CLI, this guide, the JSON schemas, and validator diagnostics.
 
 For a concise field-by-field reference, see
 [`docs/scenario-package-schema.md`](scenario-package-schema.md).
@@ -639,5 +637,3 @@ debugging sessions where cancellation would hide the issue you are inspecting.
   exact, exhaustive list of validation rules.
 - [`src/ai/tool_registry.cpp`](../src/ai/tool_registry.cpp) — exact tool
   signatures and validation behaviour.
-- [`docs/chronicle-scenario-sdk-pivot.md`](chronicle-scenario-sdk-pivot.md) —
-  v1 public contract and scope.

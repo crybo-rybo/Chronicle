@@ -5,7 +5,7 @@ and social-sim text adventures. Authors create JSON scenario packages; Chronicle
 and validates them with deterministic engine state and LLM-driven NPC behavior. The v1
 public contract is the CLI plus the JSON scenario package schema; C++ APIs remain
 implementation details. Keep changes small, covered by tests, and aligned with the
-roadmap and `docs/chronicle-scenario-sdk-pivot.md`.
+roadmap.
 
 ## Build And Test
 

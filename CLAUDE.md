@@ -41,7 +41,7 @@ The historical design docs cover:
 - Deep technical detail (all data structures, AI integration, threading model)
 - Sprint-by-sprint implementation roadmap (8+ sprints)
 
-When starting a new session, read the design documents and `docs/chronicle-scenario-sdk-pivot.md`. The pivot doc supersedes older language that described Chronicle as only a single game.
+When starting a new session, read the design documents.
 
 ## Development Conventions
 
