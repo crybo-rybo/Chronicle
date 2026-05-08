@@ -19,6 +19,9 @@
 
 namespace chronicle {
 
+/// @brief Default per-request inference timeout in milliseconds (two minutes).
+inline constexpr int kDefaultInferenceTimeoutMs = 120000;
+
 /// @brief Returns a default set of mutation narration templates.
 ///
 /// @details Used to initialise @ref Config::mutation_narration_templates when
@@ -64,9 +67,9 @@ struct Config {
 
     /// @brief Maximum wall-clock time for one inference request in milliseconds.
     ///
-    /// @details Default: 120000 (two minutes).  Set to @c 0 to disable
-    /// timeout-driven cancellation for local model debugging.
-    int inference_timeout_ms = 120000;
+    /// @details Defaults to @ref kDefaultInferenceTimeoutMs (two minutes).  Set
+    /// to @c 0 to disable timeout-driven cancellation for local model debugging.
+    int inference_timeout_ms = kDefaultInferenceTimeoutMs;
 
     /// @brief Number of significant player actions per time period.  Default: 5.
     ///

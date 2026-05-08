@@ -6,7 +6,6 @@
 #include "entities/world_validator.hpp"
 #include "engine/parse_utils.hpp"
 #include "entities/clock.hpp"
-#include <algorithm>
 #include <unordered_map>
 
 namespace chronicle {
@@ -177,13 +176,12 @@ ValidationReport validate_world(const World &world) {
     auto require_param = [&](const EventTrigger &event, std::size_t index,
                              const EventAction &action,
                              const std::string &key) -> std::optional<std::string> {
-        auto it = action.params.find(key);
-        if (it == action.params.end() || it->second.empty()) {
-            error(action_context(event, index, action.type) + " requires non-empty '" + key +
-                  "' param");
-            return std::nullopt;
+        if (auto value = param_value(action.params, key)) {
+            return value;
         }
-        return it->second;
+        error(action_context(event, index, action.type) + " requires non-empty '" + key +
+              "' param");
+        return std::nullopt;
     };
 
     for (const auto &event : world.events) {

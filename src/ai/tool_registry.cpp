@@ -8,16 +8,12 @@
  */
 
 #include "ai/tool_registry.hpp"
+#include "ai/zoo_compat.hpp"
 #include "diagnostics/logger.hpp"
 #include "engine/parse_utils.hpp"
 #include "engine/text_utils.hpp"
 #include <algorithm>
 #include <sstream>
-#include <stdexcept>
-
-#ifndef CHRONICLE_ENABLE_ZOO
-#define CHRONICLE_ENABLE_ZOO 1
-#endif
 
 #if CHRONICLE_ENABLE_ZOO
 #include <zoo/agent.hpp>
@@ -478,8 +474,8 @@ std::string ToolRegistry::format_item_details(const std::string &item_id) const 
 }
 
 void ToolRegistry::register_tools(zoo::Agent &agent, const std::string &npc_id) {
-    set_active_npc_id(npc_id);
 #if CHRONICLE_ENABLE_ZOO
+    set_active_npc_id(npc_id);
     logging::write(logging::Level::Info, "tools", "registering tools npc=" + npc_id);
 
     auto give_item_func = [this](std::string item_id) -> std::string {
@@ -612,8 +608,8 @@ void ToolRegistry::register_tools(zoo::Agent &agent, const std::string &npc_id) 
                               std::move(inspect_item_func));
 #else
     (void)agent;
-    throw std::runtime_error("ToolRegistry::register_tools requires Chronicle to be built with "
-                             "-DCHRONICLE_ENABLE_ZOO=ON.");
+    (void)npc_id;
+    throw_zoo_disabled("ToolRegistry::register_tools");
 #endif
 }
 

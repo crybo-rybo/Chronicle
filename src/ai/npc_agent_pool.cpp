@@ -8,13 +8,10 @@
  */
 
 #include "ai/npc_agent_pool.hpp"
+#include "ai/zoo_compat.hpp"
 #include "diagnostics/logger.hpp"
 #include "entities/config.hpp"
 #include <stdexcept>
-
-#ifndef CHRONICLE_ENABLE_ZOO
-#define CHRONICLE_ENABLE_ZOO 1
-#endif
 
 #if CHRONICLE_ENABLE_ZOO
 #include "ai/zoo_agent_adapter.hpp"
@@ -143,9 +140,7 @@ NpcAgentPool NpcAgentPool::from_config(const Config &config) {
 #else
     logging::write(logging::Level::Error, "ai",
                    "model_path was configured but Chronicle was built without Zoo-Keeper support");
-    throw std::runtime_error(
-        "NpcAgentPool::from_config: Chronicle was built without Zoo-Keeper support. "
-        "Reconfigure with -DCHRONICLE_ENABLE_ZOO=ON to use local model inference.");
+    throw_zoo_disabled("NpcAgentPool::from_config");
 #endif
 }
 

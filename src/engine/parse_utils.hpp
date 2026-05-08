@@ -23,7 +23,6 @@ param_value(const std::map<std::string, std::string> &params, const std::string 
     return it->second;
 }
 
-
 /// @brief Strictly parse a boolean string.
 ///
 /// @details Accepts only @c "true" / @c "1" (→ true) and @c "false" / @c "0"

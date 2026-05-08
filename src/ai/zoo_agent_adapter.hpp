@@ -22,20 +22,15 @@
 
 #pragma once
 #include "ai/agent_interface.hpp"
+#include "ai/zoo_compat.hpp"
+#include "entities/config.hpp"
 #include <memory>
-
-#ifndef CHRONICLE_ENABLE_ZOO
-#define CHRONICLE_ENABLE_ZOO 1
-#endif
 
 #if CHRONICLE_ENABLE_ZOO
 #include <zoo/agent.hpp>
 #endif
 
 namespace chronicle {
-
-/// @brief Default per-request inference timeout in milliseconds (two minutes).
-inline constexpr int kDefaultInferenceTimeoutMs = 120000;
 
 #if CHRONICLE_ENABLE_ZOO
 /// @brief Wraps a @c zoo::Agent to satisfy the @ref AgentInterface contract.
