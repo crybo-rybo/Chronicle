@@ -41,7 +41,7 @@ The historical design docs cover:
 - Deep technical detail (all data structures, AI integration, threading model)
 - Sprint-by-sprint implementation roadmap (8+ sprints)
 
-When starting a new session, read the design documents.
+When starting a new session, read `README.md` first for the current v1 project direction and public contract. Then review the external design documents for deeper historical and architectural context. Use `docs/scenario-package-schema.md` and `docs/scenario-authoring-guide.md` when working on scenario package or creator-experience changes.
 
 ## Development Conventions
 
