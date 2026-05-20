@@ -10,7 +10,7 @@ A portfolio piece and open-source framework demonstrating systems-level C++ desi
 
 - **Engine layer** (`src/engine/`): CLI parser, GameEngine orchestrator, command parser, world state, clock, event system
 - **Entity layer** (`src/entities/`): NPC, Player, Item, Location data structures
-- **AI layer** (`src/ai/`): Zoo-Keeper agent wrapper, prompt builder, tool registry, response handler, memory extractor
+- **AI layer** (`src/ai/`): Zoo-Keeper agent wrapper, prompt builder, tool registry, response handler, explicit NPC memory via `remember`
 - **Rendering layer** (`src/rendering/`): Abstract renderer interface, terminal renderer (MVP), TUI renderer (stretch goal)
 - **Persistence layer** (`src/persistence/`): Save/load system with versioned schemas
 - **Scenario package layer** (`data/`, `scenario.json`): Author-facing JSON package format and validation
