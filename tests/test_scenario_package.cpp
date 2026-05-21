@@ -204,6 +204,93 @@ TEST(ScenarioPackageTest, OptionalMetadataIsLoadedWhenPresent) {
               "A minimal two-room Chronicle scenario fixture.");
 }
 
+TEST(ScenarioPackageTest, ValidationWarnsWhenRecommendedMetadataIsMissing) {
+    auto dir = make_temp_scenario_dir("missing_recommended_metadata");
+    make_valid_package(dir);
+
+    auto report = validate_scenario_package(dir);
+
+    EXPECT_TRUE(report.ok);
+    EXPECT_TRUE(has_warning_containing(report, "metadata.description"));
+    EXPECT_TRUE(has_warning_containing(report, "metadata.author"));
+    EXPECT_TRUE(has_warning_containing(report, "metadata.license"));
+}
+
+TEST(ScenarioPackageTest, ValidationAcceptsCompleteRecommendedMetadataWithoutMetadataWarnings) {
+    auto dir = make_temp_scenario_dir("complete_recommended_metadata");
+    copy_fixture_files(dir);
+    write_file(dir / "scenario.json", R"json({
+  "id": "test_scenario",
+  "name": "Test Scenario",
+  "version": "0.1.0",
+  "chronicle_schema_version": 1,
+  "files": {
+    "config": "config.json",
+    "world": "world.json",
+    "npcs": "npcs.json",
+    "facts": "facts.json",
+    "flags": "flags.json",
+    "events": "events.json"
+  },
+  "metadata": {
+    "description": "A complete test cartridge.",
+    "author": "Chronicle Tests",
+    "license": "MIT"
+  }
+})json");
+
+    auto report = validate_scenario_package(dir);
+
+    EXPECT_TRUE(report.ok);
+    EXPECT_FALSE(has_warning_containing(report, "metadata.description"));
+    EXPECT_FALSE(has_warning_containing(report, "metadata.author"));
+    EXPECT_FALSE(has_warning_containing(report, "metadata.license"));
+}
+
+TEST(ScenarioPackageTest, ValidationWarnsAboutSuspiciousManifestIdAndVersion) {
+    auto dir = make_temp_scenario_dir("suspicious_manifest_identity");
+    copy_fixture_files(dir);
+    write_file(dir / "scenario.json", R"json({
+  "id": "bad id/package",
+  "name": "Test Scenario",
+  "version": "first release",
+  "chronicle_schema_version": 1,
+  "files": {
+    "config": "config.json",
+    "world": "world.json",
+    "npcs": "npcs.json",
+    "facts": "facts.json",
+    "flags": "flags.json",
+    "events": "events.json"
+  },
+  "metadata": {
+    "description": "A suspicious test cartridge.",
+    "author": "Chronicle Tests",
+    "license": "MIT"
+  }
+})json");
+
+    auto report = validate_scenario_package(dir);
+
+    EXPECT_TRUE(report.ok);
+    EXPECT_TRUE(has_warning_containing(report, "id should not contain whitespace"));
+    EXPECT_TRUE(has_warning_containing(report, "semantic version"));
+}
+
+TEST(ScenarioPackageTest, ValidationWarnsAboutCommittedModelPath) {
+    auto dir = make_temp_scenario_dir("committed_model_path");
+    make_valid_package(dir);
+    write_file(dir / "config.json", R"json({
+  "model_path": "/local/model.gguf"
+})json");
+
+    auto report = validate_scenario_package(dir);
+
+    EXPECT_TRUE(report.ok);
+    EXPECT_TRUE(has_warning_containing(report, "model_path should be empty"));
+    EXPECT_TRUE(has_warning_containing(report, "operator overrides"));
+}
+
 TEST(ScenarioPackageTest, MissingToolPolicyDefaultsToFullBuiltInPalette) {
     auto world = load_fixture_world("valid_missing_tool_policy");
     const auto &policy = world.npcs.at("warden").identity.tool_policy;
@@ -360,6 +447,18 @@ TEST(ScenarioPackageTest, ValidationReportsMalformedWorldDataFilesWithFileContex
         EXPECT_TRUE(has_error_containing(report, "failed to parse"));
         EXPECT_TRUE(has_error_containing(report, file));
     }
+}
+
+TEST(ScenarioPackageTest, ValidationReportsMalformedConfigWithFileContext) {
+    auto dir = make_temp_scenario_dir("malformed_config");
+    make_valid_package(dir);
+    write_file(dir / "config.json", "{\n");
+
+    auto report = validate_scenario_package(dir);
+
+    EXPECT_FALSE(report.ok);
+    EXPECT_TRUE(has_error_containing(report, "parse error"));
+    EXPECT_TRUE(has_error_containing(report, "config.json"));
 }
 
 TEST(ScenarioPackageTest, ValidationSurfacesMissingLocationReference) {

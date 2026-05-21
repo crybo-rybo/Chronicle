@@ -12,6 +12,8 @@
     "events": "events.json"
   },
   "metadata": {
-    "description": "A small NPC mystery/social-sim sample scenario for the Chronicle SDK runtime."
+    "description": "A small NPC mystery/social-sim sample cartridge for the Chronicle runtime.",
+    "author": "Chronicle Contributors",
+    "license": "MIT"
   }
 }

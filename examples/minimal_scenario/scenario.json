@@ -12,6 +12,8 @@
     "events": "events.json"
   },
   "metadata": {
-    "description": "A copyable two-room Chronicle starter package."
+    "description": "A copyable two-room Chronicle starter cartridge.",
+    "author": "Chronicle Contributors",
+    "license": "MIT"
   }
 }

@@ -30,6 +30,28 @@ TEST(CliTest, ParsesValidateScenarioPath) {
     EXPECT_EQ(options.scenario_dir, "examples/market");
 }
 
+TEST(CliTest, ParsesInspectWithDefaultScenarioPath) {
+    auto result = parse_cli_args({"inspect"});
+
+    ASSERT_TRUE(std::holds_alternative<CliOptions>(result));
+    const auto &options = std::get<CliOptions>(result);
+    EXPECT_EQ(options.mode, CliMode::Inspect);
+    EXPECT_EQ(options.scenario_dir, "data");
+}
+
+TEST(CliTest, ParsesInspectScenarioPath) {
+    auto result = parse_cli_args({"inspect", "--scenario", "examples/minimal_scenario"});
+
+    ASSERT_TRUE(std::holds_alternative<CliOptions>(result));
+    const auto &options = std::get<CliOptions>(result);
+    EXPECT_EQ(options.mode, CliMode::Inspect);
+    EXPECT_EQ(options.scenario_dir, "examples/minimal_scenario");
+}
+
+TEST(CliTest, UsageIncludesInspectCommand) {
+    EXPECT_NE(cli_usage().find("chronicle inspect --scenario <dir>"), std::string::npos);
+}
+
 TEST(CliTest, MissingScenarioArgumentReturnsError) {
     auto result = parse_cli_args({"--scenario"});
 

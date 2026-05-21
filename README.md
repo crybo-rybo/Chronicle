@@ -1,14 +1,22 @@
 # Chronicle
 
-Chronicle is a bounded scenario SDK/runtime for offline, LLM-driven NPC mystery and social-sim text adventures. Creators author JSON scenario packages; Chronicle provides the C++23 runtime, local [Zoo-Keeper](https://github.com/crybo-rybo/zoo-keeper) integration, prompt assembly, save/load, validation, and a strict tool/mutation pipeline.
+Chronicle is a bounded scenario console/runtime for offline, LLM-driven NPC
+mystery and social-sim text adventures. Chronicle is the console: it owns the
+C++23 runtime, local [Zoo-Keeper](https://github.com/crybo-rybo/zoo-keeper)
+integration, prompt assembly, save/load, validation, and strict tool/mutation
+pipeline. Creators bring the cartridges: JSON scenario packages that define a
+world, cast, facts, flags, events, and runtime defaults.
 
 The stable v1 public contract is deliberately narrow:
 
 - CLI runner: `chronicle [--scenario <dir>]`
+- CLI inspector: `chronicle inspect --scenario <dir>`
 - CLI validator: `chronicle validate --scenario <dir>`
 - JSON scenario package schema and validation behavior
 
-The bundled `data/` directory is a sample package and contract fixture, not the product itself. C++ headers, source layout, and library boundaries are implementation details for v1 and may change without compatibility guarantees.
+The bundled `data/` directory is a sample cartridge and contract fixture, not
+the product itself. C++ headers, source layout, and library boundaries are
+implementation details for v1 and may change without compatibility guarantees.
 
 ## Prerequisites
 
@@ -56,6 +64,13 @@ Run a scenario package explicitly:
 
 ```bash
 ./build/src/chronicle --scenario data
+```
+
+Inspect cartridge identity and readiness:
+
+```bash
+./build/src/chronicle inspect --scenario data
+./build/src/chronicle inspect --scenario examples/minimal_scenario
 ```
 
 Validate a scenario package without starting play:
@@ -107,13 +122,16 @@ appear in debug output.
 
 ## Scenario Packages
 
-A scenario package is a directory containing `scenario.json` plus JSON files for
-config, world, NPCs, facts, flags, and events. The bundled `data/` directory is
-the canonical small sample package. `examples/minimal_scenario/` is the
-smallest copyable starter, while `examples/lighthouse_veil/` demonstrates
-richer locked-exit, multi-NPC, and event-chain mechanics.
+A scenario package is Chronicle's cartridge format: a directory containing
+`scenario.json` plus JSON files for config, world, NPCs, facts, flags, and
+events. The bundled `data/` directory is the canonical small sample cartridge.
+`examples/minimal_scenario/` is the smallest copyable starter, while
+`examples/lighthouse_veil/` demonstrates richer locked-exit, multi-NPC, and
+event-chain mechanics.
 
-`scenario.json` declares package metadata and file paths:
+`scenario.json` is the cartridge manifest. It declares package identity,
+content version, Chronicle schema compatibility, descriptive metadata, and file
+paths:
 
 ```json
 {
@@ -128,11 +146,22 @@ richer locked-exit, multi-NPC, and event-chain mechanics.
     "facts": "facts.json",
     "flags": "flags.json",
     "events": "events.json"
+  },
+  "metadata": {
+    "description": "A small Chronicle scenario cartridge.",
+    "author": "Chronicle Contributors",
+    "license": "MIT"
   }
 }
 ```
 
 Manifest file paths must be relative paths that stay inside the package directory. Chronicle v1 treats all six files as required package inputs.
+
+Before sharing a cartridge, run `chronicle inspect --scenario <dir>` to review
+identity and readiness, then `chronicle validate --scenario <dir>` for the
+model-free validation gate. Shared cartridges should keep `model_path` empty;
+operators provide local GGUF paths with environment variables or a gitignored
+override file.
 
 NPCs may declare per-character tool policies in `npcs.json`. `allowed_tools` is the fixed v1 tool palette; scoped lists restrict which authored IDs the NPC may touch. Empty scoped lists mean no additional ID restriction.
 

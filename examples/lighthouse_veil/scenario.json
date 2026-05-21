@@ -13,6 +13,8 @@
   },
   "metadata": {
     "description": "A coastal mystery social-sim reference package. Exercises distinct NPC tool policies, locked exits with key items, declared flags, chained event conditions, and trust-gated facts.",
+    "author": "Chronicle Contributors",
+    "license": "MIT",
     "genre": "mystery"
   }
 }

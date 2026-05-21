@@ -1,9 +1,11 @@
 # Chronicle Scenario Authoring Guide
 
 This guide walks a new author through building a Chronicle scenario package
-end-to-end. The core walkthrough snippets are taken directly from the bundled
-sample at [`data/`](../data) so you can compare the guide to a working package
-as you read.
+end-to-end. In product terms, Chronicle is the console/runtime and a scenario
+package is a cartridge: portable authored content that the console validates,
+loads, saves against, and runs. The core walkthrough snippets are taken
+directly from the bundled sample at [`data/`](../data) so you can compare the
+guide to a working package as you read.
 
 For the smallest copyable starting point, use
 [`examples/minimal_scenario/`](../examples/minimal_scenario).
@@ -18,16 +20,16 @@ For a concise field-by-field reference, see
 
 ## 1. Overview
 
-A **scenario package** is a directory of JSON files that fully describes one
-mystery / social-sim adventure: its world, NPCs, facts, flags, scripted events,
-and runtime configuration.
+A **scenario package** is Chronicle's cartridge format: a directory of JSON
+files that fully describes one mystery / social-sim adventure, including its
+world, NPCs, facts, flags, scripted events, and runtime configuration.
 
 A package contains exactly **seven files**: a manifest plus six required data
 files referenced from the manifest.
 
 | File            | Purpose                                                       |
 | --------------- | ------------------------------------------------------------- |
-| `scenario.json` | Manifest. Names the package and points at the six data files.|
+| `scenario.json` | Cartridge manifest. Names the package and points at the six data files. |
 | `config.json`   | Runtime tuning: turn pacing, narration templates, budgets.    |
 | `world.json`    | Locations (graph), items, the player's start location.        |
 | `npcs.json`     | NPC identity, initial state, per-NPC tool policy.             |
@@ -56,7 +58,9 @@ A complete `scenario.json` from the sample package:
     "events": "events.json"
   },
   "metadata": {
-    "description": "A small NPC mystery/social-sim sample scenario for the Chronicle SDK runtime."
+    "description": "A small NPC mystery/social-sim sample cartridge for the Chronicle runtime.",
+    "author": "Chronicle Contributors",
+    "license": "MIT"
   }
 }
 ```
@@ -86,6 +90,20 @@ Subdirectories are allowed (`"world": "world/world.json"`).
 
 If you are starting from scratch, copy `examples/minimal_scenario/` and rename
 the package fields before expanding the world.
+
+### Create a cartridge workflow
+
+1. Copy `examples/minimal_scenario/` to a new directory.
+2. Change `scenario.json` fields: `id`, `name`, `version`, and recommended
+   `metadata.description`, `metadata.author`, and `metadata.license`.
+3. Keep `config.json` portable: leave `model_path` empty and put local model
+   paths in operator overrides only.
+4. Run `chronicle inspect --scenario path/to/my_scenario` to review identity,
+   file layout, and readiness warnings.
+5. Run `chronicle validate --scenario path/to/my_scenario` as the model-free
+   gate before sharing.
+6. Run with stub dialogue first, then add local model overrides for AI-backed
+   playtesting.
 
 **Entity IDs come from JSON map keys.** When you author `npcs.json`,
 `world.json`'s `locations`/`items`, `facts.json`, `flags.json`, or
@@ -565,6 +583,12 @@ Every tool also enforces the active NPC's `tool_policy`: tool name in
 
 ## 10. Validating your package
 
+Inspect cartridge identity and readiness:
+
+```bash
+chronicle inspect --scenario path/to/my_scenario
+```
+
 Run validation without starting play:
 
 ```bash
@@ -593,7 +617,19 @@ This is the model-free entry point. The validator catches:
   of: a location, an NPC inventory, the player's inventory.
 
 The validator also emits warnings (which do not block load) — for example,
-`readable=true` items missing a `text` property.
+`readable=true` items missing a `text` property, missing recommended cartridge
+metadata, suspicious manifest IDs or versions, or a committed non-empty
+`model_path`.
+
+Before sharing a cartridge, check:
+
+- Stable lowercase package ID with no whitespace or path separators.
+- Content version such as `1.0.0`.
+- `metadata.description`, `metadata.author`, and `metadata.license`.
+- Empty `model_path`; local GGUF paths stay in operator overrides.
+- Valid cross-references for locations, NPCs, items, facts, flags, and events.
+- Scoped NPC tool policies where appropriate.
+- Clean validation, with any warnings intentionally resolved or accepted.
 
 ## 11. Running your package
 
