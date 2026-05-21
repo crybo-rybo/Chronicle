@@ -90,15 +90,18 @@ Minimal example:
 
 ### `config.json`
 
-Required fields: none. Missing fields receive runtime defaults.
+Required fields: none. Missing fields receive runtime defaults. This file is
+the scenario-authored default config. At runtime, Chronicle may overlay a
+machine-local operator config from `CHRONICLE_CONFIG_OVERRIDE`, then supported
+environment variables such as `ZOO_MODEL_PATH`.
 
 Optional/defaulted fields:
 
 | Field | Type | Default | Runtime behavior |
 | --- | --- | --- | --- |
-| `model_path` | string | `""` | Empty means no local model is configured; dialogue uses stub behavior. |
+| `model_path` | string | `""` | Empty means no local model is configured; dialogue uses stub behavior. Committed packages should leave this empty and rely on operator overrides for local paths. |
 | `context_size` | integer | `4096` | Model context window. |
-| `n_gpu_layers` | integer | `-1` | GPU layer offload setting; `0` forces CPU-only. |
+| `n_gpu_layers` | integer | `-1` | GPU layer offload setting; `0` forces CPU-only. Machine-specific values should usually come from operator overrides. |
 | `temperature` | number | `0.7` | Dialogue sampling temperature. |
 | `max_response_tokens` | integer | `512` | Maximum generated tokens per response. |
 | `inference_timeout_ms` | integer | `120000` | Maximum wall-clock time for one model request. `0` disables timeout cancellation for debugging. |
@@ -107,7 +110,7 @@ Optional/defaulted fields:
 | `max_memory_tokens` | integer | `800` | Prompt budget for NPC memories. |
 | `max_world_tokens` | integer | `400` | Prompt budget for world context. |
 | `max_history_tokens` | integer | `600` | Prompt budget for conversation history. |
-| `save_directory` | string | `""` | Empty falls back to `saves` relative to the working directory. |
+| `save_directory` | string | `""` | Empty falls back to `saves` relative to the working directory. Machine-specific values should usually come from operator overrides. |
 | `use_tui` | boolean | `false` | Plain terminal renderer remains the v1 baseline. |
 | `use_color` | boolean | `true` | Enables ANSI color where the renderer supports it. |
 | `max_tool_iterations` | integer | `5` | Maximum tool-call loop iterations per model request. |
@@ -415,5 +418,5 @@ Minimal example:
   tooling can preserve metadata. Unknown fields should not be used for gameplay
   behavior unless Chronicle documents them.
 - Model-backed behavior is optional. Empty `model_path` keeps the package
-  runnable in stub dialogue mode.
+  runnable in stub dialogue mode unless the operator supplies a local override.
 - Save files are versioned separately from scenario packages.

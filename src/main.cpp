@@ -11,10 +11,12 @@
 #include "diagnostics/logger.hpp"
 #include "engine/cli.hpp"
 #include "engine/game_engine.hpp"
+#include "entities/config.hpp"
 #include "entities/scenario.hpp"
 #include <exception>
 #include <iostream>
 #include <string>
+#include <utility>
 #include <vector>
 
 int main(int argc, char **argv) {
@@ -53,7 +55,9 @@ int main(int argc, char **argv) {
         }
 
         auto package = chronicle::load_scenario_package(options.scenario_dir);
-        chronicle::GameEngine engine(package.config_path.string(), package.world_files, nullptr);
+        auto config = chronicle::Config::load_with_operator_overrides(package.config_path);
+        chronicle::GameEngine engine(std::move(config), package.config_path.string(),
+                                     package.world_files, nullptr);
         engine.run();
     } catch (const std::exception &e) {
         std::cerr << "Fatal error: " << e.what() << "\n";

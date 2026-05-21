@@ -1,9 +1,67 @@
 #include "entities/config.hpp"
+#include <array>
+#include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <gtest/gtest.h>
+#include <optional>
 #include <stdexcept>
+#include <string>
+#include <string_view>
+#include <vector>
 
 namespace chronicle {
+namespace {
+
+constexpr std::array<const char *, 12> kOperatorEnvNames = {
+    "CHRONICLE_CONFIG_OVERRIDE",     "ZOO_MODEL_PATH",
+    "CHRONICLE_MODEL_PATH",          "CHRONICLE_CONTEXT_SIZE",
+    "CHRONICLE_N_GPU_LAYERS",        "CHRONICLE_TEMPERATURE",
+    "CHRONICLE_MAX_RESPONSE_TOKENS", "CHRONICLE_INFERENCE_TIMEOUT_MS",
+    "CHRONICLE_SAVE_DIRECTORY",      "CHRONICLE_USE_TUI",
+    "CHRONICLE_USE_COLOR",           "CHRONICLE_MAX_TOOL_ITERATIONS",
+};
+
+class ScopedOperatorEnvironment {
+  public:
+    ScopedOperatorEnvironment() {
+        for (const char *name : kOperatorEnvNames) {
+            if (const char *value = std::getenv(name)) {
+                previous_.push_back({name, std::string(value)});
+            } else {
+                previous_.push_back({name, std::nullopt});
+            }
+            unsetenv(name);
+        }
+    }
+
+    ~ScopedOperatorEnvironment() {
+        for (const auto &entry : previous_) {
+            if (entry.value) {
+                setenv(entry.name, entry.value->c_str(), 1);
+            } else {
+                unsetenv(entry.name);
+            }
+        }
+    }
+
+    void set(const char *name, const std::string &value) { setenv(name, value.c_str(), 1); }
+
+  private:
+    struct Entry {
+        const char *name;
+        std::optional<std::string> value;
+    };
+
+    std::vector<Entry> previous_;
+};
+
+void write_json_file(const std::filesystem::path &path, std::string_view json) {
+    std::ofstream out(path);
+    out << json;
+}
+
+} // namespace
 
 // ---------------------------------------------------------------------------
 // Load from fixture
@@ -143,6 +201,78 @@ TEST(ConfigTest, SaveReloadRoundtripMaxToolIterations) {
     Config reloaded = Config::load(tmp);
     EXPECT_EQ(reloaded.max_tool_iterations, original.max_tool_iterations);
     std::filesystem::remove(tmp);
+}
+
+TEST(ConfigTest, OperatorOverrideFileAppliesOnlyPresentFields) {
+    ScopedOperatorEnvironment env;
+    auto override_path =
+        std::filesystem::temp_directory_path() / "chronicle_test_operator_override.json";
+    write_json_file(override_path, R"({
+  "model_path": "/local/model.gguf",
+  "n_gpu_layers": 24,
+  "max_response_tokens": 64,
+  "mutation_narration_templates": {
+    "give_item_to_player": "{npc} quietly gives you {item}."
+  }
+})");
+    env.set("CHRONICLE_CONFIG_OVERRIDE", override_path.string());
+
+    Config cfg = Config::load_with_operator_overrides(FIXTURES_DIR "/config.json");
+
+    EXPECT_EQ(cfg.model_path, "/local/model.gguf");
+    EXPECT_EQ(cfg.context_size, 2048);
+    EXPECT_EQ(cfg.n_gpu_layers, 24);
+    EXPECT_EQ(cfg.max_response_tokens, 64);
+    EXPECT_EQ(cfg.turns_per_period, 3);
+    EXPECT_EQ(cfg.mutation_narration_templates.at("give_item_to_player"),
+              "{npc} quietly gives you {item}.");
+    EXPECT_EQ(cfg.mutation_narration_templates.at("move_npc"),
+              "{npc} excuses themselves and leaves.");
+
+    std::filesystem::remove(override_path);
+}
+
+TEST(ConfigTest, EnvironmentOverridesWinOverOperatorOverrideFile) {
+    ScopedOperatorEnvironment env;
+    auto override_path =
+        std::filesystem::temp_directory_path() / "chronicle_test_operator_env_precedence.json";
+    write_json_file(override_path, R"({
+  "model_path": "/file/model.gguf",
+  "n_gpu_layers": 4,
+  "inference_timeout_ms": 5000,
+  "use_color": true
+})");
+    env.set("CHRONICLE_CONFIG_OVERRIDE", override_path.string());
+    env.set("ZOO_MODEL_PATH", "/zoo/model.gguf");
+    env.set("CHRONICLE_MODEL_PATH", "/chronicle/model.gguf");
+    env.set("CHRONICLE_N_GPU_LAYERS", "12");
+    env.set("CHRONICLE_INFERENCE_TIMEOUT_MS", "0");
+    env.set("CHRONICLE_USE_COLOR", "false");
+
+    Config cfg = Config::load_with_operator_overrides(FIXTURES_DIR "/config.json");
+
+    EXPECT_EQ(cfg.model_path, "/chronicle/model.gguf");
+    EXPECT_EQ(cfg.n_gpu_layers, 12);
+    EXPECT_EQ(cfg.inference_timeout_ms, 0);
+    EXPECT_FALSE(cfg.use_color);
+
+    std::filesystem::remove(override_path);
+}
+
+TEST(ConfigTest, MissingOperatorOverrideFileThrows) {
+    ScopedOperatorEnvironment env;
+    env.set("CHRONICLE_CONFIG_OVERRIDE", "/nonexistent/chronicle/local_config.json");
+
+    EXPECT_THROW(Config::load_with_operator_overrides(FIXTURES_DIR "/config.json"),
+                 std::runtime_error);
+}
+
+TEST(ConfigTest, InvalidEnvironmentOverrideThrows) {
+    ScopedOperatorEnvironment env;
+    env.set("CHRONICLE_MAX_RESPONSE_TOKENS", "many");
+
+    EXPECT_THROW(Config::load_with_operator_overrides(FIXTURES_DIR "/config.json"),
+                 std::runtime_error);
 }
 
 } // namespace chronicle

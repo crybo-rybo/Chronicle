@@ -52,13 +52,43 @@ Automated integration tests that need a model use the separate
 ### Local Model Paths
 
 The bundled sample scenario keeps `data/config.json` with `model_path` empty.
-Machine-local model paths belong in one of:
+Machine-local model paths and hardware-specific runtime settings belong in one of:
 
-- `.secret/` (gitignored) — e.g. `.secret/local_config.json`
-- Environment variables: `ZOO_MODEL_PATH` / `ZOO_INTEGRATION_MODEL`
-- A gitignored local config override
+- A gitignored local config override, e.g. `.secret/local_config.json`
+- Environment variables: `ZOO_MODEL_PATH` for normal runs or
+  `ZOO_INTEGRATION_MODEL` for integration tests
 
 Never commit a machine-local path into tracked configuration.
+
+Runtime config precedence is:
+
+1. Scenario package `config.json`
+2. Optional JSON file pointed at by `CHRONICLE_CONFIG_OVERRIDE`
+3. Environment variables
+
+The override JSON is partial, so it can contain only local fields:
+
+```json
+{
+  "model_path": "/path/to/model.gguf",
+  "n_gpu_layers": -1,
+  "save_directory": ".secret/saves"
+}
+```
+
+Use it like this:
+
+```bash
+CHRONICLE_CONFIG_OVERRIDE=.secret/local_config.json ./build/src/chronicle --scenario data
+```
+
+Supported runtime environment overrides are `ZOO_MODEL_PATH`,
+`CHRONICLE_MODEL_PATH`, `CHRONICLE_CONTEXT_SIZE`, `CHRONICLE_N_GPU_LAYERS`,
+`CHRONICLE_TEMPERATURE`, `CHRONICLE_MAX_RESPONSE_TOKENS`,
+`CHRONICLE_INFERENCE_TIMEOUT_MS`, `CHRONICLE_SAVE_DIRECTORY`,
+`CHRONICLE_USE_TUI`, `CHRONICLE_USE_COLOR`, and
+`CHRONICLE_MAX_TOOL_ITERATIONS`. If both `ZOO_MODEL_PATH` and
+`CHRONICLE_MODEL_PATH` are set, `CHRONICLE_MODEL_PATH` wins.
 
 ### Integration Tests
 

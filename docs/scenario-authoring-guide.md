@@ -99,8 +99,9 @@ Pick stable, lowercase, snake_case IDs (`tavern`, `marcus`,
 
 ## 3. `config.json`
 
-`config.json` mixes two kinds of fields, and you should treat them
-differently.
+`config.json` contains scenario-authored defaults. Chronicle applies
+machine-local operator overrides after loading this file, so committed packages
+should stay portable.
 
 **Authored fields** — committed with the package:
 
@@ -120,19 +121,18 @@ differently.
   that mutation.
 - `use_tui`, `use_color`: renderer preferences.
 
-**Operator-supplied fields** — must be empty in committed packages:
+**Operator-supplied fields** — leave empty or generic in committed packages:
 
 - `model_path` (string): path to the local GGUF model file. **Must be empty
   in any committed package.** Operators override locally; see
   [`CONTRIBUTING.md`](../CONTRIBUTING.md) "Local Model Paths" for the
-  override mechanism (`.secret/`, environment variables, gitignored local
-  config).
+  override mechanism (`CHRONICLE_CONFIG_OVERRIDE`, environment variables, and
+  gitignored local config).
 - `n_gpu_layers` (int): GPU offload tuning, machine-specific.
 - `save_directory` (string): where save files are written. Empty falls back
   to `saves` relative to the working directory.
 
-A planned authored / runtime config split is on the roadmap, but today the
-two concerns share one file. Keep machine-local values out of committed
+Keep machine-local values out of committed
 packages.
 
 The sample's `config.json`:
@@ -609,8 +609,8 @@ local override, the runtime falls back to **stub dialogue** — NPCs respond
 with placeholder text, scripted events still fire, and the rest of the
 engine continues to work. Real AI dialogue requires a local GGUF model. See
 the "Local Model Paths" section of [`CONTRIBUTING.md`](../CONTRIBUTING.md)
-for override mechanisms (`.secret/`, environment variables, gitignored local
-config).
+for override mechanisms (`CHRONICLE_CONFIG_OVERRIDE`, `ZOO_MODEL_PATH`, and
+gitignored local config).
 
 If a model request exceeds `inference_timeout_ms`, Chronicle requests
 Zoo-Keeper cancellation, discards NPC tool mutations from that failed turn, and

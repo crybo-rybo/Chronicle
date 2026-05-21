@@ -73,6 +73,19 @@ stub output until you configure a local GGUF model path for your machine. This
 is expected for a fresh checkout; deterministic commands, validation, save/load,
 and scripted events still work. See [Local Model Paths](CONTRIBUTING.md#local-model-paths).
 
+For a one-off model-backed run, point `ZOO_MODEL_PATH` at a local GGUF model:
+
+```bash
+ZOO_MODEL_PATH=/path/to/model.gguf ./build/src/chronicle --scenario data
+```
+
+For repeatable local settings, put partial overrides in a gitignored JSON file
+and point `CHRONICLE_CONFIG_OVERRIDE` at it:
+
+```bash
+CHRONICLE_CONFIG_OVERRIDE=.secret/local_config.json ./build/src/chronicle --scenario data
+```
+
 ## Logging
 
 Logging builds default to stderr. To keep the terminal UI clean, send logs to a file:
