@@ -10,7 +10,8 @@
 #include "ai/tool_registry.hpp"
 #include "ai/zoo_compat.hpp"
 #include "diagnostics/logger.hpp"
-#include "engine/parse_utils.hpp"
+#include "common/parse_utils.hpp"
+#include "engine/mutation_checks.hpp"
 #include "engine/text_utils.hpp"
 #include <algorithm>
 #include <sstream>
@@ -44,6 +45,14 @@ void ToolRegistry::emit(MutationRequest req) {
     } else {
         pending_.push_back(std::move(req));
     }
+}
+
+std::optional<std::string> ToolRegistry::enqueue_if_applicable(MutationRequest req) {
+    if (auto err = check_mutation(world_, req)) {
+        return *err;
+    }
+    emit(std::move(req));
+    return std::nullopt;
 }
 
 // ---------------------------------------------------------------------------
@@ -306,73 +315,73 @@ ToolRegistry::ValidationResult ToolRegistry::validate_set_flag(const std::string
 std::optional<std::string> ToolRegistry::register_give_item(const std::string &npc_id,
                                                             const std::string &item_id) {
     auto result = validate_give_item(npc_id, item_id);
-    if (auto *error = std::get_if<std::string>(&result))
+    if (auto *error = std::get_if<std::string>(&result)) {
         return *error;
-    emit(std::get<MutationRequest>(result));
-    return std::nullopt;
+    }
+    return enqueue_if_applicable(std::get<MutationRequest>(result));
 }
 
 std::optional<std::string> ToolRegistry::register_take_item(const std::string &npc_id,
                                                             const std::string &item_id) {
     auto result = validate_take_item(npc_id, item_id);
-    if (auto *error = std::get_if<std::string>(&result))
+    if (auto *error = std::get_if<std::string>(&result)) {
         return *error;
-    emit(std::get<MutationRequest>(result));
-    return std::nullopt;
+    }
+    return enqueue_if_applicable(std::get<MutationRequest>(result));
 }
 
 std::optional<std::string> ToolRegistry::register_update_mood(const std::string &npc_id,
                                                               const std::string &mood) {
     auto result = validate_update_mood(npc_id, mood);
-    if (auto *error = std::get_if<std::string>(&result))
+    if (auto *error = std::get_if<std::string>(&result)) {
         return *error;
-    emit(std::get<MutationRequest>(result));
-    return std::nullopt;
+    }
+    return enqueue_if_applicable(std::get<MutationRequest>(result));
 }
 
 std::optional<std::string> ToolRegistry::register_update_trust(const std::string &npc_id,
                                                                int delta) {
     auto result = validate_update_trust(npc_id, delta);
-    if (auto *error = std::get_if<std::string>(&result))
+    if (auto *error = std::get_if<std::string>(&result)) {
         return *error;
-    emit(std::get<MutationRequest>(result));
-    return std::nullopt;
+    }
+    return enqueue_if_applicable(std::get<MutationRequest>(result));
 }
 
 std::optional<std::string> ToolRegistry::register_move_npc(const std::string &npc_id,
                                                            const std::string &location_id) {
     auto result = validate_move_npc(npc_id, location_id);
-    if (auto *error = std::get_if<std::string>(&result))
+    if (auto *error = std::get_if<std::string>(&result)) {
         return *error;
-    emit(std::get<MutationRequest>(result));
-    return std::nullopt;
+    }
+    return enqueue_if_applicable(std::get<MutationRequest>(result));
 }
 
 std::optional<std::string> ToolRegistry::register_reveal_knowledge(const std::string &npc_id,
                                                                    const std::string &fact_id) {
     auto result = validate_reveal_knowledge(npc_id, fact_id);
-    if (auto *error = std::get_if<std::string>(&result))
+    if (auto *error = std::get_if<std::string>(&result)) {
         return *error;
-    emit(std::get<MutationRequest>(result));
-    return std::nullopt;
+    }
+    return enqueue_if_applicable(std::get<MutationRequest>(result));
 }
 
 std::optional<std::string> ToolRegistry::register_add_memory(const std::string &npc_id,
                                                              const std::string &summary,
                                                              int importance) {
     auto result = validate_add_memory(npc_id, summary, importance);
-    if (auto *error = std::get_if<std::string>(&result))
+    if (auto *error = std::get_if<std::string>(&result)) {
         return *error;
-    emit(std::get<MutationRequest>(result));
-    return std::nullopt;
+    }
+    return enqueue_if_applicable(std::get<MutationRequest>(result));
 }
 
 std::optional<std::string> ToolRegistry::register_set_flag(const std::string &flag_id, bool value) {
     auto result = validate_set_flag(flag_id, value);
-    if (auto *error = std::get_if<std::string>(&result))
+    if (auto *error = std::get_if<std::string>(&result)) {
         return *error;
-    emit(std::get<MutationRequest>(result));
-    return std::nullopt;
+    }
+    return enqueue_if_applicable(std::get<MutationRequest>(result));
 }
 
 std::string ToolRegistry::handle_take_item_tool(const std::string &npc_id,
@@ -419,16 +428,18 @@ std::string ToolRegistry::handle_set_flag_tool(const std::string &flag_id,
     return "OK";
 }
 
-void ToolRegistry::register_say(const std::string &npc_id, const std::string &dialogue) {
+std::optional<std::string> ToolRegistry::register_say(const std::string &npc_id,
+                                                      const std::string &dialogue) {
     if (npc_exists(npc_id)) {
         if (auto err = policy_tool_error(npc_id, "say")) {
             logging::write(logging::Level::Warning, "tools", *err);
-            return;
+            return *err;
         }
     }
     logging::write(logging::Level::Info, "tools",
                    "tool=say npc=" + npc_id + " dialogue=\"" + dialogue + "\"");
     dialogue_log_.emplace_back(npc_id, dialogue);
+    return std::nullopt;
 }
 
 std::vector<std::pair<std::string, std::string>> ToolRegistry::drain_dialogue_log() {
@@ -473,8 +484,8 @@ std::string ToolRegistry::format_item_details(const std::string &item_id) const 
     return details;
 }
 
-void ToolRegistry::register_tools(zoo::Agent &agent, const std::string &npc_id) {
 #if CHRONICLE_ENABLE_ZOO
+void ToolRegistry::register_zoo_tools(zoo::Agent &agent, const std::string &npc_id) {
     set_active_npc_id(npc_id);
     logging::write(logging::Level::Info, "tools", "registering tools npc=" + npc_id);
 
@@ -606,11 +617,20 @@ void ToolRegistry::register_tools(zoo::Agent &agent, const std::string &npc_id) 
     };
     (void)agent.register_tool("inspect_item", "Examine an item in your inventory", {"item_id"},
                               std::move(inspect_item_func));
-#else
-    (void)agent;
-    (void)npc_id;
-    throw_zoo_disabled("ToolRegistry::register_tools");
-#endif
+
+    auto say_func = [this](std::string dialogue) -> std::string {
+        logging::write(logging::Level::Info, "tools",
+                       "tool=say npc=" + active_npc_id_ + " dialogue=\"" + dialogue + "\"");
+        if (auto err = this->register_say(active_npc_id_, dialogue)) {
+            log_tool_result("say", *err);
+            return *err;
+        }
+        log_tool_result("say", "OK");
+        return "OK";
+    };
+    (void)agent.register_tool("say", "Speak dialogue to the player", {"dialogue"},
+                              std::move(say_func));
 }
+#endif
 
 } // namespace chronicle

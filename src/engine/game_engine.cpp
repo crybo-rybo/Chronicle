@@ -12,11 +12,14 @@
 #include "diagnostics/logger.hpp"
 #include "engine/mutation_gate.hpp"
 #include "engine/mutations.hpp"
-#include "engine/parse_utils.hpp"
+#include "engine/scripted_events.hpp"
+#include "engine/world_query.hpp"
+#include "common/parse_utils.hpp"
 #include "engine/text_utils.hpp"
 #include "entities/world_loader.hpp"
-#include "rendering/terminal_renderer.hpp"
+#include "entities/world_validator.hpp"
 #include <algorithm>
+#include <stdexcept>
 #include <iostream>
 #include <sstream>
 #include <utility>
@@ -76,8 +79,6 @@ std::string help_text(GamePhase phase) {
     case GamePhase::InConversation:
         return "Commands: type a message to speak, bye/goodbye/leave to end the conversation, "
                "look, inventory, save [slot], load [slot], help, quit.";
-    case GamePhase::Resolution:
-        return "Commands: load [slot], help, quit.";
     case GamePhase::GameOver:
         return "Commands: load [slot], help, quit.";
     }
@@ -95,8 +96,6 @@ std::string unknown_command_error(GamePhase phase) {
     case GamePhase::InConversation:
         return "I don't understand that in this conversation. Type a reply, use bye to leave, "
                "or use help.";
-    case GamePhase::Resolution:
-        return game_over_command_error();
     case GamePhase::GameOver:
         return game_over_command_error();
     }
@@ -148,10 +147,6 @@ std::string npc_display_name(const World &world, const std::string &npc_id) {
     return npc_id;
 }
 
-std::string generic_ending_text() {
-    return "The scenario has reached its conclusion.";
-}
-
 std::string format_params(const std::map<std::string, std::string> &params) {
     std::ostringstream oss;
     oss << "{";
@@ -165,64 +160,6 @@ std::string format_params(const std::map<std::string, std::string> &params) {
     }
     oss << "}";
     return oss.str();
-}
-
-bool event_condition_matches(const World &world, const Condition &condition) {
-    switch (condition.type) {
-    case ConditionType::ClockIs:
-        if (condition.args.size() != 1) {
-            return false;
-        }
-        try {
-            return world.clock.period == string_to_time_period(condition.args[0]);
-        } catch (const std::exception &) {
-            return false;
-        }
-    case ConditionType::PlayerAt:
-        return condition.args.size() == 1 && world.player.current_location == condition.args[0];
-    case ConditionType::FlagSet: {
-        if (condition.args.size() != 2) {
-            return false;
-        }
-        auto flag_it = world.flags.find(condition.args[0]);
-        auto expected = parse_bool(condition.args[1]);
-        return flag_it != world.flags.end() && expected && flag_it->second == *expected;
-    }
-    case ConditionType::NpcTrustGe: {
-        if (condition.args.size() != 2) {
-            return false;
-        }
-        auto npc_it = world.npcs.find(condition.args[0]);
-        auto threshold = parse_int(condition.args[1]);
-        return npc_it != world.npcs.end() && threshold &&
-               npc_it->second.state.trust_toward_player >= *threshold;
-    }
-    case ConditionType::NpcAt: {
-        if (condition.args.size() != 2) {
-            return false;
-        }
-        auto npc_it = world.npcs.find(condition.args[0]);
-        return npc_it != world.npcs.end() &&
-               npc_it->second.state.current_location == condition.args[1];
-    }
-    case ConditionType::ItemInPlayerInv:
-        return condition.args.size() == 1 &&
-               std::ranges::contains(world.player.inventory, condition.args[0]);
-    case ConditionType::TurnGe: {
-        if (condition.args.size() != 1) {
-            return false;
-        }
-        auto threshold = parse_int(condition.args[0]);
-        return threshold && world.total_turns_elapsed >= *threshold;
-    }
-    }
-    return false;
-}
-
-bool event_conditions_match(const World &world, const EventTrigger &event) {
-    return std::ranges::all_of(event.conditions, [&](const Condition &condition) {
-        return event_condition_matches(world, condition);
-    });
 }
 
 } // namespace
@@ -247,7 +184,7 @@ GameEngine::GameEngine(Config config, const std::string &config_path,
                        " items=" + std::to_string(world_.items.size()));
 
     if (!renderer_) {
-        renderer_ = std::make_unique<TerminalRenderer>();
+        throw std::invalid_argument("GameEngine requires a non-null Renderer");
     }
 
     tool_registry_ = std::make_unique<ToolRegistry>(
@@ -367,23 +304,16 @@ void GameEngine::handle_command(const ParsedCommand &cmd) {
     }
 
     if (cmd.verb == CommandVerb::Go) {
-        auto result = validate_player_move(world_, cmd.primary_arg);
-        if (auto *error = std::get_if<std::string>(&result)) {
-            renderer_->render_error(*error);
-        } else {
-            auto &req = std::get<MutationRequest>(result);
-            auto dir = req.params.at("direction");
-            auto dest_id = req.params.at("location_id");
-            pending_mutations_.push_back(std::move(req));
-            run_post_turn_pipeline();
-            if (phase_ == GamePhase::GameOver) {
-                return;
-            }
-            auto dest_it = world_.locations.find(dest_id);
-            std::string name = dest_it != world_.locations.end() ? dest_it->second.name : dest_id;
-            renderer_->render_move(dir, name);
-            render_current_scene();
-        }
+        run_player_mutation(validate_player_move(world_, cmd.primary_arg),
+                            [this](const MutationRequest &req) {
+                                const auto &dir = req.params.at("direction");
+                                const auto &dest_id = req.params.at("location_id");
+                                auto dest_it = world_.locations.find(dest_id);
+                                std::string name =
+                                    dest_it != world_.locations.end() ? dest_it->second.name : dest_id;
+                                renderer_->render_move(dir, name);
+                                render_current_scene();
+                            });
         return;
     }
 
@@ -398,40 +328,26 @@ void GameEngine::handle_command(const ParsedCommand &cmd) {
     }
 
     if (cmd.verb == CommandVerb::Take) {
-        auto result = validate_player_take(world_, cmd.primary_arg);
-        if (auto *error = std::get_if<std::string>(&result)) {
-            renderer_->render_error(*error);
-        } else {
-            auto &req = std::get<MutationRequest>(result);
-            auto item_id = req.params.at("item_id");
-            pending_mutations_.push_back(std::move(req));
-            run_post_turn_pipeline();
-            if (phase_ == GamePhase::GameOver) {
-                return;
-            }
-            auto w_it = world_.items.find(item_id);
-            renderer_->render_action(
-                "You take the " + (w_it != world_.items.end() ? w_it->second.name : item_id) + ".");
-        }
+        run_player_mutation(validate_player_take(world_, cmd.primary_arg),
+                            [this](const MutationRequest &req) {
+                                const auto &item_id = req.params.at("item_id");
+                                auto w_it = world_.items.find(item_id);
+                                renderer_->render_action(
+                                    "You take the " +
+                                    (w_it != world_.items.end() ? w_it->second.name : item_id) + ".");
+                            });
         return;
     }
 
     if (cmd.verb == CommandVerb::Drop) {
-        auto result = validate_player_drop(world_, cmd.primary_arg);
-        if (auto *error = std::get_if<std::string>(&result)) {
-            renderer_->render_error(*error);
-        } else {
-            auto &req = std::get<MutationRequest>(result);
-            auto item_id = req.params.at("item_id");
-            pending_mutations_.push_back(std::move(req));
-            run_post_turn_pipeline();
-            if (phase_ == GamePhase::GameOver) {
-                return;
-            }
-            auto w_it = world_.items.find(item_id);
-            renderer_->render_action(
-                "You drop the " + (w_it != world_.items.end() ? w_it->second.name : item_id) + ".");
-        }
+        run_player_mutation(validate_player_drop(world_, cmd.primary_arg),
+                            [this](const MutationRequest &req) {
+                                const auto &item_id = req.params.at("item_id");
+                                auto w_it = world_.items.find(item_id);
+                                renderer_->render_action(
+                                    "You drop the " +
+                                    (w_it != world_.items.end() ? w_it->second.name : item_id) + ".");
+                            });
         return;
     }
 
@@ -441,7 +357,7 @@ void GameEngine::handle_command(const ParsedCommand &cmd) {
     }
 
     if (cmd.verb == CommandVerb::Examine) {
-        if (auto item_id = find_accessible_item_id(cmd.primary_arg)) {
+        if (auto item_id = find_accessible_item_id(world_, cmd.primary_arg)) {
             renderer_->render_item_examine(world_.items.at(*item_id));
         } else {
             renderer_->render_error("You don't see that here.");
@@ -475,6 +391,11 @@ void GameEngine::handle_command(const ParsedCommand &cmd) {
             renderer_->render_error("No valid save found in slot " + std::to_string(*slot) + ".");
             return;
         }
+        auto validation = validate_world(save_data->world);
+        if (!validation.ok) {
+            renderer_->render_error("Save file is corrupted or incompatible.");
+            return;
+        }
         world_ = std::move(save_data->world);
         active_conversation_handle_.reset();
         current_conversation_npc_id_.reset();
@@ -488,7 +409,7 @@ void GameEngine::handle_command(const ParsedCommand &cmd) {
     }
 
     if (cmd.verb == CommandVerb::Talk) {
-        if (auto npc_id = find_visible_npc_id(cmd.primary_arg)) {
+        if (auto npc_id = find_visible_npc_id(world_, cmd.primary_arg)) {
             start_conversation(*npc_id);
         } else {
             renderer_->render_error("There is no one here by that name.");
@@ -521,7 +442,7 @@ void GameEngine::process_pending_mutations() {
                                " actor=" + m.actor_id + " params=" + format_params(m.params));
             applied.push_back(m);
         } else {
-            logging::write(logging::Level::Warning, "mutations",
+            logging::write(logging::Level::Error, "mutations",
                            "rejected type=" + std::string(mutation_type_name(m.type)) +
                                " actor=" + m.actor_id + " params=" + format_params(m.params));
         }
@@ -538,7 +459,7 @@ void GameEngine::process_pending_mutations() {
         response_handler_->narrate_mutation(mutation, actor_name);
     }
 
-    if (current_conversation_npc_id_ && !player_can_see_npc(*current_conversation_npc_id_)) {
+    if (current_conversation_npc_id_ && !player_can_see_npc(world_, *current_conversation_npc_id_)) {
         active_conversation_handle_.reset();
         current_conversation_npc_id_.reset();
         phase_ = GamePhase::Playing;
@@ -561,84 +482,35 @@ void GameEngine::run_post_turn_pipeline() {
     process_pending_mutations();
 }
 
+void GameEngine::run_player_mutation(std::variant<MutationRequest, std::string> result,
+                                       std::function<void(const MutationRequest &)> on_success) {
+    if (auto *error = std::get_if<std::string>(&result)) {
+        renderer_->render_error(*error);
+        return;
+    }
+
+    const auto &req = std::get<MutationRequest>(result);
+    pending_mutations_.push_back(req);
+    run_post_turn_pipeline();
+    if (phase_ == GamePhase::GameOver) {
+        return;
+    }
+    on_success(req);
+}
+
 void GameEngine::evaluate_scripted_events() {
-    for (auto &event : world_.events) {
-        if (event.once && event.fired) {
-            continue;
-        }
-        if (!event_conditions_match(world_, event)) {
-            continue;
-        }
+    ScriptedEventSink sink{
+        [this](MutationRequest req) { pending_mutations_.push_back(std::move(req)); },
+        [this](std::string_view text) { renderer_->render_action(text); },
+        [this](std::string_view text) {
+            phase_ = GamePhase::GameOver;
+            renderer_->render_resolution(text);
+        },
+    };
 
-        logging::write(logging::Level::Info, "events", "triggering event=" + event.id);
-
-        bool entered_resolution = false;
-        for (const auto &action : event.actions) {
-            if (action.type == "move_npc") {
-                auto npc_id = param_value(action.params, "npc_id");
-                auto location_id = param_value(action.params, "location_id");
-                if (!npc_id || !location_id) {
-                    logging::write(logging::Level::Warning, "events",
-                                   "skipping malformed move_npc action event=" + event.id);
-                    continue;
-                }
-                pending_mutations_.push_back(MutationRequest{
-                    .type = MutationRequest::Type::MoveNpc,
-                    .source = MutationRequest::Source::System,
-                    .actor_id = *npc_id,
-                    .params = {{"location_id", *location_id}},
-                });
-            } else if (action.type == "set_flag") {
-                auto flag_id = param_value(action.params, "flag_id");
-                auto value = param_value(action.params, "value");
-                if (!flag_id || !value) {
-                    logging::write(logging::Level::Warning, "events",
-                                   "skipping malformed set_flag action event=" + event.id);
-                    continue;
-                }
-                pending_mutations_.push_back(MutationRequest{
-                    .type = MutationRequest::Type::SetFlag,
-                    .source = MutationRequest::Source::System,
-                    .actor_id = event.id,
-                    .params = {{"flag_id", *flag_id}, {"value", *value}},
-                });
-            } else if (action.type == "spawn_item") {
-                auto item_id = param_value(action.params, "item_id");
-                auto location_id = param_value(action.params, "location_id");
-                if (!item_id || !location_id) {
-                    logging::write(logging::Level::Warning, "events",
-                                   "skipping malformed spawn_item action event=" + event.id);
-                    continue;
-                }
-                pending_mutations_.push_back(MutationRequest{
-                    .type = MutationRequest::Type::SpawnItem,
-                    .source = MutationRequest::Source::System,
-                    .actor_id = event.id,
-                    .params = {{"item_id", *item_id}, {"location_id", *location_id}},
-                });
-            } else if (action.type == "narrate") {
-                if (auto text = param_value(action.params, "text")) {
-                    renderer_->render_action(*text);
-                }
-            } else if (action.type == "end_game") {
-                phase_ = GamePhase::GameOver;
-                renderer_->render_resolution(
-                    param_value(action.params, "text").value_or(generic_ending_text()));
-                entered_resolution = true;
-                break;
-            } else {
-                logging::write(logging::Level::Warning, "events",
-                               "skipping unknown action type=" + action.type +
-                                   " event=" + event.id);
-            }
-        }
-
-        if (event.once) {
-            event.fired = true;
-        }
-        if (entered_resolution) {
-            break;
-        }
+    const auto result = chronicle::evaluate_scripted_events(world_, sink);
+    if (result.ended_game) {
+        phase_ = GamePhase::GameOver;
     }
 }
 
@@ -736,136 +608,21 @@ void GameEngine::handle_dialogue(const std::string &npc_id, const std::string &i
     }
 }
 
-bool GameEngine::player_can_see_item(const std::string &item_id) const {
-    auto loc_it = world_.locations.find(world_.player.current_location);
-    if (loc_it == world_.locations.end()) {
-        return false;
-    }
-    return std::ranges::contains(loc_it->second.items, item_id);
-}
-
-bool GameEngine::player_can_see_npc(const std::string &npc_id) const {
-    auto loc_it = world_.locations.find(world_.player.current_location);
-    if (loc_it == world_.locations.end()) {
-        return false;
-    }
-    return std::ranges::contains(loc_it->second.npcs, npc_id);
-}
-
-std::optional<std::string> GameEngine::find_visible_npc_id(const std::string &query) const {
-    auto loc_it = world_.locations.find(world_.player.current_location);
-    if (loc_it == world_.locations.end()) {
-        return std::nullopt;
-    }
-
-    for (const auto &npc_id : loc_it->second.npcs) {
-        auto npc_it = world_.npcs.find(npc_id);
-        if (npc_it != world_.npcs.end() &&
-            (text::contains_normalized(npc_it->second.identity.name, query) ||
-             text::contains_normalized(npc_id, query))) {
-            return npc_id;
-        }
-    }
-    return std::nullopt;
-}
-
-std::optional<std::string> GameEngine::find_inventory_item_id(const std::string &query) const {
-    for (const auto &item_id : world_.player.inventory) {
-        auto item_it = world_.items.find(item_id);
-        if (item_it != world_.items.end() &&
-            (text::contains_normalized(item_it->second.name, query) ||
-             text::contains_normalized(item_id, query))) {
-            return item_id;
-        }
-    }
-    return std::nullopt;
-}
-
-std::optional<std::string> GameEngine::find_accessible_item_id(const std::string &query) const {
-    if (auto inv_match = find_inventory_item_id(query)) {
-        return inv_match;
-    }
-
-    auto loc_it = world_.locations.find(world_.player.current_location);
-    if (loc_it == world_.locations.end()) {
-        return std::nullopt;
-    }
-
-    for (const auto &item_id : loc_it->second.items) {
-        auto item_it = world_.items.find(item_id);
-        if (item_it != world_.items.end() && !item_it->second.hidden &&
-            (text::contains_normalized(item_it->second.name, query) ||
-             text::contains_normalized(item_id, query))) {
-            return item_id;
-        }
-    }
-    return std::nullopt;
-}
-
-std::optional<GameEngine::LockedExitMatch>
-GameEngine::find_locked_exit_match(const std::string &query) const {
-    auto loc_it = world_.locations.find(world_.player.current_location);
-    if (loc_it == world_.locations.end()) {
-        return std::nullopt;
-    }
-
-    const auto &loc = loc_it->second;
-    for (const auto &direction : loc.locked_exits) {
-        auto exit_it = loc.exits.find(direction);
-        if (exit_it == loc.exits.end()) {
-            continue;
-        }
-        const auto &destination_id = exit_it->second;
-        std::string destination_name = destination_id;
-        if (auto dest_it = world_.locations.find(destination_id);
-            dest_it != world_.locations.end()) {
-            destination_name = dest_it->second.name;
-        }
-
-        if (text::contains_normalized(direction, query) ||
-            text::contains_normalized(destination_id, query) ||
-            text::contains_normalized(destination_name, query)) {
-            return LockedExitMatch{direction, destination_id, destination_name};
-        }
-    }
-    return std::nullopt;
-}
-
 void GameEngine::handle_use(const std::string &item_query, const std::string &target_query) {
-    auto item_id = find_inventory_item_id(item_query);
-    if (!item_id) {
-        renderer_->render_error("You aren't carrying that.");
-        return;
-    }
-    if (text::trim_copy(target_query).empty()) {
-        renderer_->render_error("Use it on what?");
+    auto result = validate_unlock_exit(world_, item_query, target_query);
+    if (auto *error = std::get_if<std::string>(&result)) {
+        renderer_->render_error(*error);
         return;
     }
 
-    auto locked_exit = find_locked_exit_match(target_query);
-    if (!locked_exit) {
-        renderer_->render_error("That target is not locked.");
-        return;
-    }
-
-    const auto &item = world_.items.at(*item_id);
-    if (item.unlock_target != locked_exit->destination_id) {
-        renderer_->render_error("That doesn't unlock the " + locked_exit->direction + " exit.");
-        return;
-    }
-
-    pending_mutations_.push_back(MutationRequest{
-        .type = MutationRequest::Type::UnlockExit,
-        .source = MutationRequest::Source::Player,
-        .actor_id = "player",
-        .params = {{"location_id", world_.player.current_location},
-                   {"direction", locked_exit->direction}},
-    });
+    auto &req = std::get<MutationRequest>(result);
+    const auto direction = req.params.at("direction");
+    pending_mutations_.push_back(std::move(req));
     run_post_turn_pipeline();
     if (phase_ == GamePhase::GameOver) {
         return;
     }
-    renderer_->render_action("You unlock the " + locked_exit->direction + " exit.");
+    renderer_->render_action("You unlock the " + direction + " exit.");
 }
 
 std::optional<int> GameEngine::parse_slot(const std::string &slot_text) const {

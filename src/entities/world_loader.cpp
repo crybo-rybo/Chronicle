@@ -20,7 +20,7 @@
 
 namespace chronicle {
 
-World load_world(const WorldFileSet &files) {
+World load_world(const WorldFileSet &files, std::vector<std::string> *warnings_out) {
     World world;
 
     // -----------------------------------------------------------------------
@@ -178,6 +178,9 @@ World load_world(const WorldFileSet &files) {
     // 7. Validate world integrity
     // -----------------------------------------------------------------------
     auto report = validate_world(world);
+    if (warnings_out) {
+        warnings_out->insert(warnings_out->end(), report.warnings.begin(), report.warnings.end());
+    }
     if (!report.ok) {
         std::string msg = "load_world: validation failed:\n";
         for (const auto &e : report.errors) {

@@ -1,6 +1,6 @@
 /**
  * @file parse_utils.hpp
- * @brief Small parsing utilities shared across engine and AI layers.
+ * @brief Small parsing utilities shared across domain, engine, and AI layers.
  */
 
 #pragma once

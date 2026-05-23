@@ -178,7 +178,7 @@ ctest --test-dir build --output-on-failure
 ## Project Structure
 
 ```
-src/           C++ source code (engine, entities, AI, rendering, persistence)
+src/           C++ source (engine, world, scenario, AI, rendering, persistence)
 data/          Bundled sample scenario package (JSON)
 examples/      Copyable and richer reference scenario packages
 tests/         Unit and integration tests

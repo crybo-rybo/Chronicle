@@ -555,6 +555,46 @@ TEST_F(GameEngineTest, SaveAndLoadDefaultSlotRoundtripsWorld) {
     std::filesystem::remove(save_dir / "slot_1.json");
 }
 
+TEST_F(GameEngineTest, LoadRejectsCorruptedSaveWithoutMutatingWorld) {
+    auto save_dir = std::filesystem::path("/tmp/chronicle_saves");
+    std::filesystem::remove(save_dir / "slot_3.json");
+
+    auto renderer = std::make_unique<MockEngineRenderer>();
+    auto *renderer_ptr = renderer.get();
+    GameEngine engine((fixture_root() / "config.json").string(), fixture_world_files(),
+                      std::move(renderer));
+
+    ParsedCommand take;
+    take.verb = CommandVerb::Take;
+    take.primary_arg = "test item";
+    engine.handle_command(take);
+    ASSERT_TRUE(std::ranges::contains(engine.world().player.inventory, "test_item"));
+
+    ParsedCommand save;
+    save.verb = CommandVerb::Save;
+    save.primary_arg = "3";
+    engine.handle_command(save);
+
+    {
+        std::ifstream in(save_dir / "slot_3.json");
+        auto j = nlohmann::json::parse(in);
+        j["world"]["player"]["inventory"] = nlohmann::json::array({"phantom_item"});
+        std::ofstream out(save_dir / "slot_3.json");
+        out << j.dump(2);
+    }
+
+    ParsedCommand load;
+    load.verb = CommandVerb::Load;
+    load.primary_arg = "3";
+    engine.handle_command(load);
+
+    ASSERT_FALSE(renderer_ptr->errors.empty());
+    EXPECT_NE(renderer_ptr->errors.back().find("corrupted"), std::string::npos);
+    EXPECT_TRUE(std::ranges::contains(engine.world().player.inventory, "test_item"));
+
+    std::filesystem::remove(save_dir / "slot_3.json");
+}
+
 TEST_F(GameEngineTest, DialogueUsesCurrentConversationNpcAndStreamsTokens) {
     auto renderer = std::make_unique<MockEngineRenderer>();
     auto *renderer_ptr = renderer.get();

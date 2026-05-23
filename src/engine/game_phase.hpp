@@ -17,7 +17,6 @@ enum class GamePhase {
     Playing,        ///< Normal exploration: movement, inventory, and NPC interaction are active.
     InConversation, ///< The player is engaged in an active dialogue with an NPC.
                     ///  Most navigation commands are suspended; input is routed to the AI layer.
-    Resolution,     ///< The final resolution event has fired; the engine is narrating the ending.
     GameOver        ///< The session has ended; only meta-commands (quit, restart) are accepted.
 };
 

@@ -157,6 +157,16 @@ TEST(WorldValidatorTest, RejectsUnknownNpcToolPolicyTool) {
     EXPECT_TRUE(has_error_containing(report, "unknown tool 'invent_magic'"));
 }
 
+TEST(WorldValidatorTest, RejectsNpcNotListedInCurrentLocationNpcs) {
+    auto world = make_valid_world();
+    world.locations.at("tavern").npcs.clear();
+
+    auto report = validate_world(world);
+
+    EXPECT_FALSE(report.ok);
+    EXPECT_TRUE(has_error_containing(report, "does not list the NPC in location.npcs"));
+}
+
 TEST(WorldValidatorTest, RejectsDanglingNpcToolPolicyScopes) {
     auto world = make_valid_world();
     world.npcs.at("marcus").identity.tool_policy.allowed_items = {"missing_item"};

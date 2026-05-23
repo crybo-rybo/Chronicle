@@ -1,4 +1,5 @@
 #include "ai/tool_registry.hpp"
+#include "ai/zoo_agent_adapter.hpp"
 #include "engine/game_engine.hpp"
 #include "entities/config.hpp"
 #include "entities/world_loader.hpp"
@@ -138,26 +139,28 @@ TEST(NpcConversationIntegrationTest, RealAgentQueuesGiveItemMutation) {
     debug_log("RealAgentQueuesGiveItemMutation: after zoo::Agent::create");
 
     ToolRegistry registry(world);
-    debug_log("RealAgentQueuesGiveItemMutation: before ToolRegistry::register_tools");
-    registry.register_tools(**result, "marcus");
-    debug_log("RealAgentQueuesGiveItemMutation: after ToolRegistry::register_tools");
+    ZooAgentAdapter adapter(std::move(*result));
+    debug_log("RealAgentQueuesGiveItemMutation: before adapter tool registration");
+    adapter.register_tools(registry, "marcus");
+    debug_log("RealAgentQueuesGiveItemMutation: after adapter tool registration");
 
     std::string prompt = "You are Marcus. Call the give_item tool with item_id cargo_manifest. "
                          "Do not call any other mutation tool.";
-    debug_log("RealAgentQueuesGiveItemMutation: before agent->chat");
+    debug_log("RealAgentQueuesGiveItemMutation: before adapter chat_streaming");
     std::size_t token_callbacks = 0;
-    auto handle = (*result)->chat(prompt, {}, [&](std::string_view token) {
-        ++token_callbacks;
-        if (token_callbacks <= 5 || token_callbacks % 16 == 0) {
-            debug_log("RealAgentQueuesGiveItemMutation: streaming callback token count=" +
-                      std::to_string(token_callbacks) +
-                      ", fragment_size=" + std::to_string(token.size()));
-        }
-    });
-    debug_log("RealAgentQueuesGiveItemMutation: chat queued, awaiting result");
-    auto response = handle.await_result();
-    debug_log("RealAgentQueuesGiveItemMutation: await_result returned");
-    ASSERT_TRUE(response) << response.error().to_string();
+    auto chat_result = adapter.chat_streaming(
+        prompt,
+        [&](std::string_view token) {
+            ++token_callbacks;
+            if (token_callbacks <= 5 || token_callbacks % 16 == 0) {
+                debug_log("RealAgentQueuesGiveItemMutation: streaming callback token count=" +
+                          std::to_string(token_callbacks) +
+                          ", fragment_size=" + std::to_string(token.size()));
+            }
+        },
+        [] {});
+    debug_log("RealAgentQueuesGiveItemMutation: chat_streaming returned");
+    ASSERT_TRUE(chat_result.success) << chat_result.error_message;
 
     const auto &mutations = registry.pending_mutations();
     auto give_it = std::ranges::find_if(mutations, [](const MutationRequest &mutation) {
@@ -166,7 +169,7 @@ TEST(NpcConversationIntegrationTest, RealAgentQueuesGiveItemMutation) {
                mutation.params.at("item_id") == "cargo_manifest";
     });
 
-    ASSERT_NE(give_it, mutations.end()) << response->text;
+    ASSERT_NE(give_it, mutations.end()) << chat_result.error_message;
     EXPECT_EQ(give_it->actor_id, "marcus");
     EXPECT_TRUE(std::ranges::all_of(mutations, [](const MutationRequest &mutation) {
         return mutation.type == MutationRequest::Type::GiveItemToPlayer;

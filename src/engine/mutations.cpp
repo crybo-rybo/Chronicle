@@ -10,7 +10,8 @@
  */
 
 #include "engine/mutations.hpp"
-#include "engine/parse_utils.hpp"
+#include "engine/mutation_checks.hpp"
+#include "common/parse_utils.hpp"
 #include <algorithm>
 
 namespace chronicle {
@@ -295,6 +296,9 @@ bool apply_spawn_item(World &world, const MutationRequest &mutation) {
 }
 
 bool apply_mutation(World &world, const MutationRequest &mutation) {
+    if (check_mutation(world, mutation)) {
+        return false;
+    }
     switch (mutation.type) {
     case MutationRequest::Type::GiveItemToPlayer:
         return apply_give_item_to_player(world, mutation);

@@ -111,7 +111,7 @@ void ZooAgentAdapter::register_tools(ToolRegistry &tool_registry, const std::str
     if (registered_tool_registry_ != &tool_registry) {
         logging::write(logging::Level::Info, "ai",
                        "registering Chronicle tools on zoo agent npc=" + npc_id);
-        tool_registry.register_tools(*agent_, npc_id);
+        tool_registry.register_zoo_tools(*agent_, npc_id);
         registered_tool_registry_ = &tool_registry;
     } else {
         logging::write(logging::Level::Debug, "ai",

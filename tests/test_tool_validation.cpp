@@ -1,4 +1,5 @@
 #include "ai/tool_registry.hpp"
+#include "engine/mutations.hpp"
 #include <gtest/gtest.h>
 
 namespace chronicle {
@@ -356,14 +357,14 @@ TEST_F(ToolRegistryTest, ClearPendingEmptiesQueue) {
 
 TEST_F(ToolRegistryTest, SayDoesNotEnqueue) {
     ToolRegistry reg(world);
-    reg.register_say("marcus", "Hello, traveler.");
+    EXPECT_FALSE(reg.register_say("marcus", "Hello, traveler."));
     EXPECT_TRUE(reg.pending_mutations().empty());
 }
 
 TEST_F(ToolRegistryTest, DrainDialogueReturnsCapturedSayTextAndClearsLog) {
     ToolRegistry reg(world);
-    reg.register_say("marcus", "Hello, traveler.");
-    reg.register_say("marcus", "Stay a while.");
+    EXPECT_FALSE(reg.register_say("marcus", "Hello, traveler."));
+    EXPECT_FALSE(reg.register_say("marcus", "Stay a while."));
 
     auto dialogue = reg.drain_dialogue_log();
 
@@ -371,6 +372,18 @@ TEST_F(ToolRegistryTest, DrainDialogueReturnsCapturedSayTextAndClearsLog) {
     EXPECT_EQ(dialogue[0].first, "marcus");
     EXPECT_EQ(dialogue[0].second, "Hello, traveler.");
     EXPECT_TRUE(reg.drain_dialogue_log().empty());
+}
+
+TEST_F(ToolRegistryTest, RegisterGiveItemFailsWhenApplyPreconditionsNoLongerHold) {
+    ToolRegistry reg(world);
+    ASSERT_FALSE(reg.register_give_item("marcus", "cargo_manifest"));
+    ASSERT_EQ(reg.pending_mutations().size(), 1u);
+
+    ASSERT_TRUE(apply_mutation(world, reg.pending_mutations().front()));
+    reg.clear_pending();
+
+    ASSERT_TRUE(reg.register_give_item("marcus", "cargo_manifest"));
+    EXPECT_TRUE(reg.pending_mutations().empty());
 }
 
 TEST_F(ToolRegistryTest, RegisterMultipleToolTypes) {

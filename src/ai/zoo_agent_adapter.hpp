@@ -59,7 +59,7 @@ class ZooAgentAdapter : public AgentInterface {
     /// @brief Register game tools on the underlying agent via @ref ToolRegistry.
     ///
     /// @details Calls @ref ToolRegistry::set_active_npc_id and, if this is a
-    /// new registry instance, @ref ToolRegistry::register_tools.  Skips
+    /// new registry instance, registers tools on the underlying agent.  Skips
     /// re-registration if the same registry pointer is presented again.
     ///
     /// @param tool_registry The tool registry to register tools from.
@@ -79,13 +79,6 @@ class ZooAgentAdapter : public AgentInterface {
     /// @return @ref AgentChatResult indicating success or failure.
     AgentChatResult chat_streaming(std::string_view user_message, TokenCallback on_token,
                                    PollCallback poll) override;
-
-    /// @brief Direct access to the underlying @c zoo::Agent.
-    /// @return Reference to the owned @c zoo::Agent.
-    zoo::Agent &agent() { return *agent_; }
-
-    /// @overload
-    const zoo::Agent &agent() const { return *agent_; }
 
   private:
     std::unique_ptr<zoo::Agent> agent_;                ///< The wrapped Zoo-Keeper agent.

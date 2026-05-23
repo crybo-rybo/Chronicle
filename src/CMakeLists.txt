@@ -1,3 +1,7 @@
+# chronicle_common — header-only shared utilities (parse helpers, etc.)
+add_library(chronicle_common INTERFACE)
+target_include_directories(chronicle_common INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
+
 # chronicle_diagnostics — opt-in logging used by Chronicle runtime layers
 add_library(chronicle_diagnostics STATIC diagnostics/logger.cpp)
 target_include_directories(chronicle_diagnostics PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
@@ -8,16 +12,34 @@ else()
     target_compile_definitions(chronicle_diagnostics PUBLIC CHRONICLE_ENABLE_LOGGING=0)
 endif()
 
-# chronicle_domain — entity structs + JSON serialization (no AI, no Zoo-Keeper)
-# NOTE: Adding or removing .cpp files requires re-running CMake (cmake -B build)
-file(GLOB DOMAIN_SOURCES entities/*.cpp)
-add_library(chronicle_domain STATIC ${DOMAIN_SOURCES})
-target_include_directories(chronicle_domain PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(chronicle_domain PUBLIC nlohmann_json::nlohmann_json)
-target_compile_options(chronicle_domain PRIVATE ${CHRONICLE_WARNING_FLAGS})
+# chronicle_world — runtime world state + entity serialization
+set(WORLD_SOURCES
+    entities/clock.cpp
+    entities/event.cpp
+    entities/fact.cpp
+    entities/flag.cpp
+    entities/item.cpp
+    entities/location.cpp
+    entities/npc.cpp
+    entities/player.cpp
+    entities/world.cpp
+)
+add_library(chronicle_world STATIC ${WORLD_SOURCES})
+target_include_directories(chronicle_world PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(chronicle_world PUBLIC chronicle_common nlohmann_json::nlohmann_json)
+target_compile_options(chronicle_world PRIVATE ${CHRONICLE_WARNING_FLAGS})
 
-# Backward-compat alias so downstream targets can still reference chronicle_entities
-add_library(chronicle_entities ALIAS chronicle_domain)
+# chronicle_scenario — cartridge I/O, config, loading, and validation
+set(SCENARIO_SOURCES
+    entities/config.cpp
+    entities/scenario.cpp
+    entities/world_loader.cpp
+    entities/world_validator.cpp
+)
+add_library(chronicle_scenario STATIC ${SCENARIO_SOURCES})
+target_include_directories(chronicle_scenario PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(chronicle_scenario PUBLIC chronicle_world chronicle_common nlohmann_json::nlohmann_json)
+target_compile_options(chronicle_scenario PRIVATE ${CHRONICLE_WARNING_FLAGS})
 
 # chronicle_engine — engine layer (mutations, command parser, token queue, mutation gate)
 # Excludes game_engine.{hpp,cpp} which lives in chronicle_runtime.
@@ -25,7 +47,7 @@ file(GLOB ENGINE_SOURCES engine/*.cpp)
 list(FILTER ENGINE_SOURCES EXCLUDE REGEX "game_engine\\.cpp$")
 add_library(chronicle_engine STATIC ${ENGINE_SOURCES})
 target_include_directories(chronicle_engine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(chronicle_engine PUBLIC chronicle_domain chronicle_diagnostics)
+target_link_libraries(chronicle_engine PUBLIC chronicle_scenario chronicle_common chronicle_diagnostics)
 target_compile_options(chronicle_engine PRIVATE ${CHRONICLE_WARNING_FLAGS})
 
 # chronicle_ai — AI layer (Zoo-Keeper adapter, prompt builder, tool registry, response handler)
@@ -48,14 +70,14 @@ target_compile_options(chronicle_ai PRIVATE ${CHRONICLE_WARNING_FLAGS})
 file(GLOB RENDERING_SOURCES rendering/*.cpp)
 add_library(chronicle_rendering STATIC ${RENDERING_SOURCES})
 target_include_directories(chronicle_rendering PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(chronicle_rendering PUBLIC chronicle_domain)
+target_link_libraries(chronicle_rendering PUBLIC chronicle_world)
 target_compile_options(chronicle_rendering PRIVATE ${CHRONICLE_WARNING_FLAGS})
 
 # chronicle_persistence — save/load system
 file(GLOB PERSISTENCE_SOURCES persistence/*.cpp)
 add_library(chronicle_persistence STATIC ${PERSISTENCE_SOURCES})
 target_include_directories(chronicle_persistence PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(chronicle_persistence PUBLIC chronicle_domain nlohmann_json::nlohmann_json)
+target_link_libraries(chronicle_persistence PUBLIC chronicle_world nlohmann_json::nlohmann_json)
 target_compile_options(chronicle_persistence PRIVATE ${CHRONICLE_WARNING_FLAGS})
 
 # chronicle_runtime — GameEngine orchestrator (composition root library)
