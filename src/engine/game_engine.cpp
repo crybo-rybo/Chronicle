@@ -19,6 +19,7 @@
 #include <algorithm>
 #include <iostream>
 #include <sstream>
+#include <utility>
 
 namespace chronicle {
 
@@ -228,7 +229,13 @@ bool event_conditions_match(const World &world, const EventTrigger &event) {
 
 GameEngine::GameEngine(const std::string &config_path, const WorldFileSet &world_files,
                        std::unique_ptr<Renderer> renderer, std::unique_ptr<NpcAgentPool> agent_pool)
-    : config_(Config::load(config_path)), world_(load_world(world_files)), parser_(config_path),
+    : GameEngine(Config::load(config_path), config_path, world_files, std::move(renderer),
+                 std::move(agent_pool)) {}
+
+GameEngine::GameEngine(Config config, const std::string &config_path,
+                       const WorldFileSet &world_files, std::unique_ptr<Renderer> renderer,
+                       std::unique_ptr<NpcAgentPool> agent_pool)
+    : config_(std::move(config)), world_(load_world(world_files)), parser_(config_path),
       renderer_(std::move(renderer)),
       save_system_(config_.save_directory.empty() ? "saves" : config_.save_directory),
       agent_pool_(std::move(agent_pool)) {

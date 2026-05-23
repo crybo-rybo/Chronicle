@@ -3,8 +3,9 @@
  * @brief Runtime configuration for Chronicle, loaded from @c config.json.
  *
  * @details The @ref Config struct centralises all tunable parameters so they
- * can be changed without recompilation.  The file is loaded once at startup by
- * @ref GameEngine and then passed down to the subsystems that need it.
+ * can be changed without recompilation.  Scenario defaults are loaded once at
+ * startup and may be overlaid with machine-local operator overrides before the
+ * resolved config is passed down to runtime subsystems.
  *
  * Parameters include model inference settings, prompt-budget limits, timing
  * constants, and renderer preferences.  Any field absent from the JSON file
@@ -133,6 +134,20 @@ struct Config {
     /// @throws std::runtime_error if the file cannot be opened or if the JSON
     ///         is malformed.
     static Config load(const std::filesystem::path &path);
+
+    /// @brief Load scenario config and apply local operator overrides.
+    ///
+    /// @details Precedence is scenario @c config.json, then the optional JSON
+    /// file pointed at by @c CHRONICLE_CONFIG_OVERRIDE, then supported
+    /// environment variables.  Override JSON is partial: only present fields
+    /// replace scenario values, and @c mutation_narration_templates is merged
+    /// by key.
+    ///
+    /// @param path Path to the scenario package config file.
+    /// @return A fully resolved @ref Config instance ready for runtime use.
+    /// @throws std::runtime_error if the scenario config, override file, or
+    ///         environment override values are invalid.
+    static Config load_with_operator_overrides(const std::filesystem::path &path);
 
     /// @brief Write this configuration to a JSON file with 2-space indentation.
     ///

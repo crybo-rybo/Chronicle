@@ -58,6 +58,14 @@ class GameEngine {
                std::unique_ptr<Renderer> renderer,
                std::unique_ptr<NpcAgentPool> agent_pool = nullptr);
 
+    /// @brief Construct from a pre-resolved runtime config and scenario file paths.
+    ///
+    /// @details The config path is still provided so @ref CommandParser can
+    /// load authored verb aliases from the scenario package config file.
+    GameEngine(Config config, const std::string &config_path, const WorldFileSet &world_files,
+               std::unique_ptr<Renderer> renderer,
+               std::unique_ptr<NpcAgentPool> agent_pool = nullptr);
+
     /// @brief Run the game until the player quits or the game ends.
     ///
     /// @details This is a blocking call that owns the main thread for the

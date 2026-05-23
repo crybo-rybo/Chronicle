@@ -12,6 +12,8 @@
     "events": "events.json"
   },
   "metadata": {
-    "description": "A minimal two-room Chronicle scenario fixture."
+    "description": "A minimal two-room Chronicle scenario fixture.",
+    "author": "Chronicle Tests",
+    "license": "MIT"
   }
 }

@@ -2,13 +2,13 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://chronicle.dev/schemas/config.schema.json",
   "title": "Chronicle Runtime Config",
-  "description": "Runtime configuration loaded from config.json. This is part of the v1 scenario package contract. All fields are optional; missing fields receive runtime defaults.",
+  "description": "Scenario-authored runtime defaults loaded from config.json. This is part of the v1 scenario package contract. All fields are optional; missing fields receive runtime defaults. Operators may overlay local settings at runtime.",
   "type": "object",
   "additionalProperties": true,
   "properties": {
     "model_path": {
       "type": "string",
-      "description": "Path to the GGUF model file. Empty string disables AI dialogue and falls back to stub output."
+      "description": "Path to the GGUF model file. Empty string disables AI dialogue and falls back to stub output unless the operator supplies a local override."
     },
     "context_size": {
       "type": "integer",
@@ -17,7 +17,7 @@
     },
     "n_gpu_layers": {
       "type": "integer",
-      "description": "Number of model layers to offload to GPU. -1 means all layers; 0 forces CPU-only.",
+      "description": "Number of model layers to offload to GPU. -1 means all layers; 0 forces CPU-only. Machine-specific values should usually come from operator overrides.",
       "default": -1
     },
     "temperature": {
@@ -63,7 +63,7 @@
     },
     "save_directory": {
       "type": "string",
-      "description": "Directory where save files are written. Empty string defaults to 'saves' relative to cwd."
+      "description": "Directory where save files are written. Empty string defaults to 'saves' relative to cwd. Machine-specific values should usually come from operator overrides."
     },
     "use_tui": {
       "type": "boolean",

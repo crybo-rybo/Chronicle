@@ -5,7 +5,12 @@
 
 #include "entities/scenario.hpp"
 
+#include "entities/config.hpp"
+
+#include <algorithm>
+#include <cctype>
 #include <fstream>
+#include <regex>
 #include <stdexcept>
 
 namespace chronicle {
@@ -154,6 +159,10 @@ void add_error(ValidationReport &report, std::string message) {
     report.errors.push_back(std::move(message));
 }
 
+void add_warning(ValidationReport &report, std::string message) {
+    report.warnings.push_back(std::move(message));
+}
+
 bool require_file(ValidationReport &report, const std::filesystem::path &path,
                   std::string_view label) {
     if (!std::filesystem::exists(path)) {
@@ -167,6 +176,55 @@ bool require_file(ValidationReport &report, const std::filesystem::path &path,
         return false;
     }
     return true;
+}
+
+bool has_whitespace_or_path_separator(std::string_view value) {
+    return std::ranges::any_of(
+        value, [](unsigned char c) { return std::isspace(c) != 0 || c == '/' || c == '\\'; });
+}
+
+bool looks_like_simple_semver(const std::string &version) {
+    static const std::regex pattern("^([0-9]+)\\.([0-9]+)\\.([0-9]+)"
+                                    "([-+][0-9A-Za-z][0-9A-Za-z.-]*)?$");
+    return std::regex_match(version, pattern);
+}
+
+void add_manifest_readiness_warnings(ValidationReport &report, const ScenarioManifest &manifest) {
+    for (const char *key_text : {"description", "author", "license"}) {
+        std::string key(key_text);
+        if (!manifest.metadata.contains(key)) {
+            add_warning(report, "scenario manifest metadata." + key +
+                                    " is recommended for shared cartridges");
+        }
+    }
+
+    if (has_whitespace_or_path_separator(manifest.id)) {
+        add_warning(report,
+                    "scenario manifest id should not contain whitespace or path separators: " +
+                        manifest.id);
+    }
+
+    if (!looks_like_simple_semver(manifest.version)) {
+        add_warning(
+            report,
+            "scenario manifest version should look like semantic version major.minor.patch: " +
+                manifest.version);
+    }
+}
+
+bool add_config_readiness_warnings(ValidationReport &report, const std::filesystem::path &path) {
+    try {
+        auto config = Config::load(path);
+        if (!config.model_path.empty()) {
+            add_warning(report,
+                        "scenario config model_path should be empty in shared cartridges; use "
+                        "operator overrides for local GGUF paths");
+        }
+        return true;
+    } catch (const std::exception &e) {
+        add_error(report, e.what());
+        return false;
+    }
 }
 
 } // namespace
@@ -233,6 +291,11 @@ ValidationReport validate_scenario_package(const std::filesystem::path &scenario
     files_ok = require_file(report, package.world_files.flags, "flags") && files_ok;
     files_ok = require_file(report, package.world_files.events, "events") && files_ok;
     if (!files_ok) {
+        return report;
+    }
+
+    add_manifest_readiness_warnings(report, package.manifest);
+    if (!add_config_readiness_warnings(report, package.config_path)) {
         return report;
     }
 

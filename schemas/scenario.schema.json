@@ -9,7 +9,7 @@
   "properties": {
     "id": {
       "type": "string",
-      "description": "Stable scenario package ID, chosen by the package author.",
+      "description": "Stable scenario package ID, chosen by the package author. Shared cartridges should avoid whitespace and path separators.",
       "minLength": 1
     },
     "name": {
@@ -19,7 +19,7 @@
     },
     "version": {
       "type": "string",
-      "description": "Scenario content version, independent of Chronicle's schema version.",
+      "description": "Scenario cartridge content version, independent of Chronicle's schema version. A simple semantic version such as 1.0.0 is recommended.",
       "minLength": 1
     },
     "chronicle_schema_version": {
@@ -42,7 +42,12 @@
     },
     "metadata": {
       "type": "object",
-      "description": "Optional string-to-string metadata such as description, author, or license.",
+      "description": "Optional string-to-string cartridge metadata. Shared cartridges should include description, author, and license.",
+      "properties": {
+        "description": { "type": "string" },
+        "author": { "type": "string" },
+        "license": { "type": "string" }
+      },
       "additionalProperties": { "type": "string" }
     }
   }

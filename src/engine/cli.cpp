@@ -10,6 +10,7 @@ namespace chronicle {
 std::string cli_usage() {
     return "Usage:\n"
            "  chronicle [--scenario <dir>]\n"
+           "  chronicle inspect --scenario <dir>\n"
            "  chronicle validate --scenario <dir>\n";
 }
 
@@ -19,6 +20,9 @@ std::variant<CliOptions, std::string> parse_cli_args(const std::vector<std::stri
 
     if (index < args.size() && args[index] == "validate") {
         options.mode = CliMode::Validate;
+        ++index;
+    } else if (index < args.size() && args[index] == "inspect") {
+        options.mode = CliMode::Inspect;
         ++index;
     } else if (index < args.size() && (args[index] == "--help" || args[index] == "-h")) {
         options.mode = CliMode::Help;

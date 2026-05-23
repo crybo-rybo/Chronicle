@@ -5,18 +5,21 @@ contract. The stable public surface is the CLI plus the files described here:
 
 ```text
 chronicle [--scenario <dir>]
+chronicle inspect --scenario <dir>
 chronicle validate --scenario <dir>
 ```
 
 C++ headers, class names, and library layout are implementation details. The
 JSON Schema files in [`schemas/`](../schemas) provide machine-readable editor
 support; this document explains the same author-facing contract in prose.
+In product terms, Chronicle is the console/runtime and each scenario package is
+a cartridge.
 
 ## Package Rules
 
-A scenario package is a directory containing `scenario.json` plus six JSON data
-files: `config.json`, `world.json`, `npcs.json`, `facts.json`, `flags.json`,
-and `events.json`.
+A scenario package is Chronicle's cartridge format: a directory containing
+`scenario.json` plus six JSON data files: `config.json`, `world.json`,
+`npcs.json`, `facts.json`, `flags.json`, and `events.json`.
 
 Manifest file paths are resolved relative to the package directory. Paths must
 be relative and must stay inside the package after normalization. Absolute
@@ -42,7 +45,7 @@ Required fields:
 | --- | --- | --- |
 | `id` | string | Stable package ID. Non-empty in the 1.0 schema. |
 | `name` | string | Human-readable scenario name. Non-empty in the 1.0 schema. |
-| `version` | string | Scenario content version, independent from Chronicle's schema version. |
+| `version` | string | Cartridge content version, independent from Chronicle's schema version. |
 | `chronicle_schema_version` | integer | Must be `1`. |
 | `files` | object | Relative paths to the six package data files. |
 
@@ -56,7 +59,7 @@ Optional/defaulted fields:
 | `files.facts` | `facts.json` | Authored facts file. |
 | `files.flags` | `flags.json` | Declared flags file. |
 | `files.events` | `events.json` | Scripted events file. |
-| `metadata` | `{}` | Optional string-to-string author metadata. The runtime does not interpret it. |
+| `metadata` | `{}` | Optional string-to-string author metadata. Recommended keys: `description`, `author`, `license`. |
 
 Runtime behavior: the manifest is loaded first. Run mode uses it to resolve the
 config and world file set. Validate mode resolves the same files without
@@ -64,7 +67,13 @@ constructing a model.
 
 Validation behavior: unsupported `chronicle_schema_version`, unsafe paths, and
 missing referenced files are errors. `metadata` must be an object whose values
-are strings.
+are strings. Shared-cartridge readiness issues such as missing recommended
+metadata, whitespace or path separators in `id`, a non-semver-looking
+`version`, or a committed non-empty `model_path` are warnings.
+
+Inspect behavior: `chronicle inspect --scenario <dir>` prints the cartridge
+identity, recommended metadata when present, manifest-declared file paths, and
+the same readiness status, warnings, and errors reported by validation.
 
 Minimal example:
 
@@ -83,22 +92,27 @@ Minimal example:
     "events": "events.json"
   },
   "metadata": {
-    "description": "A minimal Chronicle scenario package."
+    "description": "A minimal Chronicle scenario cartridge.",
+    "author": "Chronicle Contributors",
+    "license": "MIT"
   }
 }
 ```
 
 ### `config.json`
 
-Required fields: none. Missing fields receive runtime defaults.
+Required fields: none. Missing fields receive runtime defaults. This file is
+the scenario-authored default config. At runtime, Chronicle may overlay a
+machine-local operator config from `CHRONICLE_CONFIG_OVERRIDE`, then supported
+environment variables such as `ZOO_MODEL_PATH`.
 
 Optional/defaulted fields:
 
 | Field | Type | Default | Runtime behavior |
 | --- | --- | --- | --- |
-| `model_path` | string | `""` | Empty means no local model is configured; dialogue uses stub behavior. |
+| `model_path` | string | `""` | Empty means no local model is configured; dialogue uses stub behavior. Committed packages should leave this empty and rely on operator overrides for local paths. |
 | `context_size` | integer | `4096` | Model context window. |
-| `n_gpu_layers` | integer | `-1` | GPU layer offload setting; `0` forces CPU-only. |
+| `n_gpu_layers` | integer | `-1` | GPU layer offload setting; `0` forces CPU-only. Machine-specific values should usually come from operator overrides. |
 | `temperature` | number | `0.7` | Dialogue sampling temperature. |
 | `max_response_tokens` | integer | `512` | Maximum generated tokens per response. |
 | `inference_timeout_ms` | integer | `120000` | Maximum wall-clock time for one model request. `0` disables timeout cancellation for debugging. |
@@ -107,7 +121,7 @@ Optional/defaulted fields:
 | `max_memory_tokens` | integer | `800` | Prompt budget for NPC memories. |
 | `max_world_tokens` | integer | `400` | Prompt budget for world context. |
 | `max_history_tokens` | integer | `600` | Prompt budget for conversation history. |
-| `save_directory` | string | `""` | Empty falls back to `saves` relative to the working directory. |
+| `save_directory` | string | `""` | Empty falls back to `saves` relative to the working directory. Machine-specific values should usually come from operator overrides. |
 | `use_tui` | boolean | `false` | Plain terminal renderer remains the v1 baseline. |
 | `use_color` | boolean | `true` | Enables ANSI color where the renderer supports it. |
 | `max_tool_iterations` | integer | `5` | Maximum tool-call loop iterations per model request. |
@@ -415,5 +429,5 @@ Minimal example:
   tooling can preserve metadata. Unknown fields should not be used for gameplay
   behavior unless Chronicle documents them.
 - Model-backed behavior is optional. Empty `model_path` keeps the package
-  runnable in stub dialogue mode.
+  runnable in stub dialogue mode unless the operator supplies a local override.
 - Save files are versioned separately from scenario packages.

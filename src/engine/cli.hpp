@@ -6,6 +6,7 @@
  * are:
  * @code
  * chronicle [--scenario <dir>]
+ * chronicle inspect --scenario <dir>
  * chronicle validate --scenario <dir>
  * chronicle --help
  * @endcode
@@ -24,6 +25,7 @@ namespace chronicle {
 /// @brief Top-level process mode selected by command-line arguments.
 enum class CliMode {
     Run,      ///< Load the scenario and start the interactive game loop.
+    Inspect,  ///< Print scenario package identity and validation readiness.
     Validate, ///< Validate the scenario package and exit without starting play.
     Help      ///< Print usage text and exit successfully.
 };
