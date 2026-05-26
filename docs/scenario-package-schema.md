@@ -125,6 +125,7 @@ Optional/defaulted fields:
 | `use_tui` | boolean | `false` | Plain terminal renderer remains the v1 baseline. |
 | `use_color` | boolean | `true` | Enables ANSI color where the renderer supports it. |
 | `max_tool_iterations` | integer | `5` | Maximum tool-call loop iterations per model request. |
+| `auto_configure` | boolean | `false` | When `true`, derive model load settings from the GGUF file and host hardware via Zoo-Keeper before applying explicit `context_size` / `n_gpu_layers` overrides. Leave `n_gpu_layers` at `-1` to let auto-configuration choose GPU offload depth. |
 | `mutation_narration_templates` | object | built-in map | String templates keyed by mutation names. Empty strings suppress narration. |
 
 Validation behavior: malformed JSON or invalid field types fail when the

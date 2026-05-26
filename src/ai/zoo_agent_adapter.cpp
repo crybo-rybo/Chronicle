@@ -24,6 +24,21 @@ namespace {
 constexpr auto kPollInterval = std::chrono::milliseconds(10);
 constexpr auto kCancelDrainTimeout = std::chrono::milliseconds(250);
 
+void log_tool_trace(const ::zoo::ToolTrace &trace) {
+    for (const auto &invocation : trace.invocations) {
+        logging::write(logging::Level::Debug, "tools",
+                       "tool_trace id=" + invocation.id + " name=" + invocation.name +
+                           " status=" + std::string(::zoo::to_string(invocation.status)) +
+                           " args=" + invocation.arguments_json);
+    }
+}
+
+void log_text_response_diagnostics(const ::zoo::TextResponse &response) {
+    if (response.tool_trace && !response.tool_trace->empty()) {
+        log_tool_trace(*response.tool_trace);
+    }
+}
+
 std::string timeout_error_message(int timeout_ms) {
     return "Inference timed out after " + std::to_string(timeout_ms) + " ms.";
 }
@@ -88,18 +103,27 @@ ZooAgentAdapter::ZooAgentAdapter(std::unique_ptr<zoo::Agent> agent, int inferenc
 void ZooAgentAdapter::set_system_prompt(std::string_view prompt) {
     logging::write(logging::Level::Debug, "ai",
                    "setting system prompt chars=" + std::to_string(prompt.size()));
-    agent_->set_system_prompt(prompt);
+    if (auto result = agent_->try_set_system_prompt(prompt); !result) {
+        logging::write(logging::Level::Warning, "ai",
+                       "set_system_prompt failed: " + result.error().to_string());
+    }
 }
 
 void ZooAgentAdapter::add_system_message(std::string_view message) {
     logging::write(logging::Level::Debug, "ai",
                    "injecting system message chars=" + std::to_string(message.size()));
-    (void)agent_->add_system_message(message);
+    if (auto result = agent_->add_system_message(message); !result) {
+        logging::write(logging::Level::Warning, "ai",
+                       "add_system_message failed: " + result.error().to_string());
+    }
 }
 
 void ZooAgentAdapter::clear_history() {
     logging::write(logging::Level::Debug, "ai", "clearing zoo agent history");
-    agent_->clear_history();
+    if (auto result = agent_->try_clear_history(); !result) {
+        logging::write(logging::Level::Warning, "ai",
+                       "clear_history failed: " + result.error().to_string());
+    }
 }
 
 bool ZooAgentAdapter::is_running() const noexcept {
@@ -184,6 +208,9 @@ AgentChatResult ZooAgentAdapter::chat_streaming(std::string_view user_message,
                 poll();
             }
             logging::write(logging::Level::Info, "ai", "zoo nudge completed");
+            if (logging::is_enabled()) {
+                log_text_response_diagnostics(*nudge_result);
+            }
             return AgentChatResult{true, ""};
         }
 
@@ -194,6 +221,9 @@ AgentChatResult ZooAgentAdapter::chat_streaming(std::string_view user_message,
         poll();
     }
     logging::write(logging::Level::Info, "ai", "zoo chat completed");
+    if (logging::is_enabled()) {
+        log_text_response_diagnostics(*result);
+    }
     return AgentChatResult{true, ""};
 }
 
