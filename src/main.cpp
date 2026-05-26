@@ -11,6 +11,7 @@
 #include "entities/config.hpp"
 #include "entities/scenario.hpp"
 #include "rendering/terminal_renderer.hpp"
+#include <cstdlib>
 #include <exception>
 #include <filesystem>
 #include <iostream>
@@ -69,8 +70,8 @@ void print_scenario_inspection(const chronicle::ScenarioPackage &package,
     }
 }
 
-void print_cartridge_library() {
-    const auto cartridges = chronicle::list_cartridges();
+void print_cartridge_library(const std::vector<std::filesystem::path> &extra_roots) {
+    const auto cartridges = chronicle::list_cartridges(extra_roots);
     if (cartridges.empty()) {
         std::cout << "No cartridges found in library roots.\n";
         std::cout << "Install one with: chronicle install <path.chronicle|dir>\n";
@@ -79,7 +80,7 @@ void print_cartridge_library() {
 
     std::cout << "Installed cartridges:\n";
     for (const auto &entry : cartridges) {
-        std::cout << "  " << entry.id << " — " << entry.name << " (v" << entry.version << ")\n";
+        std::cout << "  " << entry.id << " - " << entry.name << " (v" << entry.version << ")\n";
         auto description = entry.metadata.find("description");
         if (description != entry.metadata.end()) {
             std::cout << "    " << description->second << "\n";
@@ -88,8 +89,7 @@ void print_cartridge_library() {
     }
 }
 
-std::vector<std::filesystem::path>
-extra_library_roots(const chronicle::CliOptions &options) {
+std::vector<std::filesystem::path> extra_library_roots(const chronicle::CliOptions &options) {
     if (options.library_root) {
         return {*options.library_root};
     }
@@ -119,7 +119,7 @@ int main(int argc, char **argv) {
         }
 
         if (options.mode == chronicle::CliMode::List) {
-            print_cartridge_library();
+            print_cartridge_library(extra_library_roots(options));
             return 0;
         }
 
@@ -127,27 +127,24 @@ int main(int argc, char **argv) {
             const auto library_root = options.library_root.value_or(
                 std::filesystem::path(std::getenv("HOME") ? std::getenv("HOME") : ".") /
                 ".chronicle" / "cartridges");
-            auto package =
-                chronicle::install_cartridge(options.install_source, library_root);
+            auto package = chronicle::install_cartridge(options.install_source, library_root);
             std::cout << "Installed cartridge '" << package.manifest.id << "' to "
                       << package.root_dir.string() << "\n";
             return 0;
         }
 
         if (options.mode == chronicle::CliMode::Pack) {
-            chronicle::pack_cartridge(options.scenario_dir, options.pack_output);
-            std::cout << "Packed cartridge from " << options.scenario_dir;
-            if (!options.pack_output.empty()) {
-                std::cout << " to " << options.pack_output;
-            }
-            std::cout << "\n";
+            const auto archive_path =
+                chronicle::pack_cartridge(options.scenario_dir, options.pack_output);
+            std::cout << "Packed cartridge from " << options.scenario_dir << " to "
+                      << archive_path << "\n";
             return 0;
         }
 
         std::filesystem::path scenario_dir = options.scenario_dir;
         if (options.cartridge_id) {
-            auto resolved =
-                chronicle::resolve_cartridge_path(*options.cartridge_id, extra_library_roots(options));
+            auto resolved = chronicle::resolve_cartridge_path(*options.cartridge_id,
+                                                              extra_library_roots(options));
             if (!resolved) {
                 std::cerr << "Error: cartridge '" << *options.cartridge_id
                           << "' was not found in the library.\n";

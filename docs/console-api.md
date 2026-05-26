@@ -46,7 +46,8 @@ Authors may define shorthand aliases in `config.json`:
 }
 ```
 
-Aliases expand before command parsing. Unknown alias targets are ignored.
+Aliases expand before command parsing. If an alias expands to an unknown command,
+the expanded input is handled like any other unknown command.
 
 ## NPC Tool Palette
 
@@ -121,16 +122,17 @@ Placeholders: `{npc}`, `{item}`, `{mood}`, `{location}`. Empty strings suppress 
 
 | Command | Purpose |
 | --- | --- |
-| `chronicle list` | List installed cartridges |
-| `chronicle run <id>` | Launch a library cartridge by manifest id |
-| `chronicle install <path>` | Install a directory or `.chronicle` archive |
+| `chronicle list [--library <dir>]` | List installed cartridges |
+| `chronicle run <id> [--library <dir>]` | Launch a library cartridge by manifest id |
+| `chronicle install <path> [--library <dir>]` | Install a directory or `.chronicle` archive |
 | `chronicle pack --scenario <dir>` | Validate and pack a cartridge archive |
 
 Library roots (first match wins for duplicate ids):
 
-1. `CHRONICLE_LIBRARY_PATH`
-2. `~/.chronicle/cartridges`
-3. `./cartridges`
+1. Explicit `--library <dir>`
+2. `CHRONICLE_LIBRARY_PATH`
+3. `~/.chronicle/cartridges`
+4. `./cartridges`
 
 ## Save Slots
 

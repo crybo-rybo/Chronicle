@@ -5,8 +5,8 @@ contract. The stable public surface is the CLI plus the files described here:
 
 ```text
 chronicle [--scenario <dir>]
-chronicle run <cartridge-id>
-chronicle list
+chronicle run <cartridge-id> [--library <dir>]
+chronicle list [--library <dir>]
 chronicle install <path.chronicle|dir> [--library <dir>]
 chronicle pack --scenario <dir> [--output <path.chronicle>]
 chronicle inspect --scenario <dir>
@@ -23,13 +23,17 @@ a cartridge.
 
 Installed cartridges are discovered from, in order:
 
-1. `CHRONICLE_LIBRARY_PATH` (platform path separator)
-2. `~/.chronicle/cartridges`
-3. `./cartridges`
+1. An explicit `--library <dir>` argument, when provided
+2. `CHRONICLE_LIBRARY_PATH` (platform path separator)
+3. `~/.chronicle/cartridges`
+4. `./cartridges`
 
 Use `chronicle list` to inspect installed titles and `chronicle run <id>` to
 launch by manifest id. Creators can distribute directory cartridges or packed
 `.chronicle` archives (`chronicle pack` / `chronicle install`).
+Packed and installed cartridges contain only `scenario.json` plus the six
+manifest-declared data files; local notes, saves, and other undeclared files are
+not included.
 
 Save files for a running cartridge are stored under `saves/<scenario_id>/slot_N.json`
 and include cartridge metadata. Loading a save from a different cartridge id is
@@ -90,6 +94,8 @@ missing referenced files are errors. `metadata` must be an object whose values
 are strings. Shared-cartridge readiness issues such as missing recommended
 metadata, whitespace or path separators in `id`, a non-semver-looking
 `version`, or a committed non-empty `model_path` are warnings.
+`chronicle pack` and `chronicle install` also require `id` to be a safe single
+path segment because it becomes the installed cartridge directory name.
 
 Inspect behavior: `chronicle inspect --scenario <dir>` prints the cartridge
 identity, recommended metadata when present, manifest-declared file paths, and
@@ -149,8 +155,8 @@ Optional/defaulted fields:
 | `mutation_narration_templates` | object | built-in map | String templates keyed by mutation names. Empty strings suppress narration. |
 
 Validation behavior: malformed JSON or invalid field types fail when the
-runtime loads config. The JSON Schema documents numeric minimums for editor
-validation.
+runtime loads config. `verb_aliases` values must be string command expansions.
+The JSON Schema documents numeric minimums for editor validation.
 
 Minimal example:
 

@@ -128,6 +128,29 @@ void apply_config_json_overrides(Config &config, const nlohmann::json &json,
     }
 }
 
+void validate_public_config_shape(const nlohmann::json &json, std::string_view source) {
+    if (!json.is_object()) {
+        throw std::runtime_error("Config: config file must be a JSON object: " +
+                                 std::string(source));
+    }
+
+    if (!json.contains("verb_aliases")) {
+        return;
+    }
+
+    const auto &aliases = json.at("verb_aliases");
+    if (!aliases.is_object()) {
+        throw std::runtime_error("Config: field 'verb_aliases' in " + std::string(source) +
+                                 " must be a JSON object");
+    }
+    for (const auto &[alias, command] : aliases.items()) {
+        if (!command.is_string()) {
+            throw std::runtime_error("Config: verb_aliases.'" + alias + "' in " +
+                                     std::string(source) + " must be a string command");
+        }
+    }
+}
+
 void apply_env_string(const char *name, std::string &target) {
     if (const char *value = std::getenv(name)) {
         target = value;
@@ -183,7 +206,9 @@ std::unordered_map<std::string, std::string> default_mutation_narration_template
 
 Config Config::load(const std::filesystem::path &path) {
     try {
-        return parse_json_file(path, "config").get<Config>();
+        auto json = parse_json_file(path, "config");
+        validate_public_config_shape(json, path.string());
+        return json.get<Config>();
     } catch (const nlohmann::json::exception &e) {
         throw std::runtime_error("Config: parse error in " + path.string() + ": " + e.what());
     }

@@ -21,9 +21,10 @@ namespace chronicle {
 /// @details Runs @c chronicle validate semantics first.  Writes @p output_path,
 /// creating parent directories as needed.
 ///
+/// @return The archive path that was written after default suffix resolution.
 /// @throws std::runtime_error if validation fails or the archive cannot be created.
-void pack_cartridge(const std::filesystem::path &scenario_dir,
-                    const std::filesystem::path &output_path);
+std::filesystem::path pack_cartridge(const std::filesystem::path &scenario_dir,
+                                     const std::filesystem::path &output_path);
 
 /// @brief Install a @c .chronicle archive or directory into a library root.
 ///

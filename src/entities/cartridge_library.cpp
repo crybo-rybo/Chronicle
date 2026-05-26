@@ -64,7 +64,8 @@ void append_env_roots(std::vector<std::filesystem::path> &roots) {
     std::size_t start = 0;
     while (start <= value.size()) {
         const auto end = value.find(kPathSeparator, start);
-        const auto token = value.substr(start, end == std::string::npos ? std::string::npos : end - start);
+        const auto token =
+            value.substr(start, end == std::string::npos ? std::string::npos : end - start);
         if (!token.empty()) {
             append_unique_root(roots, token);
         }
@@ -90,8 +91,11 @@ std::vector<std::filesystem::path> default_cartridge_library_roots() {
 }
 
 std::vector<CartridgeEntry> list_cartridges(const std::vector<std::filesystem::path> &extra_roots) {
-    std::vector<std::filesystem::path> roots = default_cartridge_library_roots();
+    std::vector<std::filesystem::path> roots;
     for (const auto &root : extra_roots) {
+        append_unique_root(roots, root);
+    }
+    for (const auto &root : default_cartridge_library_roots()) {
         append_unique_root(roots, root);
     }
 
@@ -118,8 +122,9 @@ std::vector<CartridgeEntry> list_cartridges(const std::vector<std::filesystem::p
     return cartridges;
 }
 
-std::optional<CartridgeEntry> find_cartridge(std::string_view cartridge_id,
-                                             const std::vector<std::filesystem::path> &extra_roots) {
+std::optional<CartridgeEntry>
+find_cartridge(std::string_view cartridge_id,
+               const std::vector<std::filesystem::path> &extra_roots) {
     for (const auto &entry : list_cartridges(extra_roots)) {
         if (entry.id == cartridge_id) {
             return entry;

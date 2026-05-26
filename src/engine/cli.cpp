@@ -11,8 +11,8 @@ namespace chronicle {
 std::string cli_usage() {
     return "Usage:\n"
            "  chronicle [--scenario <dir>]\n"
-           "  chronicle run <cartridge-id>\n"
-           "  chronicle list\n"
+           "  chronicle run <cartridge-id> [--library <dir>]\n"
+           "  chronicle list [--library <dir>]\n"
            "  chronicle install <path.chronicle|dir> [--library <dir>]\n"
            "  chronicle pack --scenario <dir> [--output <path.chronicle>]\n"
            "  chronicle inspect --scenario <dir>\n"

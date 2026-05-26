@@ -166,6 +166,18 @@ TEST(ConfigTest, LoadMalformedJsonThrows) {
     std::filesystem::remove(tmp);
 }
 
+TEST(ConfigTest, VerbAliasesMustMapToStringCommands) {
+    auto tmp = std::filesystem::temp_directory_path() / "chronicle_test_bad_aliases.json";
+    write_json_file(tmp, R"({
+  "verb_aliases": {
+    "inventory": ["bag"]
+  }
+})");
+
+    EXPECT_THROW(Config::load(tmp), std::runtime_error);
+    std::filesystem::remove(tmp);
+}
+
 // ---------------------------------------------------------------------------
 // max_tool_iterations field
 // ---------------------------------------------------------------------------

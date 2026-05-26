@@ -10,14 +10,26 @@
 #include <fstream>
 #include <regex>
 #include <stdexcept>
+#include <string_view>
 
 namespace chronicle {
+namespace {
 
-SaveSystem::SaveSystem(std::filesystem::path save_dir,
-                       std::optional<CartridgeBinding> cartridge)
+void validate_path_segment(std::string_view value, std::string_view label) {
+    if (value.empty() || value == "." || value == ".." ||
+        value.find('/') != std::string_view::npos || value.find('\\') != std::string_view::npos) {
+        throw std::invalid_argument(std::string(label) +
+                                    " must be a safe single path segment: " + std::string(value));
+    }
+}
+
+} // namespace
+
+SaveSystem::SaveSystem(std::filesystem::path save_dir, std::optional<CartridgeBinding> cartridge)
     : save_dir_(std::move(save_dir)), cartridge_(std::move(cartridge)) {
     slot_root_ = save_dir_;
     if (cartridge_) {
+        validate_path_segment(cartridge_->scenario_id, "Scenario id");
         slot_root_ /= cartridge_->scenario_id;
     }
 }
@@ -45,7 +57,8 @@ bool SaveSystem::cartridge_metadata_matches(const nlohmann::json &metadata) cons
     }
 
     if (metadata.contains("chronicle_schema_version") &&
-        metadata.at("chronicle_schema_version").get<int>() != cartridge_->chronicle_schema_version) {
+        metadata.at("chronicle_schema_version").get<int>() !=
+            cartridge_->chronicle_schema_version) {
         return false;
     }
 
@@ -112,7 +125,12 @@ std::optional<SaveData> SaveSystem::load(int slot) const {
             return std::nullopt;
         }
 
-        if (j.contains("metadata") && !cartridge_metadata_matches(j.at("metadata"))) {
+        if (cartridge_ && (!j.contains("metadata") || !j.at("metadata").is_object() ||
+                           !cartridge_metadata_matches(j.at("metadata")))) {
+            return std::nullopt;
+        }
+
+        if (!cartridge_ && j.contains("metadata") && !j.at("metadata").is_object()) {
             return std::nullopt;
         }
 

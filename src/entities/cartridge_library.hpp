@@ -20,17 +20,17 @@ namespace chronicle {
 
 /// @brief Summary of one cartridge discovered in a library root.
 struct CartridgeEntry {
-    std::string id;                         ///< Manifest @c id.
-    std::string name;                       ///< Manifest @c name.
-    std::string version;                    ///< Manifest content @c version.
-    int chronicle_schema_version = 1;       ///< Manifest schema version.
-    std::filesystem::path root_dir;         ///< Absolute package directory.
+    std::string id;                              ///< Manifest @c id.
+    std::string name;                            ///< Manifest @c name.
+    std::string version;                         ///< Manifest content @c version.
+    int chronicle_schema_version = 1;            ///< Manifest schema version.
+    std::filesystem::path root_dir;              ///< Absolute package directory.
     std::map<std::string, std::string> metadata; ///< Optional manifest metadata.
 };
 
 /// @brief Resolve the ordered list of cartridge library roots to scan.
 ///
-/// @details Precedence (first match wins for duplicate IDs):
+/// @details Default precedence (first match wins for duplicate IDs):
 /// 1. Paths from @c CHRONICLE_LIBRARY_PATH (platform path separator)
 /// 2. @c ~/.chronicle/cartridges
 /// 3. @c ./cartridges relative to the current working directory
@@ -43,18 +43,18 @@ std::vector<std::filesystem::path> default_cartridge_library_roots();
 /// @details Invalid manifests are skipped silently.  When the same @c id appears
 /// in multiple roots, the first root in @ref default_cartridge_library_roots wins.
 ///
-/// @param extra_roots Additional roots appended after the defaults.
-std::vector<CartridgeEntry> list_cartridges(
-    const std::vector<std::filesystem::path> &extra_roots = {});
+/// @param extra_roots Additional roots prepended before the defaults.
+std::vector<CartridgeEntry>
+list_cartridges(const std::vector<std::filesystem::path> &extra_roots = {});
 
 /// @brief Find a cartridge by manifest @c id.
 ///
 /// @param cartridge_id Stable package ID from @c scenario.json.
-/// @param extra_roots Additional library roots to scan.
+/// @param extra_roots Additional library roots to scan before defaults.
 /// @return The resolved entry, or @c std::nullopt if not found.
-std::optional<CartridgeEntry> find_cartridge(
-    std::string_view cartridge_id,
-    const std::vector<std::filesystem::path> &extra_roots = {});
+std::optional<CartridgeEntry>
+find_cartridge(std::string_view cartridge_id,
+               const std::vector<std::filesystem::path> &extra_roots = {});
 
 /// @brief Resolve a cartridge path from an explicit directory or library ID.
 ///

@@ -13,6 +13,7 @@
 #include <nlohmann/json.hpp>
 #include <stdexcept>
 #include <unordered_set>
+#include <utility>
 
 namespace chronicle {
 
@@ -22,23 +23,10 @@ namespace chronicle {
 
 namespace {
 
-std::unordered_map<std::string, CommandVerb> canonical_verbs() {
-    return {
-        {"go", CommandVerb::Go},
-        {"look", CommandVerb::Look},
-        {"examine", CommandVerb::Examine},
-        {"take", CommandVerb::Take},
-        {"drop", CommandVerb::Drop},
-        {"use", CommandVerb::Use},
-        {"give", CommandVerb::Give},
-        {"talk", CommandVerb::Talk},
-        {"inventory", CommandVerb::Inventory},
-        {"save", CommandVerb::Save},
-        {"load", CommandVerb::Load},
-        {"quit", CommandVerb::Quit},
-        {"help", CommandVerb::Help},
-    };
-}
+struct AliasTables {
+    std::unordered_map<std::string, CommandVerb> verb_table;
+    std::unordered_map<std::string, std::string> command_aliases;
+};
 
 std::unordered_map<std::string, CommandVerb> fallback_verb_table() {
     return {
@@ -85,11 +73,10 @@ std::unordered_map<std::string, CommandVerb> fallback_verb_table() {
     };
 }
 
-std::unordered_map<std::string, CommandVerb>
-load_verb_table(const std::filesystem::path &config_path) {
+AliasTables load_alias_tables(const std::filesystem::path &config_path) {
     std::ifstream in(config_path);
     if (!in.is_open()) {
-        return fallback_verb_table();
+        return {.verb_table = fallback_verb_table()};
     }
 
     nlohmann::json config;
@@ -102,36 +89,25 @@ load_verb_table(const std::filesystem::path &config_path) {
 
     auto aliases_it = config.find("verb_aliases");
     if (aliases_it == config.end()) {
-        return fallback_verb_table();
+        return {.verb_table = fallback_verb_table()};
     }
     if (!aliases_it->is_object()) {
         throw std::runtime_error("CommandParser: verb_aliases must be a JSON object");
     }
 
-    // Start with safe defaults, then overlay configured aliases
-    auto canonical = canonical_verbs();
-    auto result = fallback_verb_table();
-    for (const auto &[verb_name, aliases] : aliases_it->items()) {
-        auto verb_it = canonical.find(text::to_lower_copy(verb_name));
-        if (verb_it == canonical.end()) {
-            throw std::runtime_error("CommandParser: unknown canonical verb '" + verb_name + "'");
+    AliasTables result{.verb_table = fallback_verb_table()};
+    for (const auto &[alias_or_verb, target] : aliases_it->items()) {
+        if (target.is_string()) {
+            auto key = text::trim_and_lower(alias_or_verb);
+            auto command = text::trim_copy(target.get<std::string>());
+            if (!key.empty() && !command.empty()) {
+                result.command_aliases[key] = std::move(command);
+            }
+            continue;
         }
 
-        if (!aliases.is_array()) {
-            throw std::runtime_error("CommandParser: aliases for '" + verb_name +
-                                     "' must be a JSON array");
-        }
-
-        for (const auto &alias : aliases) {
-            if (!alias.is_string()) {
-                throw std::runtime_error("CommandParser: aliases for '" + verb_name +
-                                         "' must be strings");
-            }
-            auto key = text::to_lower_copy(text::trim_copy(alias.get<std::string>()));
-            if (!key.empty()) {
-                result[key] = verb_it->second;
-            }
-        }
+        throw std::runtime_error("CommandParser: verb_aliases.'" + alias_or_verb +
+                                 "' must be a string command");
     }
 
     return result;
@@ -164,8 +140,11 @@ bool is_direction_word(const std::string &word) {
 
 } // namespace
 
-CommandParser::CommandParser(std::filesystem::path config_path)
-    : verb_table_(load_verb_table(config_path)) {}
+CommandParser::CommandParser(std::filesystem::path config_path) {
+    auto aliases = load_alias_tables(config_path);
+    verb_table_ = std::move(aliases.verb_table);
+    command_aliases_ = std::move(aliases.command_aliases);
+}
 
 // ---------------------------------------------------------------------------
 // parse_use_syntax
@@ -201,13 +180,26 @@ ParsedCommand CommandParser::parse_use_syntax(const std::string &args_after_verb
 // ---------------------------------------------------------------------------
 
 ParsedCommand CommandParser::parse(const std::string &raw_input, GamePhase phase) const {
+    return parse_internal(raw_input, phase, raw_input, true);
+}
+
+ParsedCommand CommandParser::parse_internal(const std::string &input, GamePhase phase,
+                                            const std::string &raw_input,
+                                            bool expand_aliases) const {
     ParsedCommand result;
     result.raw_input = raw_input;
 
-    std::string trimmed = text::trim_copy(raw_input);
+    std::string trimmed = text::trim_copy(input);
     if (trimmed.empty()) {
         result.verb = CommandVerb::Unknown;
         return result;
+    }
+
+    if (expand_aliases) {
+        auto alias_it = command_aliases_.find(text::trim_and_lower(trimmed));
+        if (alias_it != command_aliases_.end()) {
+            return parse_internal(alias_it->second, phase, raw_input, false);
+        }
     }
 
     // Split into first word and remainder

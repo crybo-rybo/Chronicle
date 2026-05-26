@@ -198,6 +198,36 @@ TEST_F(SaveSystemTest, LoadRejectsMismatchedCartridge) {
     EXPECT_FALSE(other_save.load(1).has_value());
 }
 
+TEST_F(SaveSystemTest, LoadRejectsMissingCartridgeMetadataWhenBound) {
+    CartridgeBinding binding{
+        .scenario_id = "demo_game",
+        .scenario_version = "1.0.0",
+        .chronicle_schema_version = 1,
+    };
+    SaveSystem bound_save(test_dir_ / "saves", binding);
+
+    std::filesystem::create_directories(test_dir_ / "saves/demo_game");
+    nlohmann::json j;
+    j["version"] = SaveData::kCurrentSchemaVersion;
+    j["world"] = make_test_world();
+
+    std::ofstream out(test_dir_ / "saves/demo_game/slot_1.json");
+    out << j.dump(2);
+    out.close();
+
+    EXPECT_FALSE(bound_save.load(1).has_value());
+}
+
+TEST_F(SaveSystemTest, CartridgeBindingRejectsUnsafeScenarioId) {
+    CartridgeBinding binding{
+        .scenario_id = "../other_game",
+        .scenario_version = "1.0.0",
+        .chronicle_schema_version = 1,
+    };
+
+    EXPECT_THROW(SaveSystem(test_dir_ / "saves", binding), std::invalid_argument);
+}
+
 TEST_F(SaveSystemTest, SaveMetadataIncludesCartridgeIdentity) {
     CartridgeBinding binding{
         .scenario_id = "demo_game",
