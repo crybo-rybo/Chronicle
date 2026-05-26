@@ -73,10 +73,16 @@ std::unordered_map<std::string, CommandVerb> fallback_verb_table() {
     };
 }
 
+AliasTables default_alias_tables() {
+    AliasTables tables;
+    tables.verb_table = fallback_verb_table();
+    return tables;
+}
+
 AliasTables load_alias_tables(const std::filesystem::path &config_path) {
     std::ifstream in(config_path);
     if (!in.is_open()) {
-        return {.verb_table = fallback_verb_table()};
+        return default_alias_tables();
     }
 
     nlohmann::json config;
@@ -89,13 +95,13 @@ AliasTables load_alias_tables(const std::filesystem::path &config_path) {
 
     auto aliases_it = config.find("verb_aliases");
     if (aliases_it == config.end()) {
-        return {.verb_table = fallback_verb_table()};
+        return default_alias_tables();
     }
     if (!aliases_it->is_object()) {
         throw std::runtime_error("CommandParser: verb_aliases must be a JSON object");
     }
 
-    AliasTables result{.verb_table = fallback_verb_table()};
+    AliasTables result = default_alias_tables();
     for (const auto &[alias_or_verb, target] : aliases_it->items()) {
         if (target.is_string()) {
             auto key = text::trim_and_lower(alias_or_verb);
