@@ -8,8 +8,9 @@ A portfolio piece and open-source framework demonstrating systems-level C++ desi
 
 ## Architecture Overview
 
-- **Engine layer** (`src/engine/`): CLI parser, GameEngine orchestrator, command parser, world state, clock, event system
-- **Entity layer** (`src/entities/`): NPC, Player, Item, Location data structures
+- **Engine layer** (`src/engine/`): CLI parser, GameEngine orchestrator, command parser, mutation pipeline, scripted events
+- **World layer** (`chronicle_world`, `src/entities/` structs): NPC, Player, Item, Location runtime state and serialization
+- **Scenario layer** (`chronicle_scenario`): Cartridge manifest, config, world loader, structural validation
 - **AI layer** (`src/ai/`): Zoo-Keeper agent wrapper, prompt builder, tool registry, response handler, explicit NPC memory via `remember`
 - **Rendering layer** (`src/rendering/`): Abstract renderer interface, terminal renderer (MVP), TUI renderer (stretch goal)
 - **Persistence layer** (`src/persistence/`): Save/load system with versioned schemas

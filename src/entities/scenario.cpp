@@ -300,10 +300,7 @@ ValidationReport validate_scenario_package(const std::filesystem::path &scenario
     }
 
     try {
-        auto world = load_world(package.world_files);
-        auto world_report = validate_world(world);
-        report.warnings.insert(report.warnings.end(), world_report.warnings.begin(),
-                               world_report.warnings.end());
+        load_world(package.world_files, &report.warnings);
     } catch (const std::exception &e) {
         add_error(report, e.what());
     }

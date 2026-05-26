@@ -22,18 +22,9 @@ std::optional<std::string> TokenQueue::try_pop() {
     return token;
 }
 
-void TokenQueue::signal_done() {
-    done_.store(true, std::memory_order_release);
-}
-
-bool TokenQueue::is_done() const {
-    return done_.load(std::memory_order_acquire);
-}
-
 void TokenQueue::reset() {
     std::lock_guard lock(mutex_);
     queue_.clear();
-    done_.store(false, std::memory_order_release);
 }
 
 } // namespace chronicle

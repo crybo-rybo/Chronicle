@@ -19,6 +19,8 @@
 #pragma once
 #include "entities/world.hpp"
 #include <filesystem>
+#include <string>
+#include <vector>
 
 namespace chronicle {
 
@@ -52,9 +54,10 @@ struct WorldFileSet {
 /// @ref validate_world runs before the result is returned.
 ///
 /// @param files Resolved data-file paths for a scenario package.
+/// @param warnings_out Optional output; validation warnings are appended when set.
 /// @return A fully populated and structurally validated world.
 /// @throws std::runtime_error if any file cannot be opened, contains malformed
 ///         JSON, omits required fields, or fails world validation.
-World load_world(const WorldFileSet &files);
+World load_world(const WorldFileSet &files, std::vector<std::string> *warnings_out = nullptr);
 
 } // namespace chronicle

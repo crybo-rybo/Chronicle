@@ -56,4 +56,11 @@ std::variant<MutationRequest, std::string> validate_player_take(const World &wor
 std::variant<MutationRequest, std::string> validate_player_drop(const World &world,
                                                                 std::string_view item_query);
 
+/// @brief Validate a player unlock-exit use command.
+///
+/// @details Requires a carried item whose @c unlock_target matches the locked
+/// exit destination resolved from @p target_query.
+std::variant<MutationRequest, std::string>
+validate_unlock_exit(const World &world, std::string_view item_query, std::string_view target_query);
+
 } // namespace chronicle

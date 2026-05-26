@@ -41,9 +41,11 @@
 #include "persistence/save_system.hpp"
 #include "rendering/renderer.hpp"
 
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
+#include <variant>
 
 namespace chronicle {
 
@@ -143,41 +145,6 @@ class GameEngine {
     /// @return @c true if at least one token was rendered.
     bool drain_token_queue();
 
-    /// @brief Test whether an item is visible in the current location.
-    /// @param item_id The item to check.
-    bool player_can_see_item(const std::string &item_id) const;
-
-    /// @brief Test whether an NPC is present in the current location.
-    /// @param npc_id The NPC to check.
-    bool player_can_see_npc(const std::string &npc_id) const;
-
-    /// @brief Find an NPC in the current location by a partial name match.
-    ///
-    /// @param query Case-insensitive partial name or ID.
-    /// @return The NPC's ID if found, @c std::nullopt otherwise.
-    std::optional<std::string> find_visible_npc_id(const std::string &query) const;
-
-    /// @brief Find an accessible item by a partial name match.
-    ///
-    /// @details Searches the player's inventory first, then the current
-    /// location (skipping hidden items).
-    ///
-    /// @param query Case-insensitive partial name or ID.
-    /// @return The item's ID if found, @c std::nullopt otherwise.
-    std::optional<std::string> find_accessible_item_id(const std::string &query) const;
-
-    /// @brief Find an item in the player's inventory by ID or display name.
-    std::optional<std::string> find_inventory_item_id(const std::string &query) const;
-
-    struct LockedExitMatch {
-        std::string direction;
-        std::string destination_id;
-        std::string destination_name;
-    };
-
-    /// @brief Find a locked exit in the current location matching a target query.
-    std::optional<LockedExitMatch> find_locked_exit_match(const std::string &query) const;
-
     /// @brief Handle `use <item> on/with <target>` for authored unlocks.
     void handle_use(const std::string &item_query, const std::string &target_query);
 
@@ -214,6 +181,10 @@ class GameEngine {
 
     /// Evaluate eligible scripted events after a significant turn.
     void evaluate_scripted_events();
+
+    /// Validate, enqueue, run post-turn, and render success feedback for a player mutation.
+    void run_player_mutation(std::variant<MutationRequest, std::string> result,
+                             std::function<void(const MutationRequest &)> on_success);
 };
 
 } // namespace chronicle

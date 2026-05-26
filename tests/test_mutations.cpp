@@ -72,9 +72,9 @@ TEST_F(MutationsTest, ApplyTakeItemFromPlayer) {
 }
 
 TEST_F(MutationsTest, ApplyUpdateNpcMood) {
-    MutationRequest req{Type::UpdateNpcMood, Source::Npc, "marcus", {{"mood", "happy"}}};
+    MutationRequest req{Type::UpdateNpcMood, Source::Npc, "marcus", {{"mood", "friendly"}}};
     EXPECT_TRUE(apply_mutation(world, req));
-    EXPECT_EQ(world.npcs["marcus"].state.mood, "happy");
+    EXPECT_EQ(world.npcs["marcus"].state.mood, "friendly");
 }
 
 TEST_F(MutationsTest, ApplyUpdateNpcTrust) {

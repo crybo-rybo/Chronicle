@@ -87,9 +87,8 @@ class AgentInterface {
 
     /// @brief Register game tools on the agent for the given NPC context.
     ///
-    /// @details Delegates to @ref ToolRegistry::register_tools, wiring up
-    /// the Zoo-Keeper tool-call callbacks.  Also updates the active NPC ID
-    /// in the registry.
+    /// @details Wires inference tool-call callbacks through the registry.
+    /// Also updates the active NPC ID in the registry.
     ///
     /// @param tool_registry The registry that validates and enqueues mutations.
     /// @param npc_id        The ID of the NPC whose tools should be active.

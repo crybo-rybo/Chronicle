@@ -4,8 +4,9 @@
  */
 
 #include "entities/world_validator.hpp"
-#include "engine/parse_utils.hpp"
+#include "common/parse_utils.hpp"
 #include "entities/clock.hpp"
+#include <algorithm>
 #include <unordered_map>
 
 namespace chronicle {
@@ -103,6 +104,24 @@ ValidationReport validate_world(const World &world) {
             !world.locations.contains(npc.state.current_location)) {
             error("NPC '" + npc_id + "' current_location '" + npc.state.current_location +
                   "' does not exist in world.locations");
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // 5b. NPC current_location must match location.npcs membership
+    // -----------------------------------------------------------------------
+    for (const auto &[npc_id, npc] : world.npcs) {
+        const auto &loc_id = npc.state.current_location;
+        if (loc_id.empty()) {
+            continue;
+        }
+        auto loc_it = world.locations.find(loc_id);
+        if (loc_it == world.locations.end()) {
+            continue;
+        }
+        if (!std::ranges::contains(loc_it->second.npcs, npc_id)) {
+            error("NPC '" + npc_id + "' current_location '" + loc_id +
+                  "' does not list the NPC in location.npcs");
         }
     }
 

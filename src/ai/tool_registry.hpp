@@ -14,8 +14,8 @@
  *    list is drained by @ref GameEngine::process_pending_mutations after
  *    inference completes.
  *
- * 3. **Zoo-Keeper registration** — @ref register_tools wires all game tools
- *    onto a @c zoo::Agent so the LLM can call them during inference.
+ * 3. **Zoo-Keeper registration** — performed by @ref ZooAgentAdapter via a private
+ *    zoo registration hook; not part of the public registry API.
  *
  * ### Tool call flow
  * During inference, the Zoo-Keeper agent invokes registered tool lambdas on the
@@ -42,14 +42,21 @@
 #include <variant>
 #include <vector>
 
+namespace chronicle {
+
+#if CHRONICLE_ENABLE_ZOO
+class ZooAgentAdapter;
 namespace zoo {
 class Agent;
 } // namespace zoo
-
-namespace chronicle {
+#endif
 
 /// @brief Validates proposed NPC tool calls and maintains the pending mutation queue.
 class ToolRegistry {
+#if CHRONICLE_ENABLE_ZOO
+    friend class ZooAgentAdapter;
+#endif
+
   public:
     /// @brief Return type for validate_* methods.
     ///
@@ -225,7 +232,8 @@ class ToolRegistry {
     ///
     /// @param npc_id   ID of the NPC speaking.
     /// @param dialogue The dialogue text.
-    void register_say(const std::string &npc_id, const std::string &dialogue);
+    /// @return Error message on policy failure, otherwise @c std::nullopt.
+    std::optional<std::string> register_say(const std::string &npc_id, const std::string &dialogue);
 
     /// @brief Drain and return all captured dialogue lines.
     ///
@@ -254,11 +262,7 @@ class ToolRegistry {
     /// @brief Clear both the pending mutation queue and the dialogue log.
     void clear_all();
 
-    // -----------------------------------------------------------------------
-    // Zoo-Keeper integration
-    // -----------------------------------------------------------------------
-
-    /// @brief Set the NPC ID used by registered Zoo-Keeper tool lambdas.
+    /// @brief Set the NPC ID used by registered inference tool lambdas.
     ///
     /// @details Tool lambdas capture @c this by pointer and read
     /// @c active_npc_id_ at call time.  This must be set before any tool
@@ -267,18 +271,11 @@ class ToolRegistry {
     /// @param npc_id The active NPC's ID.
     void set_active_npc_id(std::string npc_id);
 
-    /// @brief Register all game tools on a @c zoo::Agent instance.
-    ///
-    /// @details Creates and registers a lambda for each state-changing game tool
-    /// (give_item, take_item, update_mood, update_trust, move_self, reveal_knowledge,
-    /// remember, set_flag).  Each lambda captures @c this by pointer and calls the
-    /// corresponding tool handler or @c register_* method at inference time.
-    ///
-    /// @param agent   The Zoo-Keeper agent to register tools on.
-    /// @param npc_id  The active NPC — forwarded to @ref set_active_npc_id.
-    void register_tools(zoo::Agent &agent, const std::string &npc_id);
-
   private:
+#if CHRONICLE_ENABLE_ZOO
+    /// @brief Register Chronicle tools on a Zoo-Keeper agent (adapter-only).
+    void register_zoo_tools(zoo::Agent &agent, const std::string &npc_id);
+#endif
     const World &world_;                   ///< Read-only world reference used for validation.
     MutationSink sink_;                    ///< External mutation consumer (if set).
     std::vector<MutationRequest> pending_; ///< Fallback queue when no sink is provided.
@@ -287,6 +284,9 @@ class ToolRegistry {
 
     /// @brief Enqueue a mutation via the sink or the internal fallback vector.
     void emit(MutationRequest req);
+
+    /// @brief Apply @ref check_mutation then enqueue when valid.
+    std::optional<std::string> enqueue_if_applicable(MutationRequest req);
 
     /// @brief Format an item's details for tool results.
     ///

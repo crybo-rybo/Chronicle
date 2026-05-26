@@ -19,7 +19,7 @@ if(CHRONICLE_ENABLE_ZOO AND CHRONICLE_ENABLE_LOGGING AND CHRONICLE_ENABLE_ZOO_LO
     set(ZOO_ENABLE_LOGGING ON CACHE BOOL "Enable Zoo-Keeper debug logging to stderr" FORCE)
 endif()
 
-# nlohmann/json — fetched before Zoo-Keeper so chronicle_domain can link it
+# nlohmann/json — fetched before Zoo-Keeper so chronicle_world/scenario can link it
 # without pulling the full LLM stack.  Zoo-Keeper's FetchDependencies.cmake
 # uses the same FetchContent name ("json"), so this satisfies both.
 include(FetchContent)
