@@ -78,9 +78,8 @@ struct Config {
     /// period forward (e.g. Morning → Afternoon).
     int turns_per_period = 5;
 
-    /// @brief Total time periods before the resolution event fires.  Default: 12.
-    ///
-    /// Twelve periods corresponds to three full days (4 periods/day).
+    /// @brief Total time periods before the runtime triggers a generic time-expired
+    /// ending when no authored @c end_game event fires first.  Default: 12.
     int total_periods = 12;
 
     /// @brief Token budget allocated to the NPC memory section of the system prompt.  Default: 800.

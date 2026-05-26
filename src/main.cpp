@@ -1,20 +1,18 @@
 /**
  * @file main.cpp
  * @brief Entry point for the Chronicle scenario runtime.
- *
- * @details Bootstraps the runtime and launches the @ref GameEngine.
- * Scenario packages are loaded from @c scenario.json manifests.  If the
- * manifest, config, or world data is missing or malformed, the error is
- * reported and the process exits with a non-zero status.
  */
 
 #include "diagnostics/logger.hpp"
 #include "engine/cli.hpp"
 #include "engine/game_engine.hpp"
+#include "entities/cartridge_archive.hpp"
+#include "entities/cartridge_library.hpp"
 #include "entities/config.hpp"
 #include "entities/scenario.hpp"
 #include "rendering/terminal_renderer.hpp"
 #include <exception>
+#include <filesystem>
 #include <iostream>
 #include <string>
 #include <utility>
@@ -71,6 +69,33 @@ void print_scenario_inspection(const chronicle::ScenarioPackage &package,
     }
 }
 
+void print_cartridge_library() {
+    const auto cartridges = chronicle::list_cartridges();
+    if (cartridges.empty()) {
+        std::cout << "No cartridges found in library roots.\n";
+        std::cout << "Install one with: chronicle install <path.chronicle|dir>\n";
+        return;
+    }
+
+    std::cout << "Installed cartridges:\n";
+    for (const auto &entry : cartridges) {
+        std::cout << "  " << entry.id << " — " << entry.name << " (v" << entry.version << ")\n";
+        auto description = entry.metadata.find("description");
+        if (description != entry.metadata.end()) {
+            std::cout << "    " << description->second << "\n";
+        }
+        std::cout << "    " << entry.root_dir.string() << "\n";
+    }
+}
+
+std::vector<std::filesystem::path>
+extra_library_roots(const chronicle::CliOptions &options) {
+    if (options.library_root) {
+        return {*options.library_root};
+    }
+    return {};
+}
+
 } // namespace
 
 int main(int argc, char **argv) {
@@ -93,10 +118,48 @@ int main(int argc, char **argv) {
             return 0;
         }
 
+        if (options.mode == chronicle::CliMode::List) {
+            print_cartridge_library();
+            return 0;
+        }
+
+        if (options.mode == chronicle::CliMode::Install) {
+            const auto library_root = options.library_root.value_or(
+                std::filesystem::path(std::getenv("HOME") ? std::getenv("HOME") : ".") /
+                ".chronicle" / "cartridges");
+            auto package =
+                chronicle::install_cartridge(options.install_source, library_root);
+            std::cout << "Installed cartridge '" << package.manifest.id << "' to "
+                      << package.root_dir.string() << "\n";
+            return 0;
+        }
+
+        if (options.mode == chronicle::CliMode::Pack) {
+            chronicle::pack_cartridge(options.scenario_dir, options.pack_output);
+            std::cout << "Packed cartridge from " << options.scenario_dir;
+            if (!options.pack_output.empty()) {
+                std::cout << " to " << options.pack_output;
+            }
+            std::cout << "\n";
+            return 0;
+        }
+
+        std::filesystem::path scenario_dir = options.scenario_dir;
+        if (options.cartridge_id) {
+            auto resolved =
+                chronicle::resolve_cartridge_path(*options.cartridge_id, extra_library_roots(options));
+            if (!resolved) {
+                std::cerr << "Error: cartridge '" << *options.cartridge_id
+                          << "' was not found in the library.\n";
+                return 1;
+            }
+            scenario_dir = *resolved;
+        }
+
         if (options.mode == chronicle::CliMode::Inspect) {
             try {
-                auto package = chronicle::load_scenario_package(options.scenario_dir);
-                auto report = chronicle::validate_scenario_package(options.scenario_dir);
+                auto package = chronicle::load_scenario_package(scenario_dir);
+                auto report = chronicle::validate_scenario_package(scenario_dir);
                 print_scenario_inspection(package, report);
                 return report.ok ? 0 : 1;
             } catch (const std::exception &e) {
@@ -106,7 +169,7 @@ int main(int argc, char **argv) {
         }
 
         if (options.mode == chronicle::CliMode::Validate) {
-            auto report = chronicle::validate_scenario_package(options.scenario_dir);
+            auto report = chronicle::validate_scenario_package(scenario_dir);
             for (const auto &warning : report.warnings) {
                 std::cerr << "Warning: " << warning << "\n";
             }
@@ -116,15 +179,15 @@ int main(int argc, char **argv) {
                 }
                 return 1;
             }
-            std::cout << "Scenario package is valid: " << options.scenario_dir << "\n";
+            std::cout << "Scenario package is valid: " << scenario_dir << "\n";
             return 0;
         }
 
-        auto package = chronicle::load_scenario_package(options.scenario_dir);
+        auto package = chronicle::load_scenario_package(scenario_dir);
         auto config = chronicle::Config::load_with_operator_overrides(package.config_path);
         chronicle::GameEngine engine(
             std::move(config), package.config_path.string(), package.world_files,
-            std::make_unique<chronicle::TerminalRenderer>());
+            std::make_unique<chronicle::TerminalRenderer>(), nullptr, package.manifest);
         engine.run();
     } catch (const std::exception &e) {
         std::cerr << "Fatal error: " << e.what() << "\n";

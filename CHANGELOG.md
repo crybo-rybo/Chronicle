@@ -2,6 +2,22 @@
 
 All notable changes to Chronicle are documented here.
 
+## Unreleased
+
+### Added
+
+- Cartridge library commands: `chronicle list`, `chronicle run <id>`, `chronicle install`, and `chronicle pack`.
+- `.chronicle` gzip-compressed tar cartridge archives for distribution.
+- Cartridge-bound save slots under `saves/<scenario_id>/` with metadata validation on load.
+- [`docs/console-api.md`](docs/console-api.md) catalog of player commands, NPC tools, events, and mutations.
+- [`docs/schema-v2-mechanics.md`](docs/schema-v2-mechanics.md) design draft for the next schema expansion.
+
+### Changed
+
+- `facts.revealed_by_default` now seeds the player's `known_facts` at world load.
+- `config.total_periods` now triggers a generic time-expired ending when the clock reaches the final period.
+- Public schema documents `verb_aliases` in `config.json`.
+
 ## v1.0.0 - 2026-05-08
 
 ### Added

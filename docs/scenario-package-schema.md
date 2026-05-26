@@ -5,6 +5,10 @@ contract. The stable public surface is the CLI plus the files described here:
 
 ```text
 chronicle [--scenario <dir>]
+chronicle run <cartridge-id>
+chronicle list
+chronicle install <path.chronicle|dir> [--library <dir>]
+chronicle pack --scenario <dir> [--output <path.chronicle>]
 chronicle inspect --scenario <dir>
 chronicle validate --scenario <dir>
 ```
@@ -14,6 +18,22 @@ JSON Schema files in [`schemas/`](../schemas) provide machine-readable editor
 support; this document explains the same author-facing contract in prose.
 In product terms, Chronicle is the console/runtime and each scenario package is
 a cartridge.
+
+## Cartridge Library
+
+Installed cartridges are discovered from, in order:
+
+1. `CHRONICLE_LIBRARY_PATH` (platform path separator)
+2. `~/.chronicle/cartridges`
+3. `./cartridges`
+
+Use `chronicle list` to inspect installed titles and `chronicle run <id>` to
+launch by manifest id. Creators can distribute directory cartridges or packed
+`.chronicle` archives (`chronicle pack` / `chronicle install`).
+
+Save files for a running cartridge are stored under `saves/<scenario_id>/slot_N.json`
+and include cartridge metadata. Loading a save from a different cartridge id is
+rejected.
 
 ## Package Rules
 
@@ -117,7 +137,7 @@ Optional/defaulted fields:
 | `max_response_tokens` | integer | `512` | Maximum generated tokens per response. |
 | `inference_timeout_ms` | integer | `120000` | Maximum wall-clock time for one model request. `0` disables timeout cancellation for debugging. |
 | `turns_per_period` | integer | `5` | Significant actions per time-period transition. |
-| `total_periods` | integer | `12` | Authored pacing value available to runtime logic. |
+| `total_periods` | integer | `12` | When the in-game clock reaches this many elapsed periods without an authored `end_game` event, the runtime ends the scenario with a generic time-expired message. |
 | `max_memory_tokens` | integer | `800` | Prompt budget for NPC memories. |
 | `max_world_tokens` | integer | `400` | Prompt budget for world context. |
 | `max_history_tokens` | integer | `600` | Prompt budget for conversation history. |
@@ -125,6 +145,7 @@ Optional/defaulted fields:
 | `use_tui` | boolean | `false` | Plain terminal renderer remains the v1 baseline. |
 | `use_color` | boolean | `true` | Enables ANSI color where the renderer supports it. |
 | `max_tool_iterations` | integer | `5` | Maximum tool-call loop iterations per model request. |
+| `verb_aliases` | object | `{}` | Maps shorthand input to full player commands, e.g. `"n": "go north"`. See [`docs/console-api.md`](console-api.md). |
 | `mutation_narration_templates` | object | built-in map | String templates keyed by mutation names. Empty strings suppress narration. |
 
 Validation behavior: malformed JSON or invalid field types fail when the
@@ -323,7 +344,7 @@ Fact fields:
 | --- | --- | --- |
 | `text` | yes | Prompt text shown when an NPC knows or reveals the fact. |
 | `category` | yes | Authoring label such as `clue`, `backstory`, or `rumor`. |
-| `revealed_by_default` | yes | Stored with the fact. The current runtime does not automatically add it to player known facts. |
+| `revealed_by_default` | yes | When `true`, the fact is added to the player's `known_facts` during world load. |
 
 ID and cross-reference rules: fact IDs referenced by NPC knowledge, NPC policy,
 or event/tool behavior must be keys in this file.

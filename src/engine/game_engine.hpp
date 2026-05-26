@@ -36,6 +36,7 @@
 #include "engine/mutation_request.hpp"
 #include "engine/token_queue.hpp"
 #include "entities/config.hpp"
+#include "entities/scenario.hpp"
 #include "entities/world.hpp"
 #include "entities/world_loader.hpp"
 #include "persistence/save_system.hpp"
@@ -58,15 +59,14 @@ class GameEngine {
     /// @brief Construct from explicit scenario world file paths.
     GameEngine(const std::string &config_path, const WorldFileSet &world_files,
                std::unique_ptr<Renderer> renderer,
-               std::unique_ptr<NpcAgentPool> agent_pool = nullptr);
+               std::unique_ptr<NpcAgentPool> agent_pool = nullptr,
+               std::optional<ScenarioManifest> manifest = std::nullopt);
 
     /// @brief Construct from a pre-resolved runtime config and scenario file paths.
-    ///
-    /// @details The config path is still provided so @ref CommandParser can
-    /// load authored verb aliases from the scenario package config file.
     GameEngine(Config config, const std::string &config_path, const WorldFileSet &world_files,
                std::unique_ptr<Renderer> renderer,
-               std::unique_ptr<NpcAgentPool> agent_pool = nullptr);
+               std::unique_ptr<NpcAgentPool> agent_pool = nullptr,
+               std::optional<ScenarioManifest> manifest = std::nullopt);
 
     /// @brief Run the game until the player quits or the game ends.
     ///
@@ -116,6 +116,7 @@ class GameEngine {
     World world_;                        ///< Authoritative game state.
     CommandParser parser_;               ///< Input parser (phase-aware).
     std::unique_ptr<Renderer> renderer_; ///< Output renderer.
+    std::optional<ScenarioManifest> manifest_; ///< Active cartridge manifest, when known.
     SaveSystem save_system_;             ///< Save/load manager.
     TokenQueue token_queue_;             ///< Streaming token bridge.
 

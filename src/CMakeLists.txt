@@ -31,6 +31,8 @@ target_compile_options(chronicle_world PRIVATE ${CHRONICLE_WARNING_FLAGS})
 
 # chronicle_scenario — cartridge I/O, config, loading, and validation
 set(SCENARIO_SOURCES
+    entities/cartridge_archive.cpp
+    entities/cartridge_library.cpp
     entities/config.cpp
     entities/scenario.cpp
     entities/world_loader.cpp

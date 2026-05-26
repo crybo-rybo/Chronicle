@@ -162,3 +162,55 @@ TEST_F(SaveSystemTest, SchemaVersionInSaveData) {
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result->schema_version, SaveData::kCurrentSchemaVersion);
 }
+
+TEST_F(SaveSystemTest, CartridgeBindingNamespacesSlots) {
+    CartridgeBinding binding{
+        .scenario_id = "demo_game",
+        .scenario_version = "1.0.0",
+        .chronicle_schema_version = 1,
+    };
+    SaveSystem bound_save(test_dir_ / "saves", binding);
+
+    auto world = make_test_world();
+    bound_save.save(world, 2);
+
+    EXPECT_TRUE(std::filesystem::exists(test_dir_ / "saves/demo_game/slot_2.json"));
+    EXPECT_FALSE(std::filesystem::exists(test_dir_ / "saves/slot_2.json"));
+}
+
+TEST_F(SaveSystemTest, LoadRejectsMismatchedCartridge) {
+    CartridgeBinding binding{
+        .scenario_id = "demo_game",
+        .scenario_version = "1.0.0",
+        .chronicle_schema_version = 1,
+    };
+    SaveSystem bound_save(test_dir_ / "saves", binding);
+
+    auto world = make_test_world();
+    bound_save.save(world, 1);
+
+    CartridgeBinding other{
+        .scenario_id = "other_game",
+        .scenario_version = "1.0.0",
+        .chronicle_schema_version = 1,
+    };
+    SaveSystem other_save(test_dir_ / "saves", other);
+    EXPECT_FALSE(other_save.load(1).has_value());
+}
+
+TEST_F(SaveSystemTest, SaveMetadataIncludesCartridgeIdentity) {
+    CartridgeBinding binding{
+        .scenario_id = "demo_game",
+        .scenario_version = "1.0.0",
+        .chronicle_schema_version = 1,
+    };
+    SaveSystem bound_save(test_dir_ / "saves", binding);
+
+    auto world = make_test_world();
+    bound_save.save(world, 1);
+
+    auto result = bound_save.load(1);
+    ASSERT_TRUE(result.has_value());
+    ASSERT_TRUE(result->cartridge.has_value());
+    EXPECT_EQ(result->cartridge->scenario_id, "demo_game");
+}

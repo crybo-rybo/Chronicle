@@ -124,8 +124,9 @@ should stay portable.
 **Authored fields** — committed with the package:
 
 - `turns_per_period` (int): player actions per in-game time period.
-- `total_periods` (int): time periods before resolution fires (`12` =
-  three days at four periods each).
+- `total_periods` (int): when the clock reaches this many elapsed periods
+  without an authored `end_game` event, the runtime ends the scenario with a
+  generic time-expired message (`12` = three days at four periods each).
 - `max_response_tokens`, `context_size`, `temperature`: model prompt and
   sampling budgets.
 - `inference_timeout_ms` (int, default `120000`): wall-clock timeout for one
@@ -410,9 +411,8 @@ mutate at runtime.
   fact.
 - `category`: authoring label (`"backstory"`, `"clue"`, `"rumor"`...). The
   runtime preserves the field but does not currently branch on it.
-- `revealed_by_default`: schema field reserved for future automatic
-  prepopulation of the player's known-facts list. Stored but not yet acted
-  on.
+- `revealed_by_default`: when `true`, the fact is added to the player's
+  `known_facts` during world load.
 
 Authoring rule: every fact ID listed in any NPC's `knowledge` or any
 `tool_policy.allowed_facts` must exist in `facts.json`.

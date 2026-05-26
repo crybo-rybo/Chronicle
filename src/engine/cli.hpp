@@ -3,19 +3,14 @@
  * @brief Command-line parsing for the Chronicle scenario runtime.
  *
  * @details The CLI is part of Chronicle's v1 public contract.  Supported forms
- * are:
- * @code
- * chronicle [--scenario <dir>]
- * chronicle inspect --scenario <dir>
- * chronicle validate --scenario <dir>
- * chronicle --help
- * @endcode
- * If no scenario is provided, the bundled @c data package is used.
+ * include cartridge library management (@c list, @c run, @c install, @c pack)
+ * and creator validation tools (@c inspect, @c validate).
  */
 
 #pragma once
 
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <variant>
 #include <vector>
@@ -27,30 +22,33 @@ enum class CliMode {
     Run,      ///< Load the scenario and start the interactive game loop.
     Inspect,  ///< Print scenario package identity and validation readiness.
     Validate, ///< Validate the scenario package and exit without starting play.
+    List,     ///< List cartridges discovered in library roots.
+    Install,  ///< Install a cartridge archive or directory into the library.
+    Pack,     ///< Validate and pack a cartridge directory into a .chronicle archive.
     Help      ///< Print usage text and exit successfully.
 };
 
 /// @brief Parsed command-line options used by @c main.cpp.
 struct CliOptions {
-    /// Requested process mode.  Defaults to @ref CliMode::Run.
     CliMode mode = CliMode::Run;
 
-    /// Scenario package directory.  Defaults to bundled sample package @c data.
+    /// Scenario package directory or manifest ID for run/inspect/validate/pack.
     std::filesystem::path scenario_dir = "data";
+
+    /// Cartridge ID for @ref CliMode::Run when launching from the library.
+    std::optional<std::string> cartridge_id;
+
+    /// Source archive or directory for @ref CliMode::Install.
+    std::filesystem::path install_source;
+
+    /// Output archive path for @ref CliMode::Pack.
+    std::filesystem::path pack_output;
+
+    /// Optional library root override for install/list/run resolution.
+    std::optional<std::filesystem::path> library_root;
 };
 
-/// @brief Parse process arguments into strongly typed CLI options.
-///
-/// @details Expects @p args to exclude the executable name.  Returns
-/// @ref CliOptions on success or a ready-to-print error string that includes
-/// usage text on failure.  Parsing is intentionally model-free and does not
-/// check whether the scenario path exists.
-///
-/// @param args Command-line tokens after @c argv[0].
-/// @return Parsed options, or an error/usage string.
 std::variant<CliOptions, std::string> parse_cli_args(const std::vector<std::string> &args);
-
-/// @brief Return the stable command-line usage text.
 std::string cli_usage();
 
 } // namespace chronicle

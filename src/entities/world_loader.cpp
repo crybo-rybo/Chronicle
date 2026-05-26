@@ -113,6 +113,12 @@ World load_world(const WorldFileSet &files, std::vector<std::string> *warnings_o
         }
     }
 
+    for (const auto &[fact_id, fact] : world.facts) {
+        if (fact.revealed_by_default && !world.player.knows_fact(fact_id)) {
+            world.player.known_facts.push_back(fact_id);
+        }
+    }
+
     // -----------------------------------------------------------------------
     // 4. Parse npcs.json — NPCs and cross-reference with locations
     // -----------------------------------------------------------------------

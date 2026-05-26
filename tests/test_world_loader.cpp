@@ -86,6 +86,19 @@ TEST(WorldLoaderTest, ClockInitializedToDefaults) {
     EXPECT_EQ(world.clock.period, TimePeriod::Morning);
 }
 
+TEST(WorldLoaderTest, RevealedByDefaultAddsKnownFacts) {
+    auto root = std::filesystem::path(FIXTURES_DIR);
+    WorldFileSet files{.world = root / "world.json",
+                       .npcs = root / "npcs.json",
+                       .facts = root / "facts_revealed.json",
+                       .flags = root / "flags.json",
+                       .events = root / "events.json"};
+
+    auto world = load_world(files);
+    EXPECT_TRUE(world.player.knows_fact("fact_public"));
+    EXPECT_FALSE(world.player.knows_fact("fact_test"));
+}
+
 // ---------------------------------------------------------------------------
 // Error handling
 // ---------------------------------------------------------------------------
