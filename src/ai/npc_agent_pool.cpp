@@ -15,7 +15,9 @@
 
 #if CHRONICLE_ENABLE_ZOO
 #include "ai/zoo_agent_adapter.hpp"
+#include <nlohmann/json.hpp>
 #include <zoo/agent.hpp>
+#include <zoo/core/json.hpp>
 #include <zoo/log.hpp>
 #endif
 
@@ -51,6 +53,20 @@ void install_zoo_log_bridge_if_enabled() {
     zoo::set_log_callback(zoo_log_bridge);
     installed = true;
     logging::write(logging::Level::Info, "zoo", "installed Zoo-Keeper log bridge");
+}
+
+zoo::Expected<zoo::ModelConfig> build_model_config(const Config &config) {
+    nlohmann::json model_json{
+        {"model_path", config.model_path},
+        {"context_size", config.context_size},
+    };
+    if (config.auto_configure) {
+        model_json["auto_configure"] = true;
+    }
+    if (config.n_gpu_layers != -1) {
+        model_json["n_gpu_layers"] = config.n_gpu_layers;
+    }
+    return zoo::load_model_config(model_json);
 }
 
 } // namespace
@@ -106,6 +122,7 @@ NpcAgentPool NpcAgentPool::from_config(const Config &config) {
     install_zoo_log_bridge_if_enabled();
     logging::write(logging::Level::Info, "ai",
                    "creating zoo agent model_path=" + config.model_path +
+                       " auto_configure=" + (config.auto_configure ? "true" : "false") +
                        " context_size=" + std::to_string(config.context_size) +
                        " n_gpu_layers=" + std::to_string(config.n_gpu_layers) +
                        " max_response_tokens=" + std::to_string(config.max_response_tokens) +
@@ -113,20 +130,23 @@ NpcAgentPool NpcAgentPool::from_config(const Config &config) {
                        " max_tool_iterations=" + std::to_string(config.max_tool_iterations) +
                        " inference_timeout_ms=" + std::to_string(config.inference_timeout_ms));
 
-    zoo::ModelConfig model_config{
-        .model_path = config.model_path,
-        .context_size = config.context_size,
-        .n_gpu_layers = config.n_gpu_layers,
-    };
+    auto model_result = build_model_config(config);
+    if (!model_result) {
+        logging::write(logging::Level::Error, "ai",
+                       "zoo::load_model_config failed: " + model_result.error().to_string());
+        throw std::runtime_error("NpcAgentPool::from_config: failed to resolve model config: " +
+                                 model_result.error().to_string());
+    }
 
     zoo::GenerationOptions gen_opts;
     gen_opts.sampling.temperature = static_cast<float>(config.temperature);
     gen_opts.max_tokens = config.max_response_tokens;
+    gen_opts.record_tool_trace = logging::is_enabled();
 
     zoo::AgentConfig agent_config;
     agent_config.max_tool_iterations = config.max_tool_iterations;
 
-    auto result = zoo::Agent::create(model_config, agent_config, gen_opts);
+    auto result = zoo::Agent::create(*model_result, agent_config, gen_opts);
     if (!result) {
         logging::write(logging::Level::Error, "ai",
                        "zoo::Agent::create failed: " + result.error().to_string());

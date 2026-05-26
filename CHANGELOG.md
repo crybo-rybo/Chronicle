@@ -17,6 +17,10 @@ All notable changes to Chronicle are documented here.
 - `facts.revealed_by_default` now seeds the player's `known_facts` at world load.
 - `config.total_periods` now triggers a generic time-expired ending when the clock reaches the final period.
 - Public schema documents `verb_aliases` in `config.json`.
+- Bumped Zoo-Keeper dependency from v1.1.4 to v1.1.6 (llama.cpp b9296).
+- Agent command calls now use Zoo-Keeper `try_*` / `Expected<T>` APIs instead of removed void helpers.
+- Optional `auto_configure` in `config.json` enables hardware-aware model loading via `zoo::load_model_config()`.
+- Diagnostic logging enables Zoo-Keeper per-call tool trace capture when Chronicle logging is on.
 
 ## v1.0.0 - 2026-05-08
 
