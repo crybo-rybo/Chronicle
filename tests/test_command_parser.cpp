@@ -171,7 +171,7 @@ TEST(CommandParserTest, AliasQuestionMark) {
 TEST(CommandParserTest, LoadsAliasesFromConfigFile) {
     auto config_path = write_command_config(R"({
         "verb_aliases": {
-            "inventory": ["bag"]
+            "bag": "inventory"
         }
     })");
 
@@ -182,10 +182,37 @@ TEST(CommandParserTest, LoadsAliasesFromConfigFile) {
     std::filesystem::remove(config_path);
 }
 
+TEST(CommandParserTest, LoadsStringCommandAliasesFromConfigFile) {
+    auto config_path = write_command_config(R"({
+        "verb_aliases": {
+            "dock": "go north",
+            "kit": "inventory",
+            "unlock hatch": "use brass key on hatch"
+        }
+    })");
+
+    CommandParser parser(config_path);
+
+    auto move = parser.parse("dock", Phase::Playing);
+    EXPECT_EQ(move.verb, CommandVerb::Go);
+    EXPECT_EQ(move.primary_arg, "north");
+    EXPECT_EQ(move.raw_input, "dock");
+
+    auto inventory = parser.parse("kit", Phase::Playing);
+    EXPECT_EQ(inventory.verb, CommandVerb::Inventory);
+
+    auto use = parser.parse("unlock hatch", Phase::Playing);
+    EXPECT_EQ(use.verb, CommandVerb::Use);
+    EXPECT_EQ(use.primary_arg, "brass key");
+    EXPECT_EQ(use.secondary_arg, "hatch");
+
+    std::filesystem::remove(config_path);
+}
+
 TEST(CommandParserTest, PartialConfigPreservesDefaults) {
     auto config_path = write_command_config(R"({
         "verb_aliases": {
-            "inventory": ["bag"]
+            "bag": "inventory"
         }
     })");
 
@@ -224,7 +251,7 @@ TEST(CommandParserTest, MissingConfigFallsBackToBuiltInAliases) {
 TEST(CommandParserTest, InConversationConfigAliasCanBeHardCommand) {
     auto config_path = write_command_config(R"({
         "verb_aliases": {
-            "inventory": ["bag"]
+            "bag": "inventory"
         }
     })");
 

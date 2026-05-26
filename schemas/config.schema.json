@@ -44,7 +44,8 @@
     "total_periods": {
       "type": "integer",
       "minimum": 1,
-      "default": 12
+      "default": 12,
+      "description": "Total time periods before the runtime triggers a generic time-expired ending when no authored end_game event fires first."
     },
     "max_memory_tokens": {
       "type": "integer",
@@ -77,6 +78,11 @@
       "type": "integer",
       "minimum": 1,
       "default": 5
+    },
+    "verb_aliases": {
+      "type": "object",
+      "description": "Maps shorthand player input to full command strings, e.g. {\"n\": \"go north\"}.",
+      "additionalProperties": { "type": "string" }
     },
     "mutation_narration_templates": {
       "type": "object",

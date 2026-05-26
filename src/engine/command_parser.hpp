@@ -98,6 +98,13 @@ class CommandParser {
     /// Verb lookup table: lowercase alias → @ref CommandVerb.
     std::unordered_map<std::string, CommandVerb> verb_table_;
 
+    /// Exact input aliases expanded to full command text before verb parsing.
+    std::unordered_map<std::string, std::string> command_aliases_;
+
+    /// Parse after optionally expanding exact command aliases.
+    ParsedCommand parse_internal(const std::string &input, GamePhase phase,
+                                 const std::string &raw_input, bool expand_aliases) const;
+
     /// @brief Parse the argument string following a @c "use" verb.
     ///
     /// @details Splits the arguments on @c " on " or @c " with " to extract

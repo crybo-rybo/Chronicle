@@ -9,10 +9,12 @@ world, cast, facts, flags, events, and runtime defaults.
 
 The stable v1 public contract is deliberately narrow:
 
-- CLI runner: `chronicle [--scenario <dir>]`
+- CLI runner: `chronicle [--scenario <dir>]`, `chronicle run <id>`, `chronicle list`
+- CLI library: `chronicle install <path>`, `chronicle pack --scenario <dir>`
 - CLI inspector: `chronicle inspect --scenario <dir>`
 - CLI validator: `chronicle validate --scenario <dir>`
 - JSON scenario package schema and validation behavior
+- Console mechanics catalog: [`docs/console-api.md`](docs/console-api.md)
 
 The bundled `data/` directory is a sample cartridge and contract fixture, not
 the product itself. C++ headers, source layout, and library boundaries are
@@ -79,6 +81,15 @@ Validate a scenario package without starting play:
 ./build/src/chronicle validate --scenario data
 ./build/src/chronicle validate --scenario examples/minimal_scenario
 ./build/src/chronicle validate --scenario examples/lighthouse_veil
+```
+
+Manage the cartridge library:
+
+```bash
+./build/src/chronicle list
+./build/src/chronicle install examples/minimal_scenario
+./build/src/chronicle run minimal_scenario
+./build/src/chronicle pack --scenario examples/minimal_scenario --output /tmp/minimal.chronicle
 ```
 
 Once the runtime starts, type `help` for the in-game command list.
@@ -167,7 +178,7 @@ NPCs may declare per-character tool policies in `npcs.json`. `allowed_tools` is 
 
 Supported NPC tools: `say`, `give_item`, `take_item`, `update_mood`, `update_trust`, `move_self`, `reveal_knowledge`, `remember`, `set_flag`, `inspect_item`.
 
-For the field-by-field package reference, see [`docs/scenario-package-schema.md`](docs/scenario-package-schema.md). For authoring guidance, see [`docs/scenario-authoring-guide.md`](docs/scenario-authoring-guide.md). JSON Schema files for editor integration live under [`schemas/`](schemas).
+For the field-by-field package reference, see [`docs/scenario-package-schema.md`](docs/scenario-package-schema.md). For authoring guidance, see [`docs/scenario-authoring-guide.md`](docs/scenario-authoring-guide.md). For the runtime mechanics catalog, see [`docs/console-api.md`](docs/console-api.md). JSON Schema files for editor integration live under [`schemas/`](schemas).
 
 ## Testing
 

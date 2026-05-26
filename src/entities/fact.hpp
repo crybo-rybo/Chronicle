@@ -33,10 +33,8 @@ struct Fact {
     /// Creator-defined grouping label, such as @c "backstory" or @c "clue".
     std::string category;
 
-    /// @brief Whether the author marks the fact as initially public knowledge.
-    ///
-    /// @details The runtime preserves this schema field, but currently does
-    /// not automatically copy default-revealed facts into @ref Player::known_facts.
+    /// @details The runtime preserves this schema field and, during world load,
+    /// copies default-revealed facts into @ref Player::known_facts.
     bool revealed_by_default = false;
 };
 

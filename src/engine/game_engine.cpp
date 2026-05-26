@@ -165,16 +165,26 @@ std::string format_params(const std::map<std::string, std::string> &params) {
 } // namespace
 
 GameEngine::GameEngine(const std::string &config_path, const WorldFileSet &world_files,
-                       std::unique_ptr<Renderer> renderer, std::unique_ptr<NpcAgentPool> agent_pool)
+                       std::unique_ptr<Renderer> renderer,
+                       std::unique_ptr<NpcAgentPool> agent_pool,
+                       std::optional<ScenarioManifest> manifest)
     : GameEngine(Config::load(config_path), config_path, world_files, std::move(renderer),
-                 std::move(agent_pool)) {}
+                 std::move(agent_pool), std::move(manifest)) {}
 
 GameEngine::GameEngine(Config config, const std::string &config_path,
                        const WorldFileSet &world_files, std::unique_ptr<Renderer> renderer,
-                       std::unique_ptr<NpcAgentPool> agent_pool)
+                       std::unique_ptr<NpcAgentPool> agent_pool,
+                       std::optional<ScenarioManifest> manifest)
     : config_(std::move(config)), world_(load_world(world_files)), parser_(config_path),
-      renderer_(std::move(renderer)),
-      save_system_(config_.save_directory.empty() ? "saves" : config_.save_directory),
+      renderer_(std::move(renderer)), manifest_(std::move(manifest)),
+      save_system_(config_.save_directory.empty() ? "saves" : config_.save_directory,
+                   manifest_.has_value()
+                       ? std::optional<CartridgeBinding>{CartridgeBinding{
+                             .scenario_id = manifest_->id,
+                             .scenario_version = manifest_->version,
+                             .chronicle_schema_version = manifest_->chronicle_schema_version,
+                         }}
+                       : std::nullopt),
       agent_pool_(std::move(agent_pool)) {
 
     logging::write(logging::Level::Info, "engine",
@@ -388,7 +398,9 @@ void GameEngine::handle_command(const ParsedCommand &cmd) {
         }
         auto save_data = save_system_.load(*slot);
         if (!save_data) {
-            renderer_->render_error("No valid save found in slot " + std::to_string(*slot) + ".");
+            renderer_->render_error(
+                "No valid save found in slot " + std::to_string(*slot) +
+                (manifest_ ? " for cartridge '" + manifest_->id + "'." : "."));
             return;
         }
         auto validation = validate_world(save_data->world);
@@ -511,6 +523,13 @@ void GameEngine::evaluate_scripted_events() {
     const auto result = chronicle::evaluate_scripted_events(world_, sink);
     if (result.ended_game) {
         phase_ = GamePhase::GameOver;
+        return;
+    }
+
+    if (phase_ != GamePhase::GameOver &&
+        world_.clock.is_final_period(config_.total_periods)) {
+        phase_ = GamePhase::GameOver;
+        renderer_->render_resolution("Time has run out.");
     }
 }
 
