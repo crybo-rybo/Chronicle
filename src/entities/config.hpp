@@ -115,6 +115,14 @@ struct Config {
     /// default so existing configs with no explicit value are unaffected).
     int max_tool_iterations = 5;
 
+    /// @brief When @c true, derive model load settings from the GGUF file and host
+    /// hardware via @c zoo::load_model_config() before applying explicit overrides.
+    ///
+    /// @details Explicit @c context_size and @c n_gpu_layers values in this config
+    /// still override auto-derived defaults.  Leave @c n_gpu_layers at @c -1 to let
+    /// auto-configuration choose GPU offload depth.
+    bool auto_configure = false;
+
     /// @brief Templates for narrating NPC mutation events to the player.
     ///
     /// Keys correspond to @ref MutationRequest::Type string representations
@@ -163,7 +171,7 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Config, model_path, context_size
                                                 total_periods, max_memory_tokens, max_world_tokens,
                                                 max_history_tokens, save_directory, use_tui,
                                                 use_color, mutation_narration_templates,
-                                                max_tool_iterations)
+                                                max_tool_iterations, auto_configure)
 /// @endcond
 
 } // namespace chronicle

@@ -34,7 +34,7 @@ if(CHRONICLE_ENABLE_ZOO)
     FetchContent_Declare(
         zoo-keeper
         GIT_REPOSITORY https://github.com/crybo-rybo/zoo-keeper.git
-        GIT_TAG v1.1.4
+        GIT_TAG v1.1.6
     )
     FetchContent_MakeAvailable(zoo-keeper)
 endif()
@@ -51,7 +51,7 @@ endif()
 
 # Development tools (smoke tests, benchmarks)
 option(CHRONICLE_BUILD_TOOLS "Build development tools" OFF)
-if(CHRONICLE_BUILD_TOOLS)
+if(CHRONICLE_BUILD_TOOLS AND CHRONICLE_ENABLE_ZOO)
     add_subdirectory(tools)
 endif()
 

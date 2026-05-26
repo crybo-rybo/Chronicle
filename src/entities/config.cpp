@@ -110,6 +110,7 @@ void apply_config_json_overrides(Config &config, const nlohmann::json &json,
     apply_json_field(json, "use_tui", config.use_tui, source);
     apply_json_field(json, "use_color", config.use_color, source);
     apply_json_field(json, "max_tool_iterations", config.max_tool_iterations, source);
+    apply_json_field(json, "auto_configure", config.auto_configure, source);
 
     if (json.contains("mutation_narration_templates")) {
         const auto &templates = json.at("mutation_narration_templates");
@@ -164,6 +165,7 @@ void apply_environment_overrides(Config &config) {
     apply_env_bool("CHRONICLE_USE_TUI", config.use_tui);
     apply_env_bool("CHRONICLE_USE_COLOR", config.use_color);
     apply_env_int("CHRONICLE_MAX_TOOL_ITERATIONS", config.max_tool_iterations);
+    apply_env_bool("CHRONICLE_AUTO_CONFIGURE", config.auto_configure);
 }
 
 } // namespace

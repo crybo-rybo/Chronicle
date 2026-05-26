@@ -13,13 +13,14 @@
 namespace chronicle {
 namespace {
 
-constexpr std::array<const char *, 12> kOperatorEnvNames = {
+constexpr std::array<const char *, 13> kOperatorEnvNames = {
     "CHRONICLE_CONFIG_OVERRIDE",     "ZOO_MODEL_PATH",
     "CHRONICLE_MODEL_PATH",          "CHRONICLE_CONTEXT_SIZE",
     "CHRONICLE_N_GPU_LAYERS",        "CHRONICLE_TEMPERATURE",
     "CHRONICLE_MAX_RESPONSE_TOKENS", "CHRONICLE_INFERENCE_TIMEOUT_MS",
     "CHRONICLE_SAVE_DIRECTORY",      "CHRONICLE_USE_TUI",
     "CHRONICLE_USE_COLOR",           "CHRONICLE_MAX_TOOL_ITERATIONS",
+    "CHRONICLE_AUTO_CONFIGURE",
 };
 
 class ScopedOperatorEnvironment {
@@ -273,6 +274,19 @@ TEST(ConfigTest, InvalidEnvironmentOverrideThrows) {
 
     EXPECT_THROW(Config::load_with_operator_overrides(FIXTURES_DIR "/config.json"),
                  std::runtime_error);
+}
+
+TEST(ConfigTest, AutoConfigureDefaultsFalse) {
+    Config cfg = Config::load(FIXTURES_DIR "/config.json");
+    EXPECT_FALSE(cfg.auto_configure);
+}
+
+TEST(ConfigTest, AutoConfigureEnvironmentOverride) {
+    ScopedOperatorEnvironment env;
+    env.set("CHRONICLE_AUTO_CONFIGURE", "true");
+
+    Config cfg = Config::load_with_operator_overrides(FIXTURES_DIR "/config.json");
+    EXPECT_TRUE(cfg.auto_configure);
 }
 
 } // namespace chronicle
