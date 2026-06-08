@@ -87,13 +87,13 @@ Optional/defaulted fields:
 
 Runtime behavior: the manifest is loaded first. Run mode uses it to resolve the
 config and world file set. Validate mode resolves the same files without
-constructing a model.
+constructing a live agent.
 
 Validation behavior: unsupported `chronicle_schema_version`, unsafe paths, and
 missing referenced files are errors. `metadata` must be an object whose values
 are strings. Shared-cartridge readiness issues such as missing recommended
 metadata, whitespace or path separators in `id`, a non-semver-looking
-`version`, or a committed non-empty `model_path` are warnings.
+`version`, or committed LLM endpoint settings are warnings.
 `chronicle pack` and `chronicle install` also require `id` to be a safe single
 path segment because it becomes the installed cartridge directory name.
 
@@ -130,15 +130,19 @@ Minimal example:
 Required fields: none. Missing fields receive runtime defaults. This file is
 the scenario-authored default config. At runtime, Chronicle may overlay a
 machine-local operator config from `CHRONICLE_CONFIG_OVERRIDE`, then supported
-environment variables such as `ZOO_MODEL_PATH`.
+environment variables such as `CHRONICLE_LLM_BASE_URL` or `ZOO_BASE_URL`.
 
 Optional/defaulted fields:
 
 | Field | Type | Default | Runtime behavior |
 | --- | --- | --- | --- |
-| `model_path` | string | `""` | Empty means no local model is configured; dialogue uses stub behavior. Committed packages should leave this empty and rely on operator overrides for local paths. |
-| `context_size` | integer | `4096` | Model context window. |
-| `n_gpu_layers` | integer | `-1` | GPU layer offload setting; `0` forces CPU-only. Machine-specific values should usually come from operator overrides. |
+| `llm_base_url` | string | `""` | Base URL for an OpenAI-compatible chat-completions endpoint. Empty disables live AI dialogue unless the operator supplies an override. |
+| `llm_model` | string | `""` | Model identifier passed to the endpoint. Empty disables live AI dialogue unless the operator supplies an override. |
+| `llm_api_key` | string | `""` | API key for the endpoint. Leave empty in shared cartridges; local endpoints may not require a key. |
+| `llm_organization` | string | `""` | Optional OpenAI-Organization header value. |
+| `llm_http_timeout_ms` | integer | `60000` | HTTP request timeout used by the harness transport. |
+| `llm_max_retries` | integer | `2` | Maximum retry attempts for transient endpoint failures. |
+| `llm_tls_verify` | boolean | `true` | Whether to verify TLS certificates for HTTPS endpoints. |
 | `temperature` | number | `0.7` | Dialogue sampling temperature. |
 | `max_response_tokens` | integer | `512` | Maximum generated tokens per response. |
 | `inference_timeout_ms` | integer | `120000` | Maximum wall-clock time for one model request. `0` disables timeout cancellation for debugging. |
@@ -152,19 +156,18 @@ Optional/defaulted fields:
 | `use_color` | boolean | `true` | Enables ANSI color where the renderer supports it. |
 | `max_tool_iterations` | integer | `5` | Maximum tool-call loop iterations per model request. |
 | `verb_aliases` | object | `{}` | Maps shorthand input to full player commands, e.g. `"n": "go north"`. See [`docs/console-api.md`](console-api.md). |
-| `auto_configure` | boolean | `false` | When `true`, derive model load settings from the GGUF file and host hardware via Zoo-Keeper before applying explicit `context_size` / `n_gpu_layers` overrides. Leave `n_gpu_layers` at `-1` to let auto-configuration choose GPU offload depth. |
 | `mutation_narration_templates` | object | built-in map | String templates keyed by mutation names. Empty strings suppress narration. |
 
 Validation behavior: malformed JSON or invalid field types fail when the
 runtime loads config. `verb_aliases` values must be string command expansions.
-The JSON Schema documents numeric minimums for editor validation.
+The removed GGUF-local fields `model_path`, `context_size`, `n_gpu_layers`,
+and `auto_configure` are rejected. The JSON Schema documents numeric minimums
+for editor validation.
 
 Minimal example:
 
 ```json
-{
-  "model_path": ""
-}
+{}
 ```
 
 ### `world.json`
@@ -456,6 +459,6 @@ Minimal example:
 - JSON files are intentionally permissive about additional properties so future
   tooling can preserve metadata. Unknown fields should not be used for gameplay
   behavior unless Chronicle documents them.
-- Model-backed behavior is optional. Empty `model_path` keeps the package
+- Model-backed behavior is optional. Empty endpoint fields keep the package
   runnable in stub dialogue mode unless the operator supplies a local override.
 - Save files are versioned separately from scenario packages.

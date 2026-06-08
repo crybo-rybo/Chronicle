@@ -12,6 +12,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
+        harness: [ON, OFF]
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -20,12 +21,16 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux' && matrix.harness == 'ON'
+        run: sudo apt-get update && sudo apt-get install -y libcurl4-openssl-dev
+
       - name: Configure
         run: >
           cmake -B build
           -DCMAKE_BUILD_TYPE=Release
           -DCHRONICLE_WERROR=ON
-          -DCHRONICLE_ENABLE_ZOO=OFF
+          -DCHRONICLE_ENABLE_HARNESS=${{ matrix.harness }}
 
       - name: Build
         run: cmake --build build --parallel

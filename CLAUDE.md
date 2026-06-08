@@ -1,6 +1,6 @@
 # Chronicle
 
-Chronicle is a bounded scenario SDK/runtime for offline, LLM-driven NPC mystery and social-sim text adventures written in C++23. Creators author JSON scenario packages; Chronicle supplies the runtime, local Zoo-Keeper integration, validation, prompt assembly, save/load, and strict tool/mutation pipeline.
+Chronicle is a bounded scenario SDK/runtime for offline, LLM-driven NPC mystery and social-sim text adventures written in C++23. Creators author JSON scenario packages; Chronicle supplies the runtime, local zoo-keeper-harness integration for OpenAI-compatible endpoints, validation, prompt assembly, save/load, and strict tool/mutation pipeline.
 
 ## Vision
 
@@ -11,7 +11,7 @@ A portfolio piece and open-source framework demonstrating systems-level C++ desi
 - **Engine layer** (`src/engine/`): CLI parser, GameEngine orchestrator, command parser, mutation pipeline, scripted events
 - **World layer** (`chronicle_world`, `src/entities/` structs): NPC, Player, Item, Location runtime state and serialization
 - **Scenario layer** (`chronicle_scenario`): Cartridge manifest, config, world loader, structural validation
-- **AI layer** (`src/ai/`): Zoo-Keeper agent wrapper, prompt builder, tool registry, response handler, explicit NPC memory via `remember`
+- **AI layer** (`src/ai/`): zoo-keeper-harness agent wrapper, prompt builder, tool registry, response handler, explicit NPC memory via `remember`
 - **Rendering layer** (`src/rendering/`): Abstract renderer interface, terminal renderer (MVP), TUI renderer (stretch goal)
 - **Persistence layer** (`src/persistence/`): Save/load system with versioned schemas
 - **Scenario package layer** (`data/`, `scenario.json`): Author-facing JSON package format and validation
@@ -28,8 +28,8 @@ A portfolio piece and open-source framework demonstrating systems-level C++ desi
 
 - **Language**: C++23
 - **Build**: CMake 3.25+
-- **LLM Integration**: Zoo-Keeper (via CMake FetchContent)
-- **JSON**: nlohmann/json (bundled via Zoo-Keeper)
+- **LLM Integration**: zoo-keeper-harness (via CMake FetchContent)
+- **JSON**: nlohmann/json (fetched directly and shared with the harness)
 - **Testing**: Google Test (FetchContent)
 - **CI**: GitHub Actions (Linux + macOS)
 
@@ -53,7 +53,7 @@ Feature branches named `track/<alpha|beta|gamma|delta>/<feature-slug>`, merge to
 ### Tracks
 
 - **Track Alpha**: Foundation (entities, world, clock, events)
-- **Track Beta**: AI layer (Zoo-Keeper, prompt builder, tool registry, memory)
+- **Track Beta**: AI layer (zoo-keeper-harness, prompt builder, tool registry, memory)
 - **Track Gamma**: Engine/shell (command parser, game loop, renderer, save system)
 - **Track Delta**: Content and scenario
 
@@ -65,7 +65,7 @@ Feature branches named `track/<alpha|beta|gamma|delta>/<feature-slug>`, merge to
 ### Testing
 
 - Unit tests require no model and run in CI
-- Integration tests gated behind `ZOO_INTEGRATION_MODEL` environment variable
+- Integration tests are gated behind `CHRONICLE_INTEGRATION_LLM_BASE_URL` and `CHRONICLE_INTEGRATION_LLM_MODEL`
 
 ## Session Cleanup
 
