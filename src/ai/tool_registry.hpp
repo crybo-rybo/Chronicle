@@ -14,7 +14,7 @@
  *    list is drained by @ref GameEngine::process_pending_mutations after
  *    inference completes.
  *
- * 3. **Harness registration** — performed by @ref HarnessAgentAdapter via a private
+ * 3. **Harness registration** — performed by @ref NpcAgentPool via a private
  *    zoo registration hook; not part of the public registry API.
  *
  * ### Tool call flow
