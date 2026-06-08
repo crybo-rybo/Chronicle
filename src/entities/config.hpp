@@ -37,25 +37,36 @@ std::unordered_map<std::string, std::string> default_mutation_narration_template
 /// @brief Runtime configuration loaded from @c config.json.
 ///
 /// @details All fields have sane defaults so the game is playable without a
-/// config file (though @c model_path must be set to enable AI-driven
-/// dialogue).  Use @ref load to parse a config file and @ref save to write the
-/// current configuration back to disk.
+/// config file.  AI-driven dialogue is enabled only when an OpenAI-compatible
+/// endpoint URL and model are configured.  Use @ref load to parse a config file
+/// and @ref save to write the current configuration back to disk.
 struct Config {
-    /// @brief Path to the GGUF model file used for LLM inference.
+    /// @brief Base URL for an OpenAI-compatible chat-completions endpoint.
     ///
-    /// Must be set to a valid path for AI dialogue to function.  An empty
-    /// string disables the agent pool and falls back to stub dialogue output.
-    std::string model_path;
+    /// Examples: @c "http://localhost:11434/v1" for Ollama or a provider
+    /// gateway URL.  Empty disables the agent pool and falls back to stub output.
+    std::string llm_base_url;
 
-    /// @brief Model context window size in tokens.  Default: 4096.
+    /// @brief Model identifier passed to the endpoint.
     ///
-    /// Larger values allow richer prompts but increase memory usage.
-    int context_size = 4096;
+    /// Examples: @c "ministral-3:3b", @c "gpt-4o-mini", or a proxy-specific
+    /// model alias.  Empty disables the agent pool and falls back to stub output.
+    std::string llm_model;
 
-    /// @brief Number of model layers to offload to GPU.  Default: -1 (all layers).
-    ///
-    /// Set to @c 0 to force CPU-only inference.
-    int n_gpu_layers = -1;
+    /// @brief API key for the endpoint.  May be empty for local endpoints.
+    std::string llm_api_key;
+
+    /// @brief Optional OpenAI-Organization header value.
+    std::string llm_organization;
+
+    /// @brief HTTP request timeout used by the harness transport.  Default: 60000.
+    int llm_http_timeout_ms = 60000;
+
+    /// @brief Maximum retry attempts for transient endpoint failures.  Default: 2.
+    int llm_max_retries = 2;
+
+    /// @brief Whether to verify TLS certificates for HTTPS endpoints.  Default: true.
+    bool llm_tls_verify = true;
 
     /// @brief Sampling temperature for dialogue generation.  Default: 0.7.
     ///
@@ -106,21 +117,12 @@ struct Config {
     /// @brief Enable ANSI colour output.  Default: @c true.
     bool use_color = true;
 
-    /// @brief Maximum tool-call iterations the Zoo-Keeper agent may perform per request.
+    /// @brief Maximum harness tool-call iterations per request.
     ///
-    /// Maps directly to @c zoo::AgentConfig::max_tool_iterations.  Lower values
+    /// Maps to the harness run iteration and per-run tool-call budgets.  Lower values
     /// reduce wasted context on runaway tool loops; higher values allow more
-    /// complex multi-step tool chains.  Default: 5 (matches Zoo-Keeper's built-in
-    /// default so existing configs with no explicit value are unaffected).
+    /// complex multi-step tool chains.  Default: 5.
     int max_tool_iterations = 5;
-
-    /// @brief When @c true, derive model load settings from the GGUF file and host
-    /// hardware via @c zoo::load_model_config() before applying explicit overrides.
-    ///
-    /// @details Explicit @c context_size and @c n_gpu_layers values in this config
-    /// still override auto-derived defaults.  Leave @c n_gpu_layers at @c -1 to let
-    /// auto-configuration choose GPU offload depth.
-    bool auto_configure = false;
 
     /// @brief Templates for narrating NPC mutation events to the player.
     ///
@@ -130,6 +132,9 @@ struct Config {
     /// string suppresses narration for that mutation type.
     std::unordered_map<std::string, std::string> mutation_narration_templates =
         default_mutation_narration_templates();
+
+    /// @brief Return whether live LLM dialogue has the required endpoint fields.
+    bool has_llm_endpoint() const { return !llm_base_url.empty() && !llm_model.empty(); }
 
     /// @brief Load configuration from a JSON file.
     ///
@@ -164,13 +169,11 @@ struct Config {
 };
 
 /// @cond INTERNAL
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(Config, model_path, context_size, n_gpu_layers,
-                                                temperature, max_response_tokens,
-                                                inference_timeout_ms, turns_per_period,
-                                                total_periods, max_memory_tokens, max_world_tokens,
-                                                max_history_tokens, save_directory, use_tui,
-                                                use_color, mutation_narration_templates,
-                                                max_tool_iterations, auto_configure)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(
+    Config, llm_base_url, llm_model, llm_api_key, llm_organization, llm_http_timeout_ms,
+    llm_max_retries, llm_tls_verify, temperature, max_response_tokens, inference_timeout_ms,
+    turns_per_period, total_periods, max_memory_tokens, max_world_tokens, max_history_tokens,
+    save_directory, use_tui, use_color, mutation_narration_templates, max_tool_iterations)
 /// @endcond
 
 } // namespace chronicle

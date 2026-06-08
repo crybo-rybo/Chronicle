@@ -1,6 +1,6 @@
 /**
  * @file tool_registry.cpp
- * @brief Implementation of @ref ToolRegistry — validation, queuing, and Zoo-Keeper registration.
+ * @brief Implementation of @ref ToolRegistry — validation, queuing, and Harness registration.
  *
  * @details Implements all @c validate_*, @c register_*, and utility methods,
  * plus @ref ToolRegistry::register_tools which wires game tools onto a
@@ -8,26 +8,90 @@
  */
 
 #include "ai/tool_registry.hpp"
-#include "ai/zoo_compat.hpp"
-#include "diagnostics/logger.hpp"
+#include "ai/harness_compat.hpp"
 #include "common/parse_utils.hpp"
+#include "diagnostics/logger.hpp"
 #include "engine/mutation_checks.hpp"
 #include "engine/text_utils.hpp"
 #include <algorithm>
+#include <cstdint>
+#include <limits>
 #include <sstream>
+#include <string_view>
+#include <utility>
 
-#if CHRONICLE_ENABLE_ZOO
-#include <zoo/agent.hpp>
+#if CHRONICLE_ENABLE_HARNESS
+#include <zoo/Agent.hpp>
 #endif
 
 namespace chronicle {
 
 namespace {
 
-#if CHRONICLE_ENABLE_ZOO
+#if CHRONICLE_ENABLE_HARNESS
 void log_tool_result(std::string_view tool_name, const std::string &result) {
-    const auto level = result == "OK" ? logging::Level::Info : logging::Level::Warning;
+    const auto level =
+        result.starts_with("Error:") ? logging::Level::Warning : logging::Level::Info;
     logging::write(level, "tools", "tool=" + std::string(tool_name) + " result=\"" + result + "\"");
+}
+
+using Json = zoo::JsonValue;
+
+Json string_property(std::string_view description) {
+    return Json{{"type", "string"}, {"description", description}};
+}
+
+Json integer_property(std::string_view description) {
+    return Json{{"type", "integer"}, {"description", description}};
+}
+
+Json boolean_property(std::string_view description) {
+    return Json{{"type", "boolean"}, {"description", description}};
+}
+
+Json mood_property() {
+    return Json{
+        {"type", "string"}, {"description", "New NPC mood"}, {"enum", Json::array(kValidMoods)}};
+}
+
+Json object_schema(Json properties, Json required) {
+    return Json{{"type", "object"},
+                {"properties", std::move(properties)},
+                {"required", std::move(required)},
+                {"additionalProperties", false}};
+}
+
+zoo::Expected<std::string> json_string_arg(const Json &args, std::string_view name) {
+    auto value = args.at(name);
+    if (!value) {
+        return std::unexpected(value.error());
+    }
+    return value->as_string();
+}
+
+zoo::Expected<int> json_int_arg(const Json &args, std::string_view name) {
+    auto value = args.at(name);
+    if (!value) {
+        return std::unexpected(value.error());
+    }
+    auto parsed = value->as_int64();
+    if (!parsed) {
+        return std::unexpected(parsed.error());
+    }
+    if (*parsed < static_cast<std::int64_t>(std::numeric_limits<int>::min()) ||
+        *parsed > static_cast<std::int64_t>(std::numeric_limits<int>::max())) {
+        return std::unexpected(
+            zoo::Error{zoo::ErrorCode::ToolValidationFailed, "integer argument out of range"});
+    }
+    return static_cast<int>(*parsed);
+}
+
+zoo::Expected<bool> json_bool_arg(const Json &args, std::string_view name) {
+    auto value = args.at(name);
+    if (!value) {
+        return std::unexpected(value.error());
+    }
+    return value->as_bool();
 }
 #endif
 
@@ -484,152 +548,208 @@ std::string ToolRegistry::format_item_details(const std::string &item_id) const 
     return details;
 }
 
-#if CHRONICLE_ENABLE_ZOO
-void ToolRegistry::register_zoo_tools(zoo::Agent &agent, const std::string &npc_id) {
-    set_active_npc_id(npc_id);
-    logging::write(logging::Level::Info, "tools", "registering tools npc=" + npc_id);
+#if CHRONICLE_ENABLE_HARNESS
+void ToolRegistry::register_harness_tools(zoo::Agent::Builder &builder) {
+    logging::write(logging::Level::Info, "tools", "registering Chronicle harness tools");
 
-    auto give_item_func = [this](std::string item_id) -> std::string {
-        logging::write(logging::Level::Info, "tools",
-                       "tool=give_item npc=" + active_npc_id_ + " item_id=" + item_id);
-        if (auto err = this->register_give_item(active_npc_id_, item_id)) {
-            log_tool_result("give_item", *err);
-            return *err;
-        }
-        log_tool_result("give_item", "OK");
-        return "OK";
-    };
-    (void)agent.register_tool("give_item", "Give an item to the player", {"item_id"},
-                              std::move(give_item_func));
+    builder.tool(
+        zoo::ToolSpec{"give_item", "Give an item to the player",
+                      object_schema(Json{{"item_id", string_property("Item ID to give")}},
+                                    Json::array({"item_id"}))},
+        [this](const Json &args, const zoo::tools::ToolContext &) -> zoo::Expected<std::string> {
+            auto item_id = json_string_arg(args, "item_id");
+            if (!item_id) {
+                return std::unexpected(item_id.error());
+            }
+            logging::write(logging::Level::Info, "tools",
+                           "tool=give_item npc=" + active_npc_id_ + " item_id=" + *item_id);
+            if (auto err = register_give_item(active_npc_id_, *item_id)) {
+                log_tool_result("give_item", *err);
+                return *err;
+            }
+            log_tool_result("give_item", "OK");
+            return "OK";
+        });
 
-    auto take_item_func = [this](std::string item_id) -> std::string {
-        logging::write(logging::Level::Info, "tools",
-                       "tool=take_item npc=" + active_npc_id_ + " item_id=" + item_id);
-        auto result = this->handle_take_item_tool(active_npc_id_, item_id);
-        log_tool_result("take_item", result);
-        return result;
-    };
-    (void)agent.register_tool("take_item", "Take an item from the player", {"item_id"},
-                              std::move(take_item_func));
+    builder.tool(
+        zoo::ToolSpec{"take_item", "Take an item from the player",
+                      object_schema(Json{{"item_id", string_property("Item ID to take")}},
+                                    Json::array({"item_id"}))},
+        [this](const Json &args, const zoo::tools::ToolContext &) -> zoo::Expected<std::string> {
+            auto item_id = json_string_arg(args, "item_id");
+            if (!item_id) {
+                return std::unexpected(item_id.error());
+            }
+            logging::write(logging::Level::Info, "tools",
+                           "tool=take_item npc=" + active_npc_id_ + " item_id=" + *item_id);
+            auto result = handle_take_item_tool(active_npc_id_, *item_id);
+            log_tool_result("take_item", result);
+            return result;
+        });
 
-    auto update_mood_func = [this](std::string mood) -> std::string {
-        logging::write(logging::Level::Info, "tools",
-                       "tool=update_mood npc=" + active_npc_id_ + " mood=" + mood);
-        if (auto err = this->register_update_mood(active_npc_id_, mood)) {
-            log_tool_result("update_mood", *err);
-            return *err;
-        }
-        log_tool_result("update_mood", "OK");
-        return "OK";
-    };
-    (void)agent.register_tool("update_mood", "Change the NPC's current mood", {"mood"},
-                              std::move(update_mood_func));
+    builder.tool(
+        zoo::ToolSpec{"update_mood", "Change the NPC's current mood",
+                      object_schema(Json{{"mood", mood_property()}}, Json::array({"mood"}))},
+        [this](const Json &args, const zoo::tools::ToolContext &) -> zoo::Expected<std::string> {
+            auto mood = json_string_arg(args, "mood");
+            if (!mood) {
+                return std::unexpected(mood.error());
+            }
+            logging::write(logging::Level::Info, "tools",
+                           "tool=update_mood npc=" + active_npc_id_ + " mood=" + *mood);
+            if (auto err = register_update_mood(active_npc_id_, *mood)) {
+                log_tool_result("update_mood", *err);
+                return *err;
+            }
+            log_tool_result("update_mood", "OK");
+            return "OK";
+        });
 
-    auto update_trust_func = [this](std::string delta_str) -> std::string {
-        logging::write(logging::Level::Info, "tools",
-                       "tool=update_trust npc=" + active_npc_id_ + " delta=" + delta_str);
-        try {
-            int delta = std::stoi(delta_str);
-            if (auto err = this->register_update_trust(active_npc_id_, delta)) {
+    builder.tool(
+        zoo::ToolSpec{
+            "update_trust", "Change the player's trust level with this NPC",
+            object_schema(Json{{"delta", integer_property("Trust delta from -100 to 100")}},
+                          Json::array({"delta"}))},
+        [this](const Json &args, const zoo::tools::ToolContext &) -> zoo::Expected<std::string> {
+            auto delta = json_int_arg(args, "delta");
+            if (!delta) {
+                return std::unexpected(delta.error());
+            }
+            logging::write(logging::Level::Info, "tools",
+                           "tool=update_trust npc=" + active_npc_id_ +
+                               " delta=" + std::to_string(*delta));
+            if (auto err = register_update_trust(active_npc_id_, *delta)) {
                 log_tool_result("update_trust", *err);
                 return *err;
             }
             log_tool_result("update_trust", "OK");
             return "OK";
-        } catch (const std::exception &) {
-            std::string error = "Error: trust delta must be a valid integer.";
-            log_tool_result("update_trust", error);
-            return error;
-        }
-    };
-    (void)agent.register_tool("update_trust",
-                              "Change the player's trust level with this NPC (-100 to 100)",
-                              {"delta"}, std::move(update_trust_func));
+        });
 
-    auto move_self_func = [this](std::string location_id) -> std::string {
-        logging::write(logging::Level::Info, "tools",
-                       "tool=move_self npc=" + active_npc_id_ + " location_id=" + location_id);
-        if (auto err = this->register_move_npc(active_npc_id_, location_id)) {
-            log_tool_result("move_self", *err);
-            return *err;
-        }
-        log_tool_result("move_self", "OK");
-        return "OK";
-    };
-    (void)agent.register_tool("move_self", "Move the NPC to a new location", {"location_id"},
-                              std::move(move_self_func));
+    builder.tool(
+        zoo::ToolSpec{
+            "move_self", "Move the NPC to a new location",
+            object_schema(Json{{"location_id", string_property("Destination location ID")}},
+                          Json::array({"location_id"}))},
+        [this](const Json &args, const zoo::tools::ToolContext &) -> zoo::Expected<std::string> {
+            auto location_id = json_string_arg(args, "location_id");
+            if (!location_id) {
+                return std::unexpected(location_id.error());
+            }
+            logging::write(logging::Level::Info, "tools",
+                           "tool=move_self npc=" + active_npc_id_ + " location_id=" + *location_id);
+            if (auto err = register_move_npc(active_npc_id_, *location_id)) {
+                log_tool_result("move_self", *err);
+                return *err;
+            }
+            log_tool_result("move_self", "OK");
+            return "OK";
+        });
 
-    auto reveal_knowledge_func = [this](std::string fact_id) -> std::string {
-        logging::write(logging::Level::Info, "tools",
-                       "tool=reveal_knowledge npc=" + active_npc_id_ + " fact_id=" + fact_id);
-        if (auto err = this->register_reveal_knowledge(active_npc_id_, fact_id)) {
-            log_tool_result("reveal_knowledge", *err);
-            return *err;
-        }
-        log_tool_result("reveal_knowledge", "OK");
-        return "OK";
-    };
-    (void)agent.register_tool("reveal_knowledge", "Reveal a known fact to the player", {"fact_id"},
-                              std::move(reveal_knowledge_func));
+    builder.tool(
+        zoo::ToolSpec{"reveal_knowledge", "Reveal a known fact to the player",
+                      object_schema(Json{{"fact_id", string_property("Fact ID to reveal")}},
+                                    Json::array({"fact_id"}))},
+        [this](const Json &args, const zoo::tools::ToolContext &) -> zoo::Expected<std::string> {
+            auto fact_id = json_string_arg(args, "fact_id");
+            if (!fact_id) {
+                return std::unexpected(fact_id.error());
+            }
+            logging::write(logging::Level::Info, "tools",
+                           "tool=reveal_knowledge npc=" + active_npc_id_ + " fact_id=" + *fact_id);
+            if (auto err = register_reveal_knowledge(active_npc_id_, *fact_id)) {
+                log_tool_result("reveal_knowledge", *err);
+                return *err;
+            }
+            log_tool_result("reveal_knowledge", "OK");
+            return "OK";
+        });
 
-    auto remember_func = [this](std::string summary, std::string importance_str) -> std::string {
-        logging::write(logging::Level::Info, "tools",
-                       "tool=remember npc=" + active_npc_id_ + " importance=" + importance_str +
-                           " summary=\"" + summary + "\"");
-        try {
-            int importance = std::stoi(importance_str);
-            if (auto err = this->register_add_memory(active_npc_id_, summary, importance)) {
+    builder.tool(
+        zoo::ToolSpec{
+            "remember",
+            "Create a durable NPC memory only for future-relevant details such as clues, promises, "
+            "commitments, relationship changes, or major emotional shifts. Do not use this for "
+            "greetings, filler, or every player message.",
+            object_schema(Json{{"summary", string_property("Concise memory summary")},
+                               {"importance", integer_property("Importance from 1 to 10")}},
+                          Json::array({"summary", "importance"}))},
+        [this](const Json &args, const zoo::tools::ToolContext &) -> zoo::Expected<std::string> {
+            auto summary = json_string_arg(args, "summary");
+            if (!summary) {
+                return std::unexpected(summary.error());
+            }
+            auto importance = json_int_arg(args, "importance");
+            if (!importance) {
+                return std::unexpected(importance.error());
+            }
+            logging::write(logging::Level::Info, "tools",
+                           "tool=remember npc=" + active_npc_id_ + " importance=" +
+                               std::to_string(*importance) + " summary=\"" + *summary + "\"");
+            if (auto err = register_add_memory(active_npc_id_, *summary, *importance)) {
                 log_tool_result("remember", *err);
                 return *err;
             }
             log_tool_result("remember", "OK");
             return "OK";
-        } catch (const std::exception &) {
-            std::string error = "Error: importance must be a valid integer.";
-            log_tool_result("remember", error);
-            return error;
-        }
-    };
-    (void)agent.register_tool(
-        "remember",
-        "Create a durable NPC memory only for future-relevant details such as clues, promises, "
-        "commitments, relationship changes, or major emotional shifts. Do not use this for "
-        "greetings, filler, or every player message. Provide a concise summary and an importance "
-        "from 1 to 10.",
-        {"summary", "importance"}, std::move(remember_func));
+        });
 
-    auto set_flag_func = [this](std::string flag_id, std::string value_str) -> std::string {
-        logging::write(logging::Level::Info, "tools",
-                       "tool=set_flag flag_id=" + flag_id + " value=" + value_str);
-        auto result = this->handle_set_flag_tool(flag_id, value_str);
-        log_tool_result("set_flag", result);
-        return result;
-    };
-    (void)agent.register_tool("set_flag", "Set or update a world narrative flag",
-                              {"flag_id", "value"}, std::move(set_flag_func));
+    builder.tool(
+        zoo::ToolSpec{"set_flag", "Set or update a world narrative flag",
+                      object_schema(Json{{"flag_id", string_property("Flag ID to set")},
+                                         {"value", boolean_property("New flag value")}},
+                                    Json::array({"flag_id", "value"}))},
+        [this](const Json &args, const zoo::tools::ToolContext &) -> zoo::Expected<std::string> {
+            auto flag_id = json_string_arg(args, "flag_id");
+            if (!flag_id) {
+                return std::unexpected(flag_id.error());
+            }
+            auto value = json_bool_arg(args, "value");
+            if (!value) {
+                return std::unexpected(value.error());
+            }
+            logging::write(logging::Level::Info, "tools",
+                           "tool=set_flag flag_id=" + *flag_id +
+                               " value=" + (*value ? "true" : "false"));
+            auto result = handle_set_flag_tool(*flag_id, *value ? "true" : "false");
+            log_tool_result("set_flag", result);
+            return result;
+        });
 
-    auto inspect_item_func = [this](std::string item_id) -> std::string {
-        logging::write(logging::Level::Info, "tools",
-                       "tool=inspect_item npc=" + active_npc_id_ + " item_id=" + item_id);
-        auto result = this->handle_inspect_item_tool(active_npc_id_, item_id);
-        log_tool_result("inspect_item", result);
-        return result;
-    };
-    (void)agent.register_tool("inspect_item", "Examine an item in your inventory", {"item_id"},
-                              std::move(inspect_item_func));
+    builder.tool(
+        zoo::ToolSpec{"inspect_item", "Examine an item in your inventory",
+                      object_schema(Json{{"item_id", string_property("Item ID to inspect")}},
+                                    Json::array({"item_id"}))},
+        [this](const Json &args, const zoo::tools::ToolContext &) -> zoo::Expected<std::string> {
+            auto item_id = json_string_arg(args, "item_id");
+            if (!item_id) {
+                return std::unexpected(item_id.error());
+            }
+            logging::write(logging::Level::Info, "tools",
+                           "tool=inspect_item npc=" + active_npc_id_ + " item_id=" + *item_id);
+            auto result = handle_inspect_item_tool(active_npc_id_, *item_id);
+            log_tool_result("inspect_item", result);
+            return result;
+        });
 
-    auto say_func = [this](std::string dialogue) -> std::string {
-        logging::write(logging::Level::Info, "tools",
-                       "tool=say npc=" + active_npc_id_ + " dialogue=\"" + dialogue + "\"");
-        if (auto err = this->register_say(active_npc_id_, dialogue)) {
-            log_tool_result("say", *err);
-            return *err;
-        }
-        log_tool_result("say", "OK");
-        return "OK";
-    };
-    (void)agent.register_tool("say", "Speak dialogue to the player", {"dialogue"},
-                              std::move(say_func));
+    builder.tool(
+        zoo::ToolSpec{"say", "Speak dialogue to the player",
+                      object_schema(Json{{"dialogue", string_property("Dialogue text to speak")}},
+                                    Json::array({"dialogue"}))},
+        [this](const Json &args, const zoo::tools::ToolContext &) -> zoo::Expected<std::string> {
+            auto dialogue = json_string_arg(args, "dialogue");
+            if (!dialogue) {
+                return std::unexpected(dialogue.error());
+            }
+            logging::write(logging::Level::Info, "tools",
+                           "tool=say npc=" + active_npc_id_ + " dialogue=\"" + *dialogue + "\"");
+            if (auto err = register_say(active_npc_id_, *dialogue)) {
+                log_tool_result("say", *err);
+                return *err;
+            }
+            log_tool_result("say", "OK");
+            return "OK";
+        });
 }
 #endif
 

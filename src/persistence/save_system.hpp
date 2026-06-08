@@ -28,10 +28,10 @@
  * are rejected and @c std::nullopt is returned.
  *
  * ### What is NOT saved
- * Runtime-only objects are intentionally excluded: Zoo-Keeper agents and KV
- * cache, agent history, active conversation handles, pending mutation queues,
- * token queues, renderer state, and open input streams.  Agents are re-created
- * fresh on load; the NPC memory system (which IS saved as part of
+ * Runtime-only objects are intentionally excluded: harness agents, agent
+ * history, active conversation handles, pending mutation queues, token queues,
+ * renderer state, and open input streams. Agents are re-created fresh on load;
+ * the NPC memory system (which IS saved as part of
  * @ref NpcState) provides conversation continuity.
  */
 
@@ -107,12 +107,10 @@ class SaveSystem {
     void delete_slot(int slot);
 
     /// @brief Active cartridge binding, if any.
-    const std::optional<CartridgeBinding> &cartridge_binding() const noexcept {
-        return cartridge_;
-    }
+    const std::optional<CartridgeBinding> &cartridge_binding() const noexcept { return cartridge_; }
 
   private:
-    std::filesystem::path save_dir_; ///< Base save directory from config.
+    std::filesystem::path save_dir_;  ///< Base save directory from config.
     std::filesystem::path slot_root_; ///< Directory containing slot files.
     std::optional<CartridgeBinding> cartridge_;
 

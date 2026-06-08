@@ -215,10 +215,13 @@ void add_manifest_readiness_warnings(ValidationReport &report, const ScenarioMan
 bool add_config_readiness_warnings(ValidationReport &report, const std::filesystem::path &path) {
     try {
         auto config = Config::load(path);
-        if (!config.model_path.empty()) {
-            add_warning(report,
-                        "scenario config model_path should be empty in shared cartridges; use "
-                        "operator overrides for local GGUF paths");
+        if (!config.llm_base_url.empty() || !config.llm_model.empty()) {
+            add_warning(report, "scenario config LLM endpoint fields should be empty in shared "
+                                "cartridges; use operator overrides or environment variables");
+        }
+        if (!config.llm_api_key.empty()) {
+            add_warning(report, "scenario config llm_api_key should be empty in shared cartridges; "
+                                "never commit endpoint credentials");
         }
         return true;
     } catch (const std::exception &e) {

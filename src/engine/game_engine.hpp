@@ -112,18 +112,18 @@ class GameEngine {
     void handle_dialogue(const std::string &npc_id, const std::string &input);
 
   private:
-    Config config_;                      ///< Loaded runtime configuration.
-    World world_;                        ///< Authoritative game state.
-    CommandParser parser_;               ///< Input parser (phase-aware).
-    std::unique_ptr<Renderer> renderer_; ///< Output renderer.
+    Config config_;                            ///< Loaded runtime configuration.
+    World world_;                              ///< Authoritative game state.
+    CommandParser parser_;                     ///< Input parser (phase-aware).
+    std::unique_ptr<Renderer> renderer_;       ///< Output renderer.
     std::optional<ScenarioManifest> manifest_; ///< Active cartridge manifest, when known.
-    SaveSystem save_system_;             ///< Save/load manager.
-    TokenQueue token_queue_;             ///< Streaming token bridge.
+    SaveSystem save_system_;                   ///< Save/load manager.
+    TokenQueue token_queue_;                   ///< Streaming token bridge.
 
-    /// Agent pool — may be @c nullptr if no model is configured.
-    std::unique_ptr<NpcAgentPool> agent_pool_;
     /// Tool registry — validates and routes NPC mutations to @c pending_mutations_.
     std::unique_ptr<ToolRegistry> tool_registry_;
+    /// Agent pool — may be @c nullptr if no LLM endpoint is configured.
+    std::unique_ptr<NpcAgentPool> agent_pool_;
     /// Response handler — narrates mutations and forwards tokens.
     std::unique_ptr<ResponseHandler> response_handler_;
     /// Authoritative pending mutation queue — drained by @ref process_pending_mutations.

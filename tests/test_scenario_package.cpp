@@ -277,8 +277,26 @@ TEST(ScenarioPackageTest, ValidationWarnsAboutSuspiciousManifestIdAndVersion) {
     EXPECT_TRUE(has_warning_containing(report, "semantic version"));
 }
 
-TEST(ScenarioPackageTest, ValidationWarnsAboutCommittedModelPath) {
-    auto dir = make_temp_scenario_dir("committed_model_path");
+TEST(ScenarioPackageTest, ValidationWarnsAboutCommittedLlmEndpointConfig) {
+    auto dir = make_temp_scenario_dir("committed_llm_endpoint");
+    make_valid_package(dir);
+    write_file(dir / "config.json", R"json({
+  "llm_base_url": "https://provider.example/v1",
+  "llm_model": "provider-model",
+  "llm_api_key": "secret"
+})json");
+
+    auto report = validate_scenario_package(dir);
+
+    EXPECT_TRUE(report.ok);
+    EXPECT_TRUE(has_warning_containing(report, "LLM endpoint fields should be empty"));
+    EXPECT_TRUE(has_warning_containing(report, "llm_api_key should be empty"));
+    EXPECT_TRUE(has_warning_containing(report, "never commit endpoint credentials"));
+    EXPECT_TRUE(has_warning_containing(report, "operator overrides"));
+}
+
+TEST(ScenarioPackageTest, ValidationRejectsRemovedGgufConfigFields) {
+    auto dir = make_temp_scenario_dir("removed_gguf_config");
     make_valid_package(dir);
     write_file(dir / "config.json", R"json({
   "model_path": "/local/model.gguf"
@@ -286,9 +304,9 @@ TEST(ScenarioPackageTest, ValidationWarnsAboutCommittedModelPath) {
 
     auto report = validate_scenario_package(dir);
 
-    EXPECT_TRUE(report.ok);
-    EXPECT_TRUE(has_warning_containing(report, "model_path should be empty"));
-    EXPECT_TRUE(has_warning_containing(report, "operator overrides"));
+    EXPECT_FALSE(report.ok);
+    EXPECT_TRUE(has_error_containing(report, "model_path"));
+    EXPECT_TRUE(has_error_containing(report, "was removed"));
 }
 
 TEST(ScenarioPackageTest, MissingToolPolicyDefaultsToFullBuiltInPalette) {

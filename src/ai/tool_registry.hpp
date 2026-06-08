@@ -14,15 +14,15 @@
  *    list is drained by @ref GameEngine::process_pending_mutations after
  *    inference completes.
  *
- * 3. **Zoo-Keeper registration** — performed by @ref ZooAgentAdapter via a private
+ * 3. **Harness registration** — performed by @ref HarnessAgentAdapter via a private
  *    zoo registration hook; not part of the public registry API.
  *
  * ### Tool call flow
- * During inference, the Zoo-Keeper agent invokes registered tool lambdas on the
+ * During inference, the Harness agent invokes registered tool lambdas on the
  * inference thread.  Each lambda calls the corresponding @c register_* method,
  * which validates against the current @ref World through a @c const reference
  * and either enqueues a mutation or returns an error string.  Tool results are
- * returned synchronously to Zoo-Keeper so the model can react before generating
+ * returned synchronously to Harness so the model can react before generating
  * its next token.  The actual world mutation happens later, on the main thread,
  * after inference completes.
  *
@@ -34,6 +34,7 @@
  */
 
 #pragma once
+#include "ai/harness_compat.hpp"
 #include "engine/mutation_request.hpp"
 #include "entities/world.hpp"
 #include <optional>
@@ -42,19 +43,18 @@
 #include <variant>
 #include <vector>
 
+#if CHRONICLE_ENABLE_HARNESS
+#include <zoo/Agent.hpp>
+#endif
+
 namespace chronicle {
 
-#if CHRONICLE_ENABLE_ZOO
-class ZooAgentAdapter;
-namespace zoo {
-class Agent;
-} // namespace zoo
-#endif
+class NpcAgentPool;
 
 /// @brief Validates proposed NPC tool calls and maintains the pending mutation queue.
 class ToolRegistry {
-#if CHRONICLE_ENABLE_ZOO
-    friend class ZooAgentAdapter;
+#if CHRONICLE_ENABLE_HARNESS
+    friend class NpcAgentPool;
 #endif
 
   public:
@@ -192,15 +192,15 @@ class ToolRegistry {
     /// @return @c std::nullopt on success; error string on failure.
     std::optional<std::string> register_set_flag(const std::string &flag_id, bool value);
 
-    /// @brief Handle the stringly Zoo-Keeper set_flag tool path.
+    /// @brief Handle the stringly set_flag tool path.
     ///
     /// @details This keeps strict boolean parsing testable without requiring
-    /// a live model-backed @c zoo::Agent invocation.
+    /// a live model-backed harness invocation.
     ///
     /// @return "OK" on success, or an error string on validation failure.
     std::string handle_set_flag_tool(const std::string &flag_id, const std::string &value_str);
 
-    /// @brief Handle the inspect_item tool path without requiring a zoo::Agent.
+    /// @brief Handle the inspect_item tool path without requiring a harness agent.
     ///
     /// @details Validates that the NPC has the item, then returns a formatted
     /// description including readable text if present.
@@ -210,7 +210,7 @@ class ToolRegistry {
     /// @return Item details on success, or an error string on failure.
     std::string handle_inspect_item_tool(const std::string &npc_id, const std::string &item_id);
 
-    /// @brief Handle the take_item tool path without requiring a zoo::Agent.
+    /// @brief Handle the take_item tool path without requiring a harness agent.
     ///
     /// @details Validates and enqueues the take_item mutation, then returns
     /// a result string that includes item details (with readable text if present).
@@ -272,9 +272,9 @@ class ToolRegistry {
     void set_active_npc_id(std::string npc_id);
 
   private:
-#if CHRONICLE_ENABLE_ZOO
-    /// @brief Register Chronicle tools on a Zoo-Keeper agent (adapter-only).
-    void register_zoo_tools(zoo::Agent &agent, const std::string &npc_id);
+#if CHRONICLE_ENABLE_HARNESS
+    /// @brief Register Chronicle tools on a harness agent builder.
+    void register_harness_tools(zoo::Agent::Builder &builder);
 #endif
     const World &world_;                   ///< Read-only world reference used for validation.
     MutationSink sink_;                    ///< External mutation consumer (if set).

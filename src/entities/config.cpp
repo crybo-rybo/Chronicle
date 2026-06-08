@@ -5,6 +5,7 @@
 
 #include "entities/config.hpp"
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cstdlib>
 #include <fstream>
@@ -95,9 +96,13 @@ void apply_config_json_overrides(Config &config, const nlohmann::json &json,
                                  std::string(source));
     }
 
-    apply_json_field(json, "model_path", config.model_path, source);
-    apply_json_field(json, "context_size", config.context_size, source);
-    apply_json_field(json, "n_gpu_layers", config.n_gpu_layers, source);
+    apply_json_field(json, "llm_base_url", config.llm_base_url, source);
+    apply_json_field(json, "llm_model", config.llm_model, source);
+    apply_json_field(json, "llm_api_key", config.llm_api_key, source);
+    apply_json_field(json, "llm_organization", config.llm_organization, source);
+    apply_json_field(json, "llm_http_timeout_ms", config.llm_http_timeout_ms, source);
+    apply_json_field(json, "llm_max_retries", config.llm_max_retries, source);
+    apply_json_field(json, "llm_tls_verify", config.llm_tls_verify, source);
     apply_json_field(json, "temperature", config.temperature, source);
     apply_json_field(json, "max_response_tokens", config.max_response_tokens, source);
     apply_json_field(json, "inference_timeout_ms", config.inference_timeout_ms, source);
@@ -110,7 +115,6 @@ void apply_config_json_overrides(Config &config, const nlohmann::json &json,
     apply_json_field(json, "use_tui", config.use_tui, source);
     apply_json_field(json, "use_color", config.use_color, source);
     apply_json_field(json, "max_tool_iterations", config.max_tool_iterations, source);
-    apply_json_field(json, "auto_configure", config.auto_configure, source);
 
     if (json.contains("mutation_narration_templates")) {
         const auto &templates = json.at("mutation_narration_templates");
@@ -125,6 +129,24 @@ void apply_config_json_overrides(Config &config, const nlohmann::json &json,
                                          std::string(source) + " must be a string");
             }
             config.mutation_narration_templates[key] = value.get<std::string>();
+        }
+    }
+}
+
+void reject_removed_config_fields(const nlohmann::json &json, std::string_view source) {
+    static constexpr std::array<std::string_view, 4> kRemovedFields = {
+        "model_path",
+        "context_size",
+        "n_gpu_layers",
+        "auto_configure",
+    };
+
+    for (std::string_view field : kRemovedFields) {
+        if (json.contains(std::string(field))) {
+            throw std::runtime_error("Config: field '" + std::string(field) + "' in " +
+                                     std::string(source) +
+                                     " was removed; configure llm_base_url and llm_model for "
+                                     "OpenAI-compatible endpoints instead.");
         }
     }
 }
@@ -177,10 +199,21 @@ void apply_env_bool(const char *name, bool &target) {
 }
 
 void apply_environment_overrides(Config &config) {
-    apply_env_string("ZOO_MODEL_PATH", config.model_path);
-    apply_env_string("CHRONICLE_MODEL_PATH", config.model_path);
-    apply_env_int("CHRONICLE_CONTEXT_SIZE", config.context_size);
-    apply_env_int("CHRONICLE_N_GPU_LAYERS", config.n_gpu_layers);
+    apply_env_string("ZOO_BASE_URL", config.llm_base_url);
+    apply_env_string("ZOO_MODEL", config.llm_model);
+    if (const char *value = std::getenv("ZOO_API_KEY")) {
+        config.llm_api_key = value;
+    } else if (const char *openai_key = std::getenv("OPENAI_API_KEY")) {
+        config.llm_api_key = openai_key;
+    }
+
+    apply_env_string("CHRONICLE_LLM_BASE_URL", config.llm_base_url);
+    apply_env_string("CHRONICLE_LLM_MODEL", config.llm_model);
+    apply_env_string("CHRONICLE_LLM_API_KEY", config.llm_api_key);
+    apply_env_string("CHRONICLE_LLM_ORGANIZATION", config.llm_organization);
+    apply_env_int("CHRONICLE_LLM_HTTP_TIMEOUT_MS", config.llm_http_timeout_ms);
+    apply_env_int("CHRONICLE_LLM_MAX_RETRIES", config.llm_max_retries);
+    apply_env_bool("CHRONICLE_LLM_TLS_VERIFY", config.llm_tls_verify);
     apply_env_double("CHRONICLE_TEMPERATURE", config.temperature);
     apply_env_int("CHRONICLE_MAX_RESPONSE_TOKENS", config.max_response_tokens);
     apply_env_int("CHRONICLE_INFERENCE_TIMEOUT_MS", config.inference_timeout_ms);
@@ -188,7 +221,6 @@ void apply_environment_overrides(Config &config) {
     apply_env_bool("CHRONICLE_USE_TUI", config.use_tui);
     apply_env_bool("CHRONICLE_USE_COLOR", config.use_color);
     apply_env_int("CHRONICLE_MAX_TOOL_ITERATIONS", config.max_tool_iterations);
-    apply_env_bool("CHRONICLE_AUTO_CONFIGURE", config.auto_configure);
 }
 
 } // namespace
@@ -210,6 +242,7 @@ Config Config::load(const std::filesystem::path &path) {
     try {
         auto json = parse_json_file(path, "config");
         validate_public_config_shape(json, path.string());
+        reject_removed_config_fields(json, path.string());
         return json.get<Config>();
     } catch (const nlohmann::json::exception &e) {
         throw std::runtime_error("Config: parse error in " + path.string() + ": " + e.what());
@@ -221,6 +254,7 @@ Config Config::load_with_operator_overrides(const std::filesystem::path &path) {
     if (const char *override_path = std::getenv("CHRONICLE_CONFIG_OVERRIDE")) {
         if (*override_path != '\0') {
             auto override_json = parse_json_file(override_path, "operator override");
+            reject_removed_config_fields(override_json, override_path);
             apply_config_json_overrides(config, override_json, override_path);
         }
     }

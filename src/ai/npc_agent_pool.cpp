@@ -1,72 +1,73 @@
 /**
  * @file npc_agent_pool.cpp
  * @brief Implementation of @ref NpcAgentPool and @ref NpcAgentHandle.
- *
- * @details Implements the RAII handle move semantics and the pool acquire/release
- * cycle, as well as the production @ref NpcAgentPool::from_config factory that
- * creates a @c zoo::Agent from runtime configuration parameters.
  */
 
 #include "ai/npc_agent_pool.hpp"
-#include "ai/zoo_compat.hpp"
+#include "ai/harness_compat.hpp"
+#include "ai/tool_registry.hpp"
 #include "diagnostics/logger.hpp"
 #include "entities/config.hpp"
+
+#include <algorithm>
+#include <chrono>
+#include <memory>
 #include <stdexcept>
 
-#if CHRONICLE_ENABLE_ZOO
-#include "ai/zoo_agent_adapter.hpp"
-#include <nlohmann/json.hpp>
-#include <zoo/agent.hpp>
-#include <zoo/core/json.hpp>
-#include <zoo/log.hpp>
+#if CHRONICLE_ENABLE_HARNESS
+#include "ai/harness_agent_adapter.hpp"
+
+#include <zoo/Agent.hpp>
 #endif
 
 namespace chronicle {
 
-#if CHRONICLE_ENABLE_ZOO
+#if CHRONICLE_ENABLE_HARNESS
 namespace {
 
-logging::Level to_chronicle_level(zoo::LogLevel level) {
-    switch (level) {
-    case zoo::LogLevel::Debug:
-        return logging::Level::Debug;
-    case zoo::LogLevel::Info:
-        return logging::Level::Info;
-    case zoo::LogLevel::Warning:
-        return logging::Level::Warning;
-    case zoo::LogLevel::Error:
-        return logging::Level::Error;
+void validate_harness_config(const Config &config) {
+    if (!config.has_llm_endpoint()) {
+        throw std::runtime_error(
+            "NpcAgentPool::from_config: llm_base_url and llm_model are required for "
+            "harness-backed dialogue.");
     }
-    return logging::Level::Info;
+    if (config.llm_http_timeout_ms <= 0) {
+        throw std::runtime_error(
+            "NpcAgentPool::from_config: llm_http_timeout_ms must be positive.");
+    }
+    if (config.llm_max_retries < 0) {
+        throw std::runtime_error("NpcAgentPool::from_config: llm_max_retries cannot be negative.");
+    }
+    if (config.max_response_tokens <= 0) {
+        throw std::runtime_error(
+            "NpcAgentPool::from_config: max_response_tokens must be positive.");
+    }
+    if (config.max_tool_iterations <= 0) {
+        throw std::runtime_error(
+            "NpcAgentPool::from_config: max_tool_iterations must be positive.");
+    }
+    if (config.temperature < 0.0) {
+        throw std::runtime_error("NpcAgentPool::from_config: temperature must be non-negative.");
+    }
 }
 
-void zoo_log_bridge(zoo::LogLevel level, const char *message, void *) {
-    logging::write(to_chronicle_level(level), "zoo", message ? message : "");
+zoo::EndpointConfig build_endpoint_config(const Config &config) {
+    zoo::EndpointConfig endpoint;
+    endpoint.base_url = config.llm_base_url;
+    endpoint.model = config.llm_model;
+    endpoint.api_key = config.llm_api_key;
+    endpoint.organization = config.llm_organization;
+    endpoint.timeout = std::chrono::milliseconds(config.llm_http_timeout_ms);
+    endpoint.max_retries = config.llm_max_retries;
+    endpoint.tls_verify = config.llm_tls_verify;
+    return endpoint;
 }
 
-void install_zoo_log_bridge_if_enabled() {
-    static bool installed = false;
-    if (!logging::is_enabled() || installed) {
-        return;
-    }
-
-    zoo::set_log_callback(zoo_log_bridge);
-    installed = true;
-    logging::write(logging::Level::Info, "zoo", "installed Zoo-Keeper log bridge");
-}
-
-zoo::Expected<zoo::ModelConfig> build_model_config(const Config &config) {
-    nlohmann::json model_json{
-        {"model_path", config.model_path},
-        {"context_size", config.context_size},
-    };
-    if (config.auto_configure) {
-        model_json["auto_configure"] = true;
-    }
-    if (config.n_gpu_layers != -1) {
-        model_json["n_gpu_layers"] = config.n_gpu_layers;
-    }
-    return zoo::load_model_config(model_json);
+zoo::GenerationOptions build_generation_options(const Config &config) {
+    zoo::GenerationOptions options;
+    options.sampling.temperature = static_cast<float>(config.temperature);
+    options.max_tokens = config.max_response_tokens;
+    return options;
 }
 
 } // namespace
@@ -111,56 +112,52 @@ NpcAgentHandle &NpcAgentHandle::operator=(NpcAgentHandle &&other) noexcept {
 
 NpcAgentPool::NpcAgentPool(std::unique_ptr<AgentInterface> agent) : agent_(std::move(agent)) {}
 
-NpcAgentPool NpcAgentPool::from_config(const Config &config) {
-    if (config.model_path.empty()) {
-        throw std::runtime_error(
-            "NpcAgentPool::from_config: model_path is empty. "
-            "Set model_path in the scenario config file to a valid GGUF model file.");
-    }
+NpcAgentPool NpcAgentPool::from_config(const Config &config, ToolRegistry &tool_registry) {
+#if CHRONICLE_ENABLE_HARNESS
+    validate_harness_config(config);
 
-#if CHRONICLE_ENABLE_ZOO
-    install_zoo_log_bridge_if_enabled();
     logging::write(logging::Level::Info, "ai",
-                   "creating zoo agent model_path=" + config.model_path +
-                       " auto_configure=" + (config.auto_configure ? "true" : "false") +
-                       " context_size=" + std::to_string(config.context_size) +
-                       " n_gpu_layers=" + std::to_string(config.n_gpu_layers) +
+                   "creating harness agent base_url=" + config.llm_base_url +
+                       " model=" + config.llm_model +
                        " max_response_tokens=" + std::to_string(config.max_response_tokens) +
                        " temperature=" + std::to_string(config.temperature) +
                        " max_tool_iterations=" + std::to_string(config.max_tool_iterations) +
-                       " inference_timeout_ms=" + std::to_string(config.inference_timeout_ms));
+                       " inference_timeout_ms=" + std::to_string(config.inference_timeout_ms) +
+                       " llm_http_timeout_ms=" + std::to_string(config.llm_http_timeout_ms) +
+                       " llm_max_retries=" + std::to_string(config.llm_max_retries) +
+                       " llm_tls_verify=" + (config.llm_tls_verify ? "true" : "false"));
 
-    auto model_result = build_model_config(config);
-    if (!model_result) {
-        logging::write(logging::Level::Error, "ai",
-                       "zoo::load_model_config failed: " + model_result.error().to_string());
-        throw std::runtime_error("NpcAgentPool::from_config: failed to resolve model config: " +
-                                 model_result.error().to_string());
-    }
+    zoo::RunConfig run_config;
+    run_config.max_iterations = static_cast<size_t>(config.max_tool_iterations);
+    run_config.default_options = build_generation_options(config);
 
-    zoo::GenerationOptions gen_opts;
-    gen_opts.sampling.temperature = static_cast<float>(config.temperature);
-    gen_opts.max_tokens = config.max_response_tokens;
-    gen_opts.record_tool_trace = logging::is_enabled();
+    zoo::tools::ExecutionPolicy policy;
+    policy.set_max_calls_per_run(static_cast<size_t>(config.max_tool_iterations));
 
-    zoo::AgentConfig agent_config;
-    agent_config.max_tool_iterations = config.max_tool_iterations;
+    zoo::Agent::Builder builder;
+    builder.endpoint(build_endpoint_config(config))
+        .run_config(run_config)
+        .policy(std::move(policy));
+    tool_registry.register_harness_tools(builder);
 
-    auto result = zoo::Agent::create(*model_result, agent_config, gen_opts);
+    auto result = builder.build();
     if (!result) {
         logging::write(logging::Level::Error, "ai",
-                       "zoo::Agent::create failed: " + result.error().to_string());
-        throw std::runtime_error("NpcAgentPool::from_config: failed to create zoo::Agent: " +
+                       "zoo-keeper-harness Agent::build failed: " + result.error().to_string());
+        throw std::runtime_error("NpcAgentPool::from_config: failed to create harness agent: " +
                                  result.error().to_string());
     }
 
-    logging::write(logging::Level::Info, "ai", "zoo agent created");
-    return NpcAgentPool(
-        std::make_unique<ZooAgentAdapter>(std::move(*result), config.inference_timeout_ms));
+    logging::write(logging::Level::Info, "ai", "harness agent created");
+    auto agent = std::make_unique<zoo::Agent>(std::move(*result));
+    return NpcAgentPool(std::make_unique<HarnessAgentAdapter>(std::move(agent), tool_registry,
+                                                              config.inference_timeout_ms));
 #else
+    (void)config;
+    (void)tool_registry;
     logging::write(logging::Level::Error, "ai",
-                   "model_path was configured but Chronicle was built without Zoo-Keeper support");
-    throw_zoo_disabled("NpcAgentPool::from_config");
+                   "LLM endpoint was configured but Chronicle was built without harness support");
+    throw_harness_disabled("NpcAgentPool::from_config");
 #endif
 }
 

@@ -2,7 +2,7 @@
  * @file token_queue.hpp
  * @brief Thread-safe queue for streaming LLM output tokens.
  *
- * @details Zoo-Keeper's inference runs on its own internal thread and delivers
+ * @details The harness inference call delivers
  * generated tokens via a callback.  @ref TokenQueue bridges that inference
  * thread with the main game loop: the callback calls @ref push on the
  * inference thread while the main thread periodically calls @ref try_pop to
@@ -33,7 +33,7 @@ class TokenQueue {
   public:
     /// @brief Append a token to the back of the queue.
     ///
-    /// @details Thread-safe.  Called from the Zoo-Keeper inference callback.
+    /// @details Thread-safe.  Called from the harness inference callback.
     /// @param token The token string to enqueue.
     void push(std::string token);
 

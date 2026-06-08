@@ -5,7 +5,7 @@
  * @details @ref ResponseHandler sits between the LLM inference pipeline and
  * the output pipeline.  It has two distinct responsibilities:
  *
- * 1. **Token forwarding** — @ref on_token is called from the Zoo-Keeper
+ * 1. **Token forwarding** — @ref on_token is called from the Harness
  *    inference thread for each generated token.  The token is pushed into the
  *    @ref TokenQueue so the main thread can drain it and pass it to the output
  *    layer for streaming display.
@@ -49,7 +49,7 @@ class ResponseHandler {
 
     /// @brief Push a single streaming token into the token queue.
     ///
-    /// @details Called from the Zoo-Keeper inference thread.  Thread-safe via
+    /// @details Called from the Harness inference thread.  Thread-safe via
     /// @ref TokenQueue::push.
     ///
     /// @param token The token text to enqueue.

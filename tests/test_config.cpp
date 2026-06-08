@@ -13,14 +13,26 @@
 namespace chronicle {
 namespace {
 
-constexpr std::array<const char *, 13> kOperatorEnvNames = {
-    "CHRONICLE_CONFIG_OVERRIDE",     "ZOO_MODEL_PATH",
-    "CHRONICLE_MODEL_PATH",          "CHRONICLE_CONTEXT_SIZE",
-    "CHRONICLE_N_GPU_LAYERS",        "CHRONICLE_TEMPERATURE",
-    "CHRONICLE_MAX_RESPONSE_TOKENS", "CHRONICLE_INFERENCE_TIMEOUT_MS",
-    "CHRONICLE_SAVE_DIRECTORY",      "CHRONICLE_USE_TUI",
-    "CHRONICLE_USE_COLOR",           "CHRONICLE_MAX_TOOL_ITERATIONS",
-    "CHRONICLE_AUTO_CONFIGURE",
+constexpr std::array<const char *, 19> kOperatorEnvNames = {
+    "CHRONICLE_CONFIG_OVERRIDE",
+    "ZOO_BASE_URL",
+    "ZOO_MODEL",
+    "ZOO_API_KEY",
+    "OPENAI_API_KEY",
+    "CHRONICLE_LLM_BASE_URL",
+    "CHRONICLE_LLM_MODEL",
+    "CHRONICLE_LLM_API_KEY",
+    "CHRONICLE_LLM_ORGANIZATION",
+    "CHRONICLE_LLM_HTTP_TIMEOUT_MS",
+    "CHRONICLE_LLM_MAX_RETRIES",
+    "CHRONICLE_LLM_TLS_VERIFY",
+    "CHRONICLE_TEMPERATURE",
+    "CHRONICLE_MAX_RESPONSE_TOKENS",
+    "CHRONICLE_INFERENCE_TIMEOUT_MS",
+    "CHRONICLE_SAVE_DIRECTORY",
+    "CHRONICLE_USE_TUI",
+    "CHRONICLE_USE_COLOR",
+    "CHRONICLE_MAX_TOOL_ITERATIONS",
 };
 
 class ScopedOperatorEnvironment {
@@ -64,15 +76,16 @@ void write_json_file(const std::filesystem::path &path, std::string_view json) {
 
 } // namespace
 
-// ---------------------------------------------------------------------------
-// Load from fixture
-// ---------------------------------------------------------------------------
-
 TEST(ConfigTest, LoadFromFixture) {
     Config cfg = Config::load(FIXTURES_DIR "/config.json");
-    EXPECT_EQ(cfg.model_path, "/test/model.gguf");
-    EXPECT_EQ(cfg.context_size, 2048);
-    EXPECT_EQ(cfg.n_gpu_layers, 0);
+    EXPECT_EQ(cfg.llm_base_url, "http://localhost:11434/v1");
+    EXPECT_EQ(cfg.llm_model, "test-model");
+    EXPECT_EQ(cfg.llm_api_key, "test-key");
+    EXPECT_EQ(cfg.llm_organization, "test-org");
+    EXPECT_EQ(cfg.llm_http_timeout_ms, 45000);
+    EXPECT_EQ(cfg.llm_max_retries, 1);
+    EXPECT_FALSE(cfg.llm_tls_verify);
+    EXPECT_TRUE(cfg.has_llm_endpoint());
     EXPECT_DOUBLE_EQ(cfg.temperature, 0.5);
     EXPECT_EQ(cfg.max_response_tokens, 256);
     EXPECT_EQ(cfg.turns_per_period, 3);
@@ -88,10 +101,6 @@ TEST(ConfigTest, LoadFromFixture) {
               "{npc} hands you the {item}.");
 }
 
-// ---------------------------------------------------------------------------
-// Save + reload roundtrip
-// ---------------------------------------------------------------------------
-
 TEST(ConfigTest, SaveReloadRoundtrip) {
     Config original = Config::load(FIXTURES_DIR "/config.json");
 
@@ -101,9 +110,13 @@ TEST(ConfigTest, SaveReloadRoundtrip) {
 
     Config reloaded = Config::load(tmp);
 
-    EXPECT_EQ(reloaded.model_path, original.model_path);
-    EXPECT_EQ(reloaded.context_size, original.context_size);
-    EXPECT_EQ(reloaded.n_gpu_layers, original.n_gpu_layers);
+    EXPECT_EQ(reloaded.llm_base_url, original.llm_base_url);
+    EXPECT_EQ(reloaded.llm_model, original.llm_model);
+    EXPECT_EQ(reloaded.llm_api_key, original.llm_api_key);
+    EXPECT_EQ(reloaded.llm_organization, original.llm_organization);
+    EXPECT_EQ(reloaded.llm_http_timeout_ms, original.llm_http_timeout_ms);
+    EXPECT_EQ(reloaded.llm_max_retries, original.llm_max_retries);
+    EXPECT_EQ(reloaded.llm_tls_verify, original.llm_tls_verify);
     EXPECT_DOUBLE_EQ(reloaded.temperature, original.temperature);
     EXPECT_EQ(reloaded.max_response_tokens, original.max_response_tokens);
     EXPECT_EQ(reloaded.turns_per_period, original.turns_per_period);
@@ -120,23 +133,20 @@ TEST(ConfigTest, SaveReloadRoundtrip) {
     std::filesystem::remove(tmp);
 }
 
-// ---------------------------------------------------------------------------
-// Load from nonexistent path throws std::runtime_error
-// ---------------------------------------------------------------------------
-
 TEST(ConfigTest, LoadNonexistentThrows) {
     EXPECT_THROW(Config::load("/nonexistent/path/config.json"), std::runtime_error);
 }
 
-// ---------------------------------------------------------------------------
-// Default construction produces expected defaults
-// ---------------------------------------------------------------------------
-
 TEST(ConfigTest, DefaultConstruction) {
     Config cfg;
-    EXPECT_TRUE(cfg.model_path.empty());
-    EXPECT_EQ(cfg.context_size, 4096);
-    EXPECT_EQ(cfg.n_gpu_layers, -1);
+    EXPECT_TRUE(cfg.llm_base_url.empty());
+    EXPECT_TRUE(cfg.llm_model.empty());
+    EXPECT_TRUE(cfg.llm_api_key.empty());
+    EXPECT_TRUE(cfg.llm_organization.empty());
+    EXPECT_EQ(cfg.llm_http_timeout_ms, 60000);
+    EXPECT_EQ(cfg.llm_max_retries, 2);
+    EXPECT_TRUE(cfg.llm_tls_verify);
+    EXPECT_FALSE(cfg.has_llm_endpoint());
     EXPECT_DOUBLE_EQ(cfg.temperature, 0.7);
     EXPECT_EQ(cfg.max_response_tokens, 512);
     EXPECT_EQ(cfg.turns_per_period, 5);
@@ -152,9 +162,18 @@ TEST(ConfigTest, DefaultConstruction) {
               "{npc} excuses themselves and leaves.");
 }
 
-// ---------------------------------------------------------------------------
-// Malformed JSON throws std::runtime_error
-// ---------------------------------------------------------------------------
+TEST(ConfigTest, HasLlmEndpointRequiresBaseUrlAndModel) {
+    Config cfg;
+    cfg.llm_base_url = "http://localhost:11434/v1";
+    EXPECT_FALSE(cfg.has_llm_endpoint());
+
+    cfg.llm_base_url.clear();
+    cfg.llm_model = "test-model";
+    EXPECT_FALSE(cfg.has_llm_endpoint());
+
+    cfg.llm_base_url = "http://localhost:11434/v1";
+    EXPECT_TRUE(cfg.has_llm_endpoint());
+}
 
 TEST(ConfigTest, LoadMalformedJsonThrows) {
     auto tmp = std::filesystem::temp_directory_path() / "chronicle_test_malformed.json";
@@ -179,9 +198,25 @@ TEST(ConfigTest, VerbAliasesMustMapToStringCommands) {
     std::filesystem::remove(tmp);
 }
 
-// ---------------------------------------------------------------------------
-// max_tool_iterations field
-// ---------------------------------------------------------------------------
+TEST(ConfigTest, RemovedGgufConfigFieldsThrow) {
+    for (std::string_view field :
+         {"model_path", "context_size", "n_gpu_layers", "auto_configure"}) {
+        auto tmp = std::filesystem::temp_directory_path() /
+                   ("chronicle_removed_" + std::string(field) + ".json");
+        write_json_file(tmp, "{ \"" + std::string(field) + "\": \"removed\" }");
+
+        try {
+            (void)Config::load(tmp);
+            FAIL() << "Expected removed field to throw: " << field;
+        } catch (const std::runtime_error &e) {
+            const std::string message = e.what();
+            EXPECT_NE(message.find(std::string(field)), std::string::npos);
+            EXPECT_NE(message.find("was removed"), std::string::npos);
+        }
+
+        std::filesystem::remove(tmp);
+    }
+}
 
 TEST(ConfigTest, DefaultMaxToolIterations) {
     Config cfg;
@@ -221,8 +256,10 @@ TEST(ConfigTest, OperatorOverrideFileAppliesOnlyPresentFields) {
     auto override_path =
         std::filesystem::temp_directory_path() / "chronicle_test_operator_override.json";
     write_json_file(override_path, R"({
-  "model_path": "/local/model.gguf",
-  "n_gpu_layers": 24,
+  "llm_base_url": "http://override.local/v1",
+  "llm_model": "override-model",
+  "llm_api_key": "override-key",
+  "llm_http_timeout_ms": 30000,
   "max_response_tokens": 64,
   "mutation_narration_templates": {
     "give_item_to_player": "{npc} quietly gives you {item}."
@@ -232,9 +269,12 @@ TEST(ConfigTest, OperatorOverrideFileAppliesOnlyPresentFields) {
 
     Config cfg = Config::load_with_operator_overrides(FIXTURES_DIR "/config.json");
 
-    EXPECT_EQ(cfg.model_path, "/local/model.gguf");
-    EXPECT_EQ(cfg.context_size, 2048);
-    EXPECT_EQ(cfg.n_gpu_layers, 24);
+    EXPECT_EQ(cfg.llm_base_url, "http://override.local/v1");
+    EXPECT_EQ(cfg.llm_model, "override-model");
+    EXPECT_EQ(cfg.llm_api_key, "override-key");
+    EXPECT_EQ(cfg.llm_organization, "test-org");
+    EXPECT_EQ(cfg.llm_http_timeout_ms, 30000);
+    EXPECT_EQ(cfg.llm_max_retries, 1);
     EXPECT_EQ(cfg.max_response_tokens, 64);
     EXPECT_EQ(cfg.turns_per_period, 3);
     EXPECT_EQ(cfg.mutation_narration_templates.at("give_item_to_player"),
@@ -245,31 +285,72 @@ TEST(ConfigTest, OperatorOverrideFileAppliesOnlyPresentFields) {
     std::filesystem::remove(override_path);
 }
 
+TEST(ConfigTest, RemovedGgufFieldsInOperatorOverrideThrow) {
+    ScopedOperatorEnvironment env;
+    auto override_path =
+        std::filesystem::temp_directory_path() / "chronicle_test_removed_override.json";
+    write_json_file(override_path, R"({
+  "model_path": "/local/model.gguf"
+})");
+    env.set("CHRONICLE_CONFIG_OVERRIDE", override_path.string());
+
+    EXPECT_THROW(Config::load_with_operator_overrides(FIXTURES_DIR "/config.json"),
+                 std::runtime_error);
+
+    std::filesystem::remove(override_path);
+}
+
 TEST(ConfigTest, EnvironmentOverridesWinOverOperatorOverrideFile) {
     ScopedOperatorEnvironment env;
     auto override_path =
         std::filesystem::temp_directory_path() / "chronicle_test_operator_env_precedence.json";
     write_json_file(override_path, R"({
-  "model_path": "/file/model.gguf",
-  "n_gpu_layers": 4,
+  "llm_base_url": "http://file.local/v1",
+  "llm_model": "file-model",
+  "llm_api_key": "file-key",
+  "llm_http_timeout_ms": 5000,
+  "llm_max_retries": 4,
+  "llm_tls_verify": true,
   "inference_timeout_ms": 5000,
   "use_color": true
 })");
     env.set("CHRONICLE_CONFIG_OVERRIDE", override_path.string());
-    env.set("ZOO_MODEL_PATH", "/zoo/model.gguf");
-    env.set("CHRONICLE_MODEL_PATH", "/chronicle/model.gguf");
-    env.set("CHRONICLE_N_GPU_LAYERS", "12");
+    env.set("ZOO_BASE_URL", "http://zoo.local/v1");
+    env.set("ZOO_MODEL", "zoo-model");
+    env.set("OPENAI_API_KEY", "openai-key");
+    env.set("ZOO_API_KEY", "zoo-key");
+    env.set("CHRONICLE_LLM_BASE_URL", "http://chronicle.local/v1");
+    env.set("CHRONICLE_LLM_MODEL", "chronicle-model");
+    env.set("CHRONICLE_LLM_API_KEY", "chronicle-key");
+    env.set("CHRONICLE_LLM_ORGANIZATION", "chronicle-org");
+    env.set("CHRONICLE_LLM_HTTP_TIMEOUT_MS", "10000");
+    env.set("CHRONICLE_LLM_MAX_RETRIES", "0");
+    env.set("CHRONICLE_LLM_TLS_VERIFY", "false");
     env.set("CHRONICLE_INFERENCE_TIMEOUT_MS", "0");
     env.set("CHRONICLE_USE_COLOR", "false");
 
     Config cfg = Config::load_with_operator_overrides(FIXTURES_DIR "/config.json");
 
-    EXPECT_EQ(cfg.model_path, "/chronicle/model.gguf");
-    EXPECT_EQ(cfg.n_gpu_layers, 12);
+    EXPECT_EQ(cfg.llm_base_url, "http://chronicle.local/v1");
+    EXPECT_EQ(cfg.llm_model, "chronicle-model");
+    EXPECT_EQ(cfg.llm_api_key, "chronicle-key");
+    EXPECT_EQ(cfg.llm_organization, "chronicle-org");
+    EXPECT_EQ(cfg.llm_http_timeout_ms, 10000);
+    EXPECT_EQ(cfg.llm_max_retries, 0);
+    EXPECT_FALSE(cfg.llm_tls_verify);
     EXPECT_EQ(cfg.inference_timeout_ms, 0);
     EXPECT_FALSE(cfg.use_color);
 
     std::filesystem::remove(override_path);
+}
+
+TEST(ConfigTest, OpenAiApiKeyFallbackAppliesWhenZooApiKeyUnset) {
+    ScopedOperatorEnvironment env;
+    env.set("OPENAI_API_KEY", "openai-key");
+
+    Config cfg = Config::load_with_operator_overrides(FIXTURES_DIR "/config.json");
+
+    EXPECT_EQ(cfg.llm_api_key, "openai-key");
 }
 
 TEST(ConfigTest, MissingOperatorOverrideFileThrows) {
@@ -286,19 +367,6 @@ TEST(ConfigTest, InvalidEnvironmentOverrideThrows) {
 
     EXPECT_THROW(Config::load_with_operator_overrides(FIXTURES_DIR "/config.json"),
                  std::runtime_error);
-}
-
-TEST(ConfigTest, AutoConfigureDefaultsFalse) {
-    Config cfg = Config::load(FIXTURES_DIR "/config.json");
-    EXPECT_FALSE(cfg.auto_configure);
-}
-
-TEST(ConfigTest, AutoConfigureEnvironmentOverride) {
-    ScopedOperatorEnvironment env;
-    env.set("CHRONICLE_AUTO_CONFIGURE", "true");
-
-    Config cfg = Config::load_with_operator_overrides(FIXTURES_DIR "/config.json");
-    EXPECT_TRUE(cfg.auto_configure);
 }
 
 } // namespace chronicle

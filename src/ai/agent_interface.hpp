@@ -3,14 +3,14 @@
  * @brief Abstract interface for the LLM agent used in NPC dialogue.
  *
  * @details @ref AgentInterface decouples Chronicle's game logic from the
- * concrete Zoo-Keeper @c zoo::Agent implementation.  This separation allows:
+ * concrete Harness @c zoo::Agent implementation.  This separation allows:
  *
  * - **Unit testing** without loading a real model — tests inject a mock
  *   @ref AgentInterface via @ref NpcAgentPool's test-injection constructor.
  * - **Future flexibility** — an alternative inference backend can be swapped
  *   in by implementing this interface without touching the engine layer.
  *
- * The concrete production implementation is @ref ZooAgentAdapter.
+ * The concrete production implementation is @ref HarnessAgentAdapter.
  */
 
 #pragma once
@@ -49,7 +49,7 @@ class AgentInterface {
 
     /// @brief Callback invoked periodically during inference for main-thread work.
     ///
-    /// @details @ref ZooAgentAdapter calls this in its polling loop so the
+    /// @details @ref HarnessAgentAdapter calls this in its polling loop so the
     /// main thread can drain the @ref TokenQueue and update the display while
     /// waiting for inference to complete.
     using PollCallback = std::function<void()>;

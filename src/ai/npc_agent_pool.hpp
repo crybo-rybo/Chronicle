@@ -32,6 +32,7 @@ namespace chronicle {
 
 struct Config;
 class NpcAgentPool;
+class ToolRegistry;
 
 /// @brief RAII handle providing exclusive access to the shared agent.
 ///
@@ -91,7 +92,7 @@ class NpcAgentHandle {
 /// attempted while the agent is in use, @ref acquire throws.
 ///
 /// The production path is @ref from_config, which creates a real
-/// @c zoo::Agent via the @ref ZooAgentAdapter.  For tests, the
+/// @c zoo::Agent via the @ref HarnessAgentAdapter.  For tests, the
 /// @ref NpcAgentPool(std::unique_ptr<AgentInterface>) constructor accepts a
 /// mock implementation.
 class NpcAgentPool {
@@ -103,15 +104,15 @@ class NpcAgentPool {
 
     /// @brief Production factory: create a pool from a loaded @ref Config.
     ///
-    /// @details Constructs a @c zoo::Agent using the model path and inference
-    /// parameters from @p config, wraps it in a @ref ZooAgentAdapter, and
-    /// returns an @ref NpcAgentPool owning it.
+    /// @details Constructs a @c zoo::Agent using the endpoint and inference
+    /// parameters from @p config, registers Chronicle tools from @p tool_registry,
+    /// wraps it in a @ref HarnessAgentAdapter, and returns a pool owning it.
     ///
-    /// @param config Runtime configuration providing model path and parameters.
+    /// @param config Runtime configuration providing endpoint and generation parameters.
+    /// @param tool_registry Registry captured by the harness tool callbacks.
     /// @return A new @ref NpcAgentPool ready for use.
-    /// @throws std::runtime_error if @c config.model_path is empty or if the
-    ///         Zoo-Keeper agent creation fails.
-    static NpcAgentPool from_config(const Config &config);
+    /// @throws std::runtime_error if endpoint config is incomplete or agent creation fails.
+    static NpcAgentPool from_config(const Config &config, ToolRegistry &tool_registry);
 
     /// @brief Acquire exclusive access to the shared agent for a given NPC.
     ///

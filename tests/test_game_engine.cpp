@@ -297,7 +297,6 @@ TempEngineScenario make_event_engine_scenario(std::string_view suffix,
     write_file(root / "events.json", events_json);
 
     nlohmann::json config = {
-        {"model_path", ""},
         {"turns_per_period", 3},
         {"save_directory", (root / "saves").string()},
     };
@@ -384,7 +383,6 @@ TempEngineScenario make_locked_exit_engine_scenario(std::string_view suffix) {
     write_file(root / "events.json", R"json({"events": {}})json");
 
     nlohmann::json config = {
-        {"model_path", ""},
         {"turns_per_period", 3},
         {"save_directory", (root / "saves").string()},
     };
@@ -851,7 +849,7 @@ TEST_F(GameEngineTest, ConversationHelpListsDialogueAndHardCommands) {
     EXPECT_EQ(help_text.find("go <direction>"), std::string::npos);
 }
 
-TEST_F(GameEngineTest, StubDialogueExplainsEmptyModelPath) {
+TEST_F(GameEngineTest, StubDialogueExplainsMissingLlmEndpoint) {
     auto *renderer = mock_renderer.get();
     GameEngine engine((sample_root() / "config.json").string(), sample_world_files(),
                       std::move(mock_renderer));
@@ -862,8 +860,8 @@ TEST_F(GameEngineTest, StubDialogueExplainsEmptyModelPath) {
     engine.handle_command(talk);
 
     EXPECT_TRUE(contains_system_text(*renderer, "stub output"));
-    EXPECT_TRUE(contains_system_text(*renderer, "no local model"));
-    EXPECT_TRUE(contains_system_text(*renderer, "CONTRIBUTING.md#local-model-paths"));
+    EXPECT_TRUE(contains_system_text(*renderer, "no LLM endpoint"));
+    EXPECT_TRUE(contains_system_text(*renderer, "CONTRIBUTING.md#llm-endpoints"));
 
     ParsedCommand dialogue;
     dialogue.verb = CommandVerb::Dialogue;
@@ -873,9 +871,8 @@ TEST_F(GameEngineTest, StubDialogueExplainsEmptyModelPath) {
 
     ASSERT_FALSE(renderer->systems.empty());
     EXPECT_NE(renderer->systems.back().find("AI dialogue stub"), std::string::npos);
-    EXPECT_NE(renderer->systems.back().find("no local model"), std::string::npos);
-    EXPECT_NE(renderer->systems.back().find("CONTRIBUTING.md#local-model-paths"),
-              std::string::npos);
+    EXPECT_NE(renderer->systems.back().find("no LLM endpoint"), std::string::npos);
+    EXPECT_NE(renderer->systems.back().find("CONTRIBUTING.md#llm-endpoints"), std::string::npos);
     EXPECT_EQ(engine.world().clock.total_turns, 1);
 }
 
