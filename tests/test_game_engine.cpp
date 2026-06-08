@@ -861,7 +861,7 @@ TEST_F(GameEngineTest, StubDialogueExplainsMissingLlmEndpoint) {
 
     EXPECT_TRUE(contains_system_text(*renderer, "stub output"));
     EXPECT_TRUE(contains_system_text(*renderer, "no LLM endpoint"));
-    EXPECT_TRUE(contains_system_text(*renderer, "CONTRIBUTING.md#llm-endpoints"));
+    EXPECT_TRUE(contains_system_text(*renderer, "CONTRIBUTING.md#local-llm-endpoints"));
 
     ParsedCommand dialogue;
     dialogue.verb = CommandVerb::Dialogue;
@@ -872,7 +872,8 @@ TEST_F(GameEngineTest, StubDialogueExplainsMissingLlmEndpoint) {
     ASSERT_FALSE(renderer->systems.empty());
     EXPECT_NE(renderer->systems.back().find("AI dialogue stub"), std::string::npos);
     EXPECT_NE(renderer->systems.back().find("no LLM endpoint"), std::string::npos);
-    EXPECT_NE(renderer->systems.back().find("CONTRIBUTING.md#llm-endpoints"), std::string::npos);
+    EXPECT_NE(renderer->systems.back().find("CONTRIBUTING.md#local-llm-endpoints"),
+              std::string::npos);
     EXPECT_EQ(engine.world().clock.total_turns, 1);
 }
 

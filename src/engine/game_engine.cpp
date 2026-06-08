@@ -64,7 +64,7 @@ std::string_view command_verb_name(CommandVerb verb) {
     return "unknown";
 }
 
-constexpr std::string_view kLlmEndpointDocs = "CONTRIBUTING.md#llm-endpoints";
+constexpr std::string_view kLlmEndpointDocs = "CONTRIBUTING.md#local-llm-endpoints";
 
 constexpr std::string_view kDialogueFailureMessage =
     "Dialogue failed or timed out. You can try again, say 'bye' to leave, or use "
