@@ -11,7 +11,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-26]
         harness: [ON, OFF]
     runs-on: ${{ matrix.os }}
 
@@ -25,29 +25,12 @@ jobs:
         if: runner.os == 'Linux' && matrix.harness == 'ON'
         run: sudo apt-get update && sudo apt-get install -y libcurl4-openssl-dev
 
-      - name: Install macOS LLVM
-        if: runner.os == 'macOS' && matrix.harness == 'ON'
-        run: brew install llvm
-
       - name: Configure
-        shell: bash
-        run: |
-          cmake_args=(
-            -B build
-            -DCMAKE_BUILD_TYPE=Release
-            -DCHRONICLE_WERROR=ON
-            -DCHRONICLE_ENABLE_HARNESS=${{ matrix.harness }}
-          )
-
-          if [[ "${RUNNER_OS}" == "macOS" && "${{ matrix.harness }}" == "ON" ]]; then
-            llvm_prefix="$(brew --prefix llvm)"
-            cmake_args+=(
-              -DCMAKE_C_COMPILER="${llvm_prefix}/bin/clang"
-              -DCMAKE_CXX_COMPILER="${llvm_prefix}/bin/clang++"
-            )
-          fi
-
-          cmake "${cmake_args[@]}"
+        run: >
+          cmake -B build
+          -DCMAKE_BUILD_TYPE=Release
+          -DCHRONICLE_WERROR=ON
+          -DCHRONICLE_ENABLE_HARNESS=${{ matrix.harness }}
 
       - name: Build
         run: cmake --build build --parallel
