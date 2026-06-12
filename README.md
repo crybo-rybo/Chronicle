@@ -2,10 +2,12 @@
 
 Chronicle is a bounded scenario console/runtime for offline, LLM-driven NPC
 mystery and social-sim text adventures. Chronicle is the console: it owns the
-C++23 runtime, local [Zoo-Keeper](https://github.com/crybo-rybo/zoo-keeper)
-integration, prompt assembly, save/load, validation, and strict tool/mutation
-pipeline. Creators bring the cartridges: JSON scenario packages that define a
-world, cast, facts, flags, events, and runtime defaults.
+C++23 runtime, local
+[zoo-keeper-harness](https://github.com/crybo-rybo/zoo-keeper-harness)
+integration for OpenAI-compatible endpoints, prompt assembly, save/load,
+validation, and strict tool/mutation pipeline. Creators bring the cartridges:
+JSON scenario packages that define a world, cast, facts, flags, events, and
+runtime defaults.
 
 The stable v1 public contract is deliberately narrow:
 
@@ -33,7 +35,7 @@ cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --parallel
 ```
 
-For a local debug build with Chronicle and Zoo-Keeper diagnostics enabled:
+For a local debug build with Chronicle diagnostics enabled:
 
 ```bash
 cmake --preset debug-logging
@@ -94,15 +96,16 @@ Manage the cartridge library:
 
 Once the runtime starts, type `help` for the in-game command list.
 
-Tracked scenario packages keep `model_path` empty, so NPC dialogue uses explicit
-stub output until you configure a local GGUF model path for your machine. This
-is expected for a fresh checkout; deterministic commands, validation, save/load,
-and scripted events still work. See [Local Model Paths](CONTRIBUTING.md#local-model-paths).
+Tracked scenario packages keep LLM endpoint settings empty, so NPC dialogue
+uses explicit stub output until you configure an OpenAI-compatible endpoint for
+your machine. This is expected for a fresh checkout; deterministic commands,
+validation, save/load, and scripted events still work. See
+[Local LLM Endpoints](CONTRIBUTING.md#local-llm-endpoints).
 
-For a one-off model-backed run, point `ZOO_MODEL_PATH` at a local GGUF model:
+For a one-off model-backed run against a local endpoint:
 
 ```bash
-ZOO_MODEL_PATH=/path/to/model.gguf ./build/src/chronicle --scenario data
+ZOO_BASE_URL=http://localhost:11434/v1 ZOO_MODEL=llama3.2 ./build/src/chronicle --scenario data
 ```
 
 For repeatable local settings, put partial overrides in a gitignored JSON file
@@ -170,9 +173,9 @@ Manifest file paths must be relative paths that stay inside the package director
 
 Before sharing a cartridge, run `chronicle inspect --scenario <dir>` to review
 identity and readiness, then `chronicle validate --scenario <dir>` for the
-model-free validation gate. Shared cartridges should keep `model_path` empty;
-operators provide local GGUF paths with environment variables or a gitignored
-override file.
+endpoint-free validation gate. Shared cartridges should not commit endpoint
+URLs, model names, or credentials; operators provide those with environment
+variables or a gitignored override file.
 
 NPCs may declare per-character tool policies in `npcs.json`. `allowed_tools` is the fixed v1 tool palette; scoped lists restrict which authored IDs the NPC may touch. Empty scoped lists mean no additional ID restriction.
 
@@ -184,6 +187,17 @@ For the field-by-field package reference, see [`docs/scenario-package-schema.md`
 
 ```bash
 ctest --test-dir build --output-on-failure
+```
+
+Integration tests are compiled only when requested and runtime-skip unless an
+endpoint is configured:
+
+```bash
+cmake -B build-integration -DCHRONICLE_INTEGRATION_TESTS=ON
+cmake --build build-integration --parallel
+CHRONICLE_INTEGRATION_LLM_BASE_URL=http://localhost:11434/v1 \
+CHRONICLE_INTEGRATION_LLM_MODEL=llama3.2 \
+ctest --test-dir build-integration --output-on-failure
 ```
 
 ## Project Structure

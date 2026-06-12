@@ -9,19 +9,19 @@
 
 #include "engine/game_engine.hpp"
 #include "ai/prompt_builder.hpp"
+#include "common/parse_utils.hpp"
 #include "diagnostics/logger.hpp"
 #include "engine/mutation_gate.hpp"
 #include "engine/mutations.hpp"
 #include "engine/scripted_events.hpp"
-#include "engine/world_query.hpp"
-#include "common/parse_utils.hpp"
 #include "engine/text_utils.hpp"
+#include "engine/world_query.hpp"
 #include "entities/world_loader.hpp"
 #include "entities/world_validator.hpp"
 #include <algorithm>
-#include <stdexcept>
 #include <iostream>
 #include <sstream>
+#include <stdexcept>
 #include <utility>
 
 namespace chronicle {
@@ -64,7 +64,7 @@ std::string_view command_verb_name(CommandVerb verb) {
     return "unknown";
 }
 
-constexpr std::string_view kLocalModelDocs = "CONTRIBUTING.md#local-model-paths";
+constexpr std::string_view kLlmEndpointDocs = "CONTRIBUTING.md#local-llm-endpoints";
 
 constexpr std::string_view kDialogueFailureMessage =
     "Dialogue failed or timed out. You can try again, say 'bye' to leave, or use "
@@ -116,27 +116,27 @@ bool allowed_in_conversation(CommandVerb verb) {
            verb == CommandVerb::Load || verb == CommandVerb::Quit || verb == CommandVerb::Help;
 }
 
-std::string stub_intro_message(bool empty_model_path) {
-    if (empty_model_path) {
-        return "AI dialogue is using stub output because no local model is configured. "
+std::string stub_intro_message(bool missing_endpoint_config) {
+    if (missing_endpoint_config) {
+        return "AI dialogue is using stub output because no LLM endpoint is configured. "
                "NPC replies are placeholders. See " +
-               std::string(kLocalModelDocs) + ".";
+               std::string(kLlmEndpointDocs) + ".";
     }
-    return "AI dialogue is using stub output because the configured local model could not be "
+    return "AI dialogue is using stub output because the configured LLM endpoint could not be "
            "initialized. Check logs and see " +
-           std::string(kLocalModelDocs) + ".";
+           std::string(kLlmEndpointDocs) + ".";
 }
 
-std::string stub_dialogue_message(std::string_view npc_name, bool empty_model_path) {
-    if (empty_model_path) {
+std::string stub_dialogue_message(std::string_view npc_name, bool missing_endpoint_config) {
+    if (missing_endpoint_config) {
         return "AI dialogue stub: " + std::string(npc_name) +
-               " cannot generate a model-backed reply because no local model is configured. See " +
-               std::string(kLocalModelDocs) + ".";
+               " cannot generate a model-backed reply because no LLM endpoint is configured. See " +
+               std::string(kLlmEndpointDocs) + ".";
     }
     return "AI dialogue stub: " + std::string(npc_name) +
-           " cannot generate a model-backed reply because the configured local model is "
+           " cannot generate a model-backed reply because the configured LLM endpoint is "
            "unavailable. Check logs and see " +
-           std::string(kLocalModelDocs) + ".";
+           std::string(kLlmEndpointDocs) + ".";
 }
 
 std::string npc_display_name(const World &world, const std::string &npc_id) {
@@ -165,8 +165,7 @@ std::string format_params(const std::map<std::string, std::string> &params) {
 } // namespace
 
 GameEngine::GameEngine(const std::string &config_path, const WorldFileSet &world_files,
-                       std::unique_ptr<Renderer> renderer,
-                       std::unique_ptr<NpcAgentPool> agent_pool,
+                       std::unique_ptr<Renderer> renderer, std::unique_ptr<NpcAgentPool> agent_pool,
                        std::optional<ScenarioManifest> manifest)
     : GameEngine(Config::load(config_path), config_path, world_files, std::move(renderer),
                  std::move(agent_pool), std::move(manifest)) {}
@@ -185,7 +184,7 @@ GameEngine::GameEngine(Config config, const std::string &config_path,
                              .chronicle_schema_version = manifest_->chronicle_schema_version,
                          }}
                        : std::nullopt),
-      agent_pool_(std::move(agent_pool)) {
+      tool_registry_(nullptr), agent_pool_(std::move(agent_pool)) {
 
     logging::write(logging::Level::Info, "engine",
                    "loaded config=" + config_path + " world=" + world_files.world.string() +
@@ -203,13 +202,13 @@ GameEngine::GameEngine(Config config, const std::string &config_path,
         [this](std::string_view narration) { renderer_->render_action(narration); }, token_queue_,
         world_, config_.mutation_narration_templates);
 
-    if (!agent_pool_ && !config_.model_path.empty()) {
+    if (!agent_pool_ && config_.has_llm_endpoint()) {
         try {
             logging::write(logging::Level::Info, "ai",
-                           "initializing agent pool model_path=" + config_.model_path +
-                               " context_size=" + std::to_string(config_.context_size) +
-                               " n_gpu_layers=" + std::to_string(config_.n_gpu_layers));
-            agent_pool_ = std::make_unique<NpcAgentPool>(NpcAgentPool::from_config(config_));
+                           "initializing harness agent pool base_url=" + config_.llm_base_url +
+                               " model=" + config_.llm_model);
+            agent_pool_ =
+                std::make_unique<NpcAgentPool>(NpcAgentPool::from_config(config_, *tool_registry_));
         } catch (const std::exception &e) {
             logging::write(logging::Level::Error, "ai",
                            std::string("failed to initialize agent pool: ") + e.what());
@@ -314,16 +313,16 @@ void GameEngine::handle_command(const ParsedCommand &cmd) {
     }
 
     if (cmd.verb == CommandVerb::Go) {
-        run_player_mutation(validate_player_move(world_, cmd.primary_arg),
-                            [this](const MutationRequest &req) {
-                                const auto &dir = req.params.at("direction");
-                                const auto &dest_id = req.params.at("location_id");
-                                auto dest_it = world_.locations.find(dest_id);
-                                std::string name =
-                                    dest_it != world_.locations.end() ? dest_it->second.name : dest_id;
-                                renderer_->render_move(dir, name);
-                                render_current_scene();
-                            });
+        run_player_mutation(
+            validate_player_move(world_, cmd.primary_arg), [this](const MutationRequest &req) {
+                const auto &dir = req.params.at("direction");
+                const auto &dest_id = req.params.at("location_id");
+                auto dest_it = world_.locations.find(dest_id);
+                std::string name =
+                    dest_it != world_.locations.end() ? dest_it->second.name : dest_id;
+                renderer_->render_move(dir, name);
+                render_current_scene();
+            });
         return;
     }
 
@@ -338,26 +337,26 @@ void GameEngine::handle_command(const ParsedCommand &cmd) {
     }
 
     if (cmd.verb == CommandVerb::Take) {
-        run_player_mutation(validate_player_take(world_, cmd.primary_arg),
-                            [this](const MutationRequest &req) {
-                                const auto &item_id = req.params.at("item_id");
-                                auto w_it = world_.items.find(item_id);
-                                renderer_->render_action(
-                                    "You take the " +
-                                    (w_it != world_.items.end() ? w_it->second.name : item_id) + ".");
-                            });
+        run_player_mutation(
+            validate_player_take(world_, cmd.primary_arg), [this](const MutationRequest &req) {
+                const auto &item_id = req.params.at("item_id");
+                auto w_it = world_.items.find(item_id);
+                renderer_->render_action(
+                    "You take the " + (w_it != world_.items.end() ? w_it->second.name : item_id) +
+                    ".");
+            });
         return;
     }
 
     if (cmd.verb == CommandVerb::Drop) {
-        run_player_mutation(validate_player_drop(world_, cmd.primary_arg),
-                            [this](const MutationRequest &req) {
-                                const auto &item_id = req.params.at("item_id");
-                                auto w_it = world_.items.find(item_id);
-                                renderer_->render_action(
-                                    "You drop the " +
-                                    (w_it != world_.items.end() ? w_it->second.name : item_id) + ".");
-                            });
+        run_player_mutation(
+            validate_player_drop(world_, cmd.primary_arg), [this](const MutationRequest &req) {
+                const auto &item_id = req.params.at("item_id");
+                auto w_it = world_.items.find(item_id);
+                renderer_->render_action(
+                    "You drop the " + (w_it != world_.items.end() ? w_it->second.name : item_id) +
+                    ".");
+            });
         return;
     }
 
@@ -398,9 +397,8 @@ void GameEngine::handle_command(const ParsedCommand &cmd) {
         }
         auto save_data = save_system_.load(*slot);
         if (!save_data) {
-            renderer_->render_error(
-                "No valid save found in slot " + std::to_string(*slot) +
-                (manifest_ ? " for cartridge '" + manifest_->id + "'." : "."));
+            renderer_->render_error("No valid save found in slot " + std::to_string(*slot) +
+                                    (manifest_ ? " for cartridge '" + manifest_->id + "'." : "."));
             return;
         }
         auto validation = validate_world(save_data->world);
@@ -471,7 +469,8 @@ void GameEngine::process_pending_mutations() {
         response_handler_->narrate_mutation(mutation, actor_name);
     }
 
-    if (current_conversation_npc_id_ && !player_can_see_npc(world_, *current_conversation_npc_id_)) {
+    if (current_conversation_npc_id_ &&
+        !player_can_see_npc(world_, *current_conversation_npc_id_)) {
         active_conversation_handle_.reset();
         current_conversation_npc_id_.reset();
         phase_ = GamePhase::Playing;
@@ -495,7 +494,7 @@ void GameEngine::run_post_turn_pipeline() {
 }
 
 void GameEngine::run_player_mutation(std::variant<MutationRequest, std::string> result,
-                                       std::function<void(const MutationRequest &)> on_success) {
+                                     std::function<void(const MutationRequest &)> on_success) {
     if (auto *error = std::get_if<std::string>(&result)) {
         renderer_->render_error(*error);
         return;
@@ -526,8 +525,7 @@ void GameEngine::evaluate_scripted_events() {
         return;
     }
 
-    if (phase_ != GamePhase::GameOver &&
-        world_.clock.is_final_period(config_.total_periods)) {
+    if (phase_ != GamePhase::GameOver && world_.clock.is_final_period(config_.total_periods)) {
         phase_ = GamePhase::GameOver;
         renderer_->render_resolution("Time has run out.");
     }
@@ -539,7 +537,7 @@ void GameEngine::handle_dialogue(const std::string &npc_id, const std::string &i
             logging::write(logging::Level::Warning, "dialogue",
                            "agent pool unavailable; using stub dialogue for npc=" + npc_id);
             renderer_->render_system(stub_dialogue_message(npc_display_name(world_, npc_id),
-                                                           config_.model_path.empty()));
+                                                           !config_.has_llm_endpoint()));
             run_post_turn_pipeline();
             return;
         }
@@ -675,7 +673,7 @@ bool GameEngine::start_conversation(const std::string &npc_id) {
         phase_ = GamePhase::InConversation;
         current_conversation_npc_id_ = npc_id;
         renderer_->render_system("You are now talking to " + npc_it->second.identity.name + ".");
-        renderer_->render_system(stub_intro_message(config_.model_path.empty()));
+        renderer_->render_system(stub_intro_message(!config_.has_llm_endpoint()));
         return true;
     }
 

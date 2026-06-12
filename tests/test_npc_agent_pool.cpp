@@ -1,4 +1,5 @@
 #include "ai/npc_agent_pool.hpp"
+#include "ai/tool_registry.hpp"
 #include "entities/config.hpp"
 #include <gtest/gtest.h>
 
@@ -103,33 +104,50 @@ TEST(NpcAgentPoolTest, HandleNpcId) {
     EXPECT_EQ(handle.npc_id(), "marcus");
 }
 
-// ---------------------------------------------------------------------------
-// from_config failure tests (no model required)
-// ---------------------------------------------------------------------------
-
-TEST(NpcAgentPoolTest, FromConfigThrowsOnEmptyModelPath) {
+#if CHRONICLE_ENABLE_HARNESS
+TEST(NpcAgentPoolTest, FromConfigThrowsOnMissingEndpointConfig) {
     Config config;
-    config.model_path = "";
-    EXPECT_THROW(NpcAgentPool::from_config(config), std::runtime_error);
+    World world;
+    ToolRegistry registry(world);
+
+    EXPECT_THROW(NpcAgentPool::from_config(config, registry), std::runtime_error);
 }
 
-TEST(NpcAgentPoolTest, FromConfigThrowsOnMissingModelFile) {
+TEST(NpcAgentPoolTest, FromConfigEndpointErrorMessageIsDescriptive) {
     Config config;
-    config.model_path = "/nonexistent/path/to/model.gguf";
-    config.context_size = 2048;
-    EXPECT_THROW(NpcAgentPool::from_config(config), std::runtime_error);
-}
+    World world;
+    ToolRegistry registry(world);
 
-TEST(NpcAgentPoolTest, FromConfigErrorMessageIsDescriptive) {
-    Config config;
-    config.model_path = "";
     try {
-        NpcAgentPool::from_config(config);
+        NpcAgentPool::from_config(config, registry);
         FAIL() << "Expected std::runtime_error";
     } catch (const std::runtime_error &e) {
         std::string msg = e.what();
-        EXPECT_NE(msg.find("model_path"), std::string::npos);
+        EXPECT_NE(msg.find("llm_base_url"), std::string::npos);
+        EXPECT_NE(msg.find("llm_model"), std::string::npos);
     }
 }
+
+TEST(NpcAgentPoolTest, FromConfigBuildsHarnessAgentWithoutNetworkRequest) {
+    Config config;
+    config.llm_base_url = "http://localhost:11434/v1";
+    config.llm_model = "test-model";
+    World world;
+    ToolRegistry registry(world);
+
+    EXPECT_NO_THROW({ auto pool = NpcAgentPool::from_config(config, registry); });
+}
+
+TEST(NpcAgentPoolTest, FromConfigRejectsInvalidHarnessRuntimeLimits) {
+    Config config;
+    config.llm_base_url = "http://localhost:11434/v1";
+    config.llm_model = "test-model";
+    config.llm_http_timeout_ms = 0;
+    World world;
+    ToolRegistry registry(world);
+
+    EXPECT_THROW(NpcAgentPool::from_config(config, registry), std::runtime_error);
+}
+#endif
 
 } // namespace chronicle

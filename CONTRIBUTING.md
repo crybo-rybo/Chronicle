@@ -17,8 +17,8 @@ cmake --build build --parallel
 ctest --test-dir build --output-on-failure
 ```
 
-For dialogue/model debugging, use the logging preset. It enables Chronicle
-diagnostics and turns on Zoo-Keeper logging by default:
+For dialogue and endpoint debugging, use the logging preset. It enables
+Chronicle diagnostics:
 
 ```bash
 cmake --preset debug-logging
@@ -29,36 +29,36 @@ CHRONICLE_LOG_FILE=chronicle.log ./build-logging/src/chronicle
 `CHRONICLE_LOG_FILE` appends logs to the named file. `CHRONICLE_LOG_LEVEL`
 accepts `debug`, `info`, `warning`, or `error`. `CHRONICLE_LOG=off` disables
 Chronicle logging at runtime even in a logging build, while
-`CHRONICLE_LOG=debug|info|warning|error` enables logging at that level. Pass
-`-DCHRONICLE_ENABLE_ZOO_LOGGING=OFF` during configure if you need Chronicle
-diagnostics without Zoo-Keeper diagnostics.
+`CHRONICLE_LOG=debug|info|warning|error` enables logging at that level.
 
 Logs are local diagnostics, not release artifacts. Review or redact local paths,
-player input, model setup details, and scenario secrets before sharing a log
+player input, endpoint details, and scenario secrets before sharing a log
 file outside your machine.
 
-Manual Zoo-Keeper smoke tests are opt-in because they require a local model:
+Manual harness smoke tests are opt-in because they require an
+OpenAI-compatible endpoint:
 
 ```bash
 cmake -B build -DCHRONICLE_BUILD_TOOLS=ON
-cmake --build build --target zk_smoke_test --parallel
-ZOO_MODEL_PATH=/path/to/model.gguf ./build/tools/zk_smoke_test
+cmake --build build --target harness_smoke_test --parallel
+ZOO_BASE_URL=http://localhost:11434/v1 ZOO_MODEL=llama3.2 ./build/tools/harness_smoke_test
 ```
 
-`ZOO_MODEL_PATH` must point to a local GGUF model used by `tools/zk_smoke_test`.
-Automated integration tests that need a model use the separate
-`ZOO_INTEGRATION_MODEL` environment variable.
+`ZOO_BASE_URL` defaults to `http://localhost:11434/v1`. `ZOO_MODEL` is
+required. `ZOO_API_KEY` or `OPENAI_API_KEY` may be set when the endpoint
+requires a key.
 
-### Local Model Paths
+### Local LLM Endpoints
 
-The bundled sample scenario keeps `data/config.json` with `model_path` empty.
-Machine-local model paths and hardware-specific runtime settings belong in one of:
+The bundled sample scenario keeps endpoint fields empty. Machine-local
+endpoint URLs, model names, keys, and save paths belong in one of:
 
 - A gitignored local config override, e.g. `.secret/local_config.json`
-- Environment variables: `ZOO_MODEL_PATH` for normal runs or
-  `ZOO_INTEGRATION_MODEL` for integration tests
+- Environment variables for one-off runs
 
-Never commit a machine-local path into tracked configuration.
+Never commit endpoint credentials into tracked configuration. Shared cartridges
+should also avoid committing endpoint URLs and model names unless the package
+is intentionally bound to a specific local service.
 
 Runtime config precedence is:
 
@@ -70,8 +70,9 @@ The override JSON is partial, so it can contain only local fields:
 
 ```json
 {
-  "model_path": "/path/to/model.gguf",
-  "n_gpu_layers": -1,
+  "llm_base_url": "http://localhost:11434/v1",
+  "llm_model": "llama3.2",
+  "llm_api_key": "",
   "save_directory": ".secret/saves"
 }
 ```
@@ -82,27 +83,37 @@ Use it like this:
 CHRONICLE_CONFIG_OVERRIDE=.secret/local_config.json ./build/src/chronicle --scenario data
 ```
 
-Supported runtime environment overrides are `ZOO_MODEL_PATH`,
-`CHRONICLE_MODEL_PATH`, `CHRONICLE_CONTEXT_SIZE`, `CHRONICLE_N_GPU_LAYERS`,
+Supported runtime environment overrides are `ZOO_BASE_URL`, `ZOO_MODEL`,
+`ZOO_API_KEY`, `OPENAI_API_KEY`, `CHRONICLE_LLM_BASE_URL`,
+`CHRONICLE_LLM_MODEL`, `CHRONICLE_LLM_API_KEY`,
+`CHRONICLE_LLM_ORGANIZATION`, `CHRONICLE_LLM_HTTP_TIMEOUT_MS`,
+`CHRONICLE_LLM_MAX_RETRIES`, `CHRONICLE_LLM_TLS_VERIFY`,
 `CHRONICLE_TEMPERATURE`, `CHRONICLE_MAX_RESPONSE_TOKENS`,
 `CHRONICLE_INFERENCE_TIMEOUT_MS`, `CHRONICLE_SAVE_DIRECTORY`,
-`CHRONICLE_USE_TUI`, `CHRONICLE_USE_COLOR`, `CHRONICLE_MAX_TOOL_ITERATIONS`, and
-`CHRONICLE_AUTO_CONFIGURE`. If both `ZOO_MODEL_PATH` and
-`CHRONICLE_MODEL_PATH` are set, `CHRONICLE_MODEL_PATH` wins.
+`CHRONICLE_USE_TUI`, `CHRONICLE_USE_COLOR`, and
+`CHRONICLE_MAX_TOOL_ITERATIONS`.
+
+Chronicle-specific `CHRONICLE_LLM_*` values win over the shorter `ZOO_*`
+aliases. `OPENAI_API_KEY` is used only when neither `ZOO_API_KEY` nor
+`CHRONICLE_LLM_API_KEY` is set.
 
 ### Integration Tests
 
-Integration tests require a local LLM model and are gated behind a CMake option:
+Integration tests require an OpenAI-compatible endpoint and are gated behind a
+CMake option:
 
 ```bash
 cmake -B build -DCHRONICLE_INTEGRATION_TESTS=ON
 cmake --build build --parallel
-ZOO_INTEGRATION_MODEL=/path/to/model.gguf ctest --test-dir build --output-on-failure
+CHRONICLE_INTEGRATION_LLM_BASE_URL=http://localhost:11434/v1 \
+CHRONICLE_INTEGRATION_LLM_MODEL=llama3.2 \
+ctest --test-dir build --output-on-failure
 ```
 
 With the default `CHRONICLE_INTEGRATION_TESTS=OFF`, integration tests are not
-compiled. The integration tests also runtime-skip if `ZOO_INTEGRATION_MODEL`
-(or `ZOO_MODEL_PATH`) is not set, as a defense-in-depth guard.
+compiled. The integration tests also runtime-skip if endpoint variables are not
+set, as a defense-in-depth guard. `ZOO_BASE_URL` and `ZOO_MODEL` are accepted
+as shorter aliases for local runs.
 
 ## Style
 

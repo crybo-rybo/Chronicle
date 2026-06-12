@@ -1,5 +1,5 @@
+#include "ai/npc_agent_pool.hpp"
 #include "ai/tool_registry.hpp"
-#include "ai/zoo_agent_adapter.hpp"
 #include "engine/game_engine.hpp"
 #include "entities/config.hpp"
 #include "entities/world_loader.hpp"
@@ -7,13 +7,11 @@
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
-#include <fstream>
 #include <gtest/gtest.h>
 #include <iostream>
+#include <optional>
 #include <ranges>
 #include <string_view>
-#include <zoo/agent.hpp>
-#include <zoo/log.hpp>
 
 using namespace chronicle;
 
@@ -27,30 +25,6 @@ void debug_log(std::string_view message) {
     std::cerr << "[ChronicleIntegrationDebug +" << elapsed.count() << "ms] " << message
               << std::endl;
 }
-
-const char *log_level_name(zoo::LogLevel level) {
-    switch (level) {
-    case zoo::LogLevel::Debug:
-        return "debug";
-    case zoo::LogLevel::Info:
-        return "info";
-    case zoo::LogLevel::Warning:
-        return "warning";
-    case zoo::LogLevel::Error:
-        return "error";
-    }
-    return "unknown";
-}
-
-void zoo_debug_log(zoo::LogLevel level, const char *message, void *) {
-    std::cerr << "[ZooDebug:" << log_level_name(level) << "] " << message << std::endl;
-}
-
-class ZooDebugLogScope {
-  public:
-    ZooDebugLogScope() { zoo::set_log_callback(zoo_debug_log); }
-    ~ZooDebugLogScope() { zoo::reset_log_callback(); }
-};
 
 class IntegrationRenderer : public Renderer {
   public:
@@ -89,67 +63,71 @@ WorldFileSet sample_world_files() {
                         .events = root / "events.json"};
 }
 
-std::filesystem::path write_integration_config(std::string_view model_path) {
-    debug_log("write_integration_config: loading base scenario config.json");
-    Config config = Config::load(sample_root() / "config.json");
-    config.model_path = std::string(model_path);
-    config.n_gpu_layers = -1;
-    config.max_response_tokens = 64;
-    debug_log("write_integration_config: overriding n_gpu_layers=-1 and max_response_tokens=64");
+const char *env_first(const char *primary, const char *fallback = nullptr) {
+    if (const char *value = std::getenv(primary); value && *value != '\0') {
+        return value;
+    }
+    if (fallback) {
+        if (const char *value = std::getenv(fallback); value && *value != '\0') {
+            return value;
+        }
+    }
+    return nullptr;
+}
 
+std::optional<Config> integration_config() {
+    const char *base_url = env_first("CHRONICLE_INTEGRATION_LLM_BASE_URL", "ZOO_BASE_URL");
+    const char *model = env_first("CHRONICLE_INTEGRATION_LLM_MODEL", "ZOO_MODEL");
+    if (!base_url || !model) {
+        return std::nullopt;
+    }
+
+    Config config = Config::load(sample_root() / "config.json");
+    config.llm_base_url = base_url;
+    config.llm_model = model;
+    if (const char *api_key = env_first("CHRONICLE_INTEGRATION_LLM_API_KEY", "ZOO_API_KEY")) {
+        config.llm_api_key = api_key;
+    } else if (const char *openai_key = std::getenv("OPENAI_API_KEY");
+               openai_key && *openai_key != '\0') {
+        config.llm_api_key = openai_key;
+    }
+    if (const char *org = env_first("CHRONICLE_INTEGRATION_LLM_ORGANIZATION")) {
+        config.llm_organization = org;
+    }
+    config.max_response_tokens = 64;
+    config.max_tool_iterations = 3;
+    return config;
+}
+
+std::filesystem::path write_integration_config(const Config &config) {
     auto path = std::filesystem::temp_directory_path() / "chronicle_integration_config.json";
     config.save(path);
     debug_log("write_integration_config: wrote temp config");
     return path;
 }
 
-const char *integration_model_path() {
-    if (const char *path = std::getenv("ZOO_INTEGRATION_MODEL")) {
-        return path;
-    }
-    return std::getenv("ZOO_MODEL_PATH");
-}
-
 } // namespace
 
 TEST(NpcConversationIntegrationTest, RealAgentQueuesGiveItemMutation) {
-    ZooDebugLogScope zoo_logs;
     debug_start_time = std::chrono::steady_clock::now();
     debug_log("RealAgentQueuesGiveItemMutation: start");
-    const char *model_path = integration_model_path();
-    if (!model_path) {
-        GTEST_SKIP() << "Skipping integration test: set ZOO_INTEGRATION_MODEL or ZOO_MODEL_PATH.";
+    auto config = integration_config();
+    if (!config) {
+        GTEST_SKIP() << "Skipping integration test: set CHRONICLE_INTEGRATION_LLM_BASE_URL and "
+                        "CHRONICLE_INTEGRATION_LLM_MODEL, or ZOO_BASE_URL and ZOO_MODEL.";
     }
-
-    auto config_path = write_integration_config(model_path);
-    debug_log("RealAgentQueuesGiveItemMutation: loading temp config");
-    Config config = Config::load(config_path);
-    debug_log("RealAgentQueuesGiveItemMutation: loading world");
     auto world = load_world(sample_world_files());
 
-    debug_log("RealAgentQueuesGiveItemMutation: before zoo::Agent::create");
-    zoo::ModelConfig model_config;
-    model_config.model_path = config.model_path;
-    model_config.context_size = config.context_size;
-    model_config.n_gpu_layers = config.n_gpu_layers;
-    zoo::GenerationOptions gen_opts;
-    gen_opts.max_tokens = config.max_response_tokens;
-    auto result = zoo::Agent::create(model_config, {}, gen_opts);
-    ASSERT_TRUE(result) << result.error().to_string();
-    debug_log("RealAgentQueuesGiveItemMutation: after zoo::Agent::create");
-
     ToolRegistry registry(world);
-    ZooAgentAdapter adapter(std::move(*result));
-    debug_log("RealAgentQueuesGiveItemMutation: before adapter tool registration");
-    adapter.register_tools(registry, "marcus");
-    debug_log("RealAgentQueuesGiveItemMutation: after adapter tool registration");
+    auto pool = NpcAgentPool::from_config(*config, registry);
+    auto handle = pool.acquire("marcus");
+    handle->register_tools(registry, "marcus");
+    handle->set_system_prompt("You are Marcus. Use tools exactly as requested for this test.");
 
-    std::string prompt = "You are Marcus. Call the give_item tool with item_id cargo_manifest. "
-                         "Do not call any other mutation tool.";
-    debug_log("RealAgentQueuesGiveItemMutation: before adapter chat_streaming");
     std::size_t token_callbacks = 0;
-    auto chat_result = adapter.chat_streaming(
-        prompt,
+    auto chat_result = handle->chat_streaming(
+        "For this integration test, call exactly one tool: give_item with item_id "
+        "cargo_manifest. Do not call any other mutation tool.",
         [&](std::string_view token) {
             ++token_callbacks;
             if (token_callbacks <= 5 || token_callbacks % 16 == 0) {
@@ -174,22 +152,20 @@ TEST(NpcConversationIntegrationTest, RealAgentQueuesGiveItemMutation) {
     EXPECT_TRUE(std::ranges::all_of(mutations, [](const MutationRequest &mutation) {
         return mutation.type == MutationRequest::Type::GiveItemToPlayer;
     }));
-
-    std::filesystem::remove(config_path);
 }
 
 TEST(NpcConversationIntegrationTest, RealGameEngineDialogueAppliesGiveItemMutation) {
-    ZooDebugLogScope zoo_logs;
     debug_start_time = std::chrono::steady_clock::now();
     debug_log("RealGameEngineDialogueAppliesGiveItemMutation: start");
-    const char *model_path = integration_model_path();
-    if (!model_path) {
-        GTEST_SKIP() << "Skipping integration test: set ZOO_INTEGRATION_MODEL or ZOO_MODEL_PATH.";
+    auto config = integration_config();
+    if (!config) {
+        GTEST_SKIP() << "Skipping integration test: set CHRONICLE_INTEGRATION_LLM_BASE_URL and "
+                        "CHRONICLE_INTEGRATION_LLM_MODEL, or ZOO_BASE_URL and ZOO_MODEL.";
     }
-
-    auto config_path = write_integration_config(model_path);
+    auto config_path = write_integration_config(*config);
     auto renderer = std::make_unique<IntegrationRenderer>();
     auto *renderer_ptr = renderer.get();
+
     debug_log("RealGameEngineDialogueAppliesGiveItemMutation: before GameEngine ctor");
     GameEngine engine(config_path.string(), sample_world_files(), std::move(renderer));
     debug_log("RealGameEngineDialogueAppliesGiveItemMutation: after GameEngine ctor");
@@ -198,9 +174,7 @@ TEST(NpcConversationIntegrationTest, RealGameEngineDialogueAppliesGiveItemMutati
     talk.verb = CommandVerb::Talk;
     talk.primary_arg = "marcus";
     talk.raw_input = "talk marcus";
-    debug_log("RealGameEngineDialogueAppliesGiveItemMutation: before talk command");
     engine.handle_command(talk);
-    debug_log("RealGameEngineDialogueAppliesGiveItemMutation: after talk command");
     ASSERT_EQ(engine.phase(), GamePhase::InConversation);
 
     ParsedCommand dialogue;
@@ -208,18 +182,14 @@ TEST(NpcConversationIntegrationTest, RealGameEngineDialogueAppliesGiveItemMutati
     dialogue.raw_input = "For this integration test, call exactly one tool: give_item with item_id "
                          "cargo_manifest. Do not call any other mutation tool.";
     dialogue.primary_arg = dialogue.raw_input;
-    debug_log("RealGameEngineDialogueAppliesGiveItemMutation: before dialogue command");
     engine.handle_command(dialogue);
-    debug_log("RealGameEngineDialogueAppliesGiveItemMutation: after dialogue command");
 
     const auto &world = engine.world();
     EXPECT_TRUE(std::ranges::contains(world.player.inventory, "cargo_manifest"));
     EXPECT_FALSE(std::ranges::contains(world.npcs.at("marcus").state.inventory, "cargo_manifest"));
-    // The model may hit Zoo-Keeper's tool iteration limit if it calls extra tools
-    // beyond give_item. The critical assertion is that give_item was applied.
     for (const auto &err : renderer_ptr->errors) {
-        EXPECT_TRUE(err.find("iteration limit") != std::string::npos ||
-                    err.find("Tool loop") != std::string::npos)
+        EXPECT_TRUE(err.find("iteration") != std::string::npos ||
+                    err.find("budget") != std::string::npos)
             << "Unexpected error: " << err;
     }
 

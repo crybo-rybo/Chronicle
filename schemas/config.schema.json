@@ -5,20 +5,45 @@
   "description": "Scenario-authored runtime defaults loaded from config.json. This is part of the v1 scenario package contract. All fields are optional; missing fields receive runtime defaults. Operators may overlay local settings at runtime.",
   "type": "object",
   "additionalProperties": true,
+  "allOf": [
+    { "not": { "required": ["model_path"] } },
+    { "not": { "required": ["context_size"] } },
+    { "not": { "required": ["n_gpu_layers"] } },
+    { "not": { "required": ["auto_configure"] } }
+  ],
   "properties": {
-    "model_path": {
+    "llm_base_url": {
       "type": "string",
-      "description": "Path to the GGUF model file. Empty string disables AI dialogue and falls back to stub output unless the operator supplies a local override."
+      "description": "Base URL for an OpenAI-compatible chat-completions endpoint. Empty string disables AI dialogue and falls back to stub output unless the operator supplies an override."
     },
-    "context_size": {
+    "llm_model": {
+      "type": "string",
+      "description": "Model identifier passed to the endpoint. Empty string disables AI dialogue and falls back to stub output unless the operator supplies an override."
+    },
+    "llm_api_key": {
+      "type": "string",
+      "description": "API key for the endpoint. Leave empty in shared cartridges; local endpoints may not require a key."
+    },
+    "llm_organization": {
+      "type": "string",
+      "description": "Optional OpenAI-Organization header value."
+    },
+    "llm_http_timeout_ms": {
       "type": "integer",
       "minimum": 1,
-      "default": 4096
+      "default": 60000,
+      "description": "HTTP request timeout used by the harness transport."
     },
-    "n_gpu_layers": {
+    "llm_max_retries": {
       "type": "integer",
-      "description": "Number of model layers to offload to GPU. -1 means all layers; 0 forces CPU-only. Machine-specific values should usually come from operator overrides.",
-      "default": -1
+      "minimum": 0,
+      "default": 2,
+      "description": "Maximum retry attempts for transient endpoint failures."
+    },
+    "llm_tls_verify": {
+      "type": "boolean",
+      "default": true,
+      "description": "Whether to verify TLS certificates for HTTPS endpoints."
     },
     "temperature": {
       "type": "number",
@@ -77,7 +102,8 @@
     "max_tool_iterations": {
       "type": "integer",
       "minimum": 1,
-      "default": 5
+      "default": 5,
+      "description": "Maximum harness tool-call loop iterations and per-run tool-call budget."
     },
     "verb_aliases": {
       "type": "object",

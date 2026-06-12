@@ -96,14 +96,14 @@ the package fields before expanding the world.
 1. Copy `examples/minimal_scenario/` to a new directory.
 2. Change `scenario.json` fields: `id`, `name`, `version`, and recommended
    `metadata.description`, `metadata.author`, and `metadata.license`.
-3. Keep `config.json` portable: leave `model_path` empty and put local model
-   paths in operator overrides only.
+3. Keep `config.json` portable: leave endpoint fields empty and put local
+   endpoint settings in operator overrides only.
 4. Run `chronicle inspect --scenario path/to/my_scenario` to review identity,
    file layout, and readiness warnings.
 5. Run `chronicle validate --scenario path/to/my_scenario` as the model-free
    gate before sharing.
-6. Run with stub dialogue first, then add local model overrides for AI-backed
-   playtesting.
+6. Run with stub dialogue first, then add local endpoint overrides for
+   AI-backed playtesting.
 
 **Entity IDs come from JSON map keys.** When you author `npcs.json`,
 `world.json`'s `locations`/`items`, `facts.json`, `flags.json`, or
@@ -127,8 +127,7 @@ should stay portable.
 - `total_periods` (int): when the clock reaches this many elapsed periods
   without an authored `end_game` event, the runtime ends the scenario with a
   generic time-expired message (`12` = three days at four periods each).
-- `max_response_tokens`, `context_size`, `temperature`: model prompt and
-  sampling budgets.
+- `max_response_tokens`, `temperature`: model generation settings.
 - `inference_timeout_ms` (int, default `120000`): wall-clock timeout for one
   model request. Set to `0` only when debugging a local model and you want to
   disable cancellation.
@@ -142,25 +141,24 @@ should stay portable.
 
 **Operator-supplied fields** — leave empty or generic in committed packages:
 
-- `model_path` (string): path to the local GGUF model file. **Must be empty
-  in any committed package.** Operators override locally; see
-  [`CONTRIBUTING.md`](../CONTRIBUTING.md) "Local Model Paths" for the
-  override mechanism (`CHRONICLE_CONFIG_OVERRIDE`, environment variables, and
-  gitignored local config).
-- `n_gpu_layers` (int): GPU offload tuning, machine-specific.
+- `llm_base_url` (string): base URL for an OpenAI-compatible endpoint.
+- `llm_model` (string): model identifier passed to that endpoint.
+- `llm_api_key` (string): endpoint credential. Never commit real keys.
+- `llm_organization` (string): optional organization header value.
+- `llm_http_timeout_ms`, `llm_max_retries`, `llm_tls_verify`: transport
+  settings for the harness.
 - `save_directory` (string): where save files are written. Empty falls back
   to `saves` relative to the working directory.
 
-Keep machine-local values out of committed
-packages.
+Keep machine-local values out of committed packages. See
+[`CONTRIBUTING.md`](../CONTRIBUTING.md) "Local LLM Endpoints" for the override
+mechanism (`CHRONICLE_CONFIG_OVERRIDE`, environment variables, and gitignored
+local config).
 
 The sample's `config.json`:
 
 ```json
 {
-  "model_path": "",
-  "context_size": 4096,
-  "n_gpu_layers": -1,
   "temperature": 0.7,
   "max_response_tokens": 512,
   "inference_timeout_ms": 120000,
@@ -619,14 +617,15 @@ This is the model-free entry point. The validator catches:
 The validator also emits warnings (which do not block load) — for example,
 `readable=true` items missing a `text` property, missing recommended cartridge
 metadata, suspicious manifest IDs or versions, or a committed non-empty
-`model_path`.
+LLM endpoint settings.
 
 Before sharing a cartridge, check:
 
 - Stable lowercase package ID with no whitespace or path separators.
 - Content version such as `1.0.0`.
 - `metadata.description`, `metadata.author`, and `metadata.license`.
-- Empty `model_path`; local GGUF paths stay in operator overrides.
+- Empty `llm_base_url`, `llm_model`, and `llm_api_key`; endpoint settings stay
+  in operator overrides.
 - Valid cross-references for locations, NPCs, items, facts, flags, and events.
 - Scoped NPC tool policies where appropriate.
 - Clean validation, with any warnings intentionally resolved or accepted.
@@ -639,19 +638,19 @@ chronicle --scenario path/to/my_scenario
 
 Without an explicit `--scenario`, Chronicle runs the bundled `data/` sample.
 
-If `model_path` in your `config.json` is empty (which it must be for
-committed packages) and the operator has not provided one through their
-local override, the runtime falls back to **stub dialogue** — NPCs respond
-with placeholder text, scripted events still fire, and the rest of the
-engine continues to work. Real AI dialogue requires a local GGUF model. See
-the "Local Model Paths" section of [`CONTRIBUTING.md`](../CONTRIBUTING.md)
-for override mechanisms (`CHRONICLE_CONFIG_OVERRIDE`, `ZOO_MODEL_PATH`, and
+If `llm_base_url` or `llm_model` is empty and the operator has not provided
+them through a local override, the runtime falls back to **stub dialogue** —
+NPCs respond with placeholder text, scripted events still fire, and the rest of
+the engine continues to work. Real AI dialogue requires an OpenAI-compatible
+endpoint. See the "Local LLM Endpoints" section of
+[`CONTRIBUTING.md`](../CONTRIBUTING.md) for override mechanisms
+(`CHRONICLE_CONFIG_OVERRIDE`, `CHRONICLE_LLM_BASE_URL`, `ZOO_BASE_URL`, and
 gitignored local config).
 
-If a model request exceeds `inference_timeout_ms`, Chronicle requests
-Zoo-Keeper cancellation, discards NPC tool mutations from that failed turn, and
+If a model request exceeds `inference_timeout_ms`, Chronicle requests harness
+cancellation, discards NPC tool mutations from that failed turn, and
 keeps deterministic commands such as save, load, help, and leaving the
-conversation available. Set `inference_timeout_ms` to `0` only for local model
+conversation available. Set `inference_timeout_ms` to `0` only for endpoint
 debugging sessions where cancellation would hide the issue you are inspecting.
 
 ## 12. Where to look next
