@@ -1,0 +1,19 @@
+{
+  "id": "minimal",
+  "name": "Minimal",
+  "version": "1.0.0",
+  "chronicle_schema_version": 1,
+  "files": {
+    "config": "config.json",
+    "world": "world.json",
+    "npcs": "npcs.json",
+    "facts": "facts.json",
+    "flags": "flags.json",
+    "events": "events.json"
+  },
+  "metadata": {
+    "description": "Smallest copyable Chronicle starter cartridge.",
+    "author": "Chronicle Contributors",
+    "license": "MIT"
+  }
+}

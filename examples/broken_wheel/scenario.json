@@ -1,0 +1,19 @@
+{
+  "id": "broken_wheel",
+  "name": "Broken Wheel",
+  "version": "1.0.0",
+  "chronicle_schema_version": 1,
+  "files": {
+    "config": "config.json",
+    "world": "world.json",
+    "npcs": "npcs.json",
+    "facts": "facts.json",
+    "flags": "flags.json",
+    "events": "events.json"
+  },
+  "metadata": {
+    "description": "A small NPC mystery/social-sim sample cartridge for the Chronicle runtime.",
+    "author": "Chronicle Contributors",
+    "license": "MIT"
+  }
+}
