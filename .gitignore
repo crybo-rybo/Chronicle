@@ -1,10 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+dist/
 build/
-build-*/
-cmake-build-*/
-.cache/
-compile_commands.json
-*.gguf
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg
+
+# Local runtime
 saves/
+*.gguf
 .DS_Store
 *.swp
 *.swo
@@ -14,6 +25,11 @@ saves/
 # Local secrets (machine-specific paths, credentials)
 .secret/
 
+# Coverage / tooling outputs
+coverage.xml
+.coverage
+htmlcov/
+
 # Session-generated design/spec artifacts
 docs/superpowers/
 
@@ -21,6 +37,5 @@ docs/superpowers/
 .worktrees/
 
 # Local AI artifacts
-.claude/**
+.claude/
 GEMINI.md
-AGENTS.md

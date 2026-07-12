@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Auto-fix lint/format issues where safe.
+# Lint with Ruff (same check CI runs).
 set -euo pipefail
 # shellcheck disable=SC1091
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_lib.sh"
 ensure_venv
 
-echo "==> ruff check --fix"
-ruff check --fix src tests
+echo "==> ruff check"
+ruff check src tests
 
-echo "==> ruff format"
-ruff format src tests
+echo "==> ruff format --check"
+ruff format --check src tests
