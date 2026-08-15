@@ -43,7 +43,12 @@ Verb aliases may be defined in `config.json`.
 
 Moods: `fearful`, `friendly`, `grieving`, `hostile`, `neutral`, `suspicious`.
 
-Per-NPC `tool_policy` restricts tools and scoped IDs.
+Per-NPC `tool_policy` restricts tools and scoped IDs. Only allowed tools are
+exposed to the model at all; each conversation turn is an agentic loop of up
+to 8 tool rounds, and a rejected tool call is returned to the model as an
+error it can react to (the player sees no rejection). Tool arguments are
+strictly validated against generated JSON schemas — unknown fields, wrong
+types, and out-of-vocabulary moods are rejected before the gate runs.
 
 ## Event Conditions (AND)
 

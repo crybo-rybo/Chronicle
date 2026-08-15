@@ -1,0 +1,4 @@
+# clangd runs clang, which lacks GCC's -freflection; strip it so the LSP
+# can parse the non-reflection majority of the codebase.
+CompileFlags:
+  Remove: [-freflection]

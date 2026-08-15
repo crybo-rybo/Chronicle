@@ -17,12 +17,6 @@
 - Prefer scripted `events.json` for endings and irreversible beats.
 - Leave `llm_*` fields empty in shared cartridges; operators supply endpoints.
 
-## Custom Python games
-
-Implement the `GameBackend` protocol in `chronicle.game.protocol` and pass an
-instance to `ConsoleRuntime`. The TinyRoom demo (`chronicle --tiny`) is the
-smallest example.
-
 ## Local models
 
 Any OpenAI-compatible `/v1/chat/completions` endpoint works:

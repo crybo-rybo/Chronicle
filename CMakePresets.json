@@ -1,0 +1,50 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 25, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "dev",
+      "displayName": "Debug + unit tests",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CHRONICLE_BUILD_TESTS": "ON"
+      }
+    },
+    {
+      "name": "release",
+      "displayName": "Release",
+      "binaryDir": "${sourceDir}/build-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CHRONICLE_BUILD_TESTS": "ON"
+      }
+    },
+    {
+      "name": "integration",
+      "displayName": "Debug + unit and live-LLM integration tests",
+      "inherits": "dev",
+      "cacheVariables": {
+        "CHRONICLE_INTEGRATION_TESTS": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "dev", "configurePreset": "dev" },
+    { "name": "release", "configurePreset": "release" },
+    { "name": "integration", "configurePreset": "integration" }
+  ],
+  "testPresets": [
+    {
+      "name": "dev",
+      "configurePreset": "dev",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "integration",
+      "configurePreset": "integration",
+      "output": { "outputOnFailure": true },
+      "filter": { "include": { "name": "^integration/" } }
+    }
+  ]
+}

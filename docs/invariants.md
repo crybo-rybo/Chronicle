@@ -13,5 +13,5 @@ These rules are non-negotiable for the console runtime.
    events, and save/load still work.
 6. **Cartridges are untrusted data.** Path-safe load, schema version checks, and
    cross-reference validation happen before play.
-7. **Public contract = CLI + cartridge schema** (plus optional `GameBackend` protocol).
-   Internal modules may change without compatibility guarantees.
+7. **Public contract = CLI + cartridge schema.** Internal modules may change
+   without compatibility guarantees.

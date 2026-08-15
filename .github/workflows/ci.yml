@@ -8,31 +8,31 @@ on:
 
 jobs:
   ci:
-    name: lint-test-coverage (${{ matrix.os }}, py${{ matrix.python-version }})
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-        python-version: ["3.12", "3.13"]
-    runs-on: ${{ matrix.os }}
+    name: build-test (ubuntu, gcc-16)
+    runs-on: ubuntu-26.04
+    env:
+      CC: gcc-16
+      CXX: g++-16
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-
-      - name: Run CI scripts
+      - name: Install toolchain
         run: |
-          chmod +x scripts/*.sh
-          ./scripts/ci.sh
+          sudo apt-get update
+          sudo apt-get install -y g++-16 libcurl4-openssl-dev
 
-      - name: Upload coverage XML
-        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-xml
-          path: coverage.xml
-          if-no-files-found: warn
+      - name: Configure
+        run: cmake --preset dev -DCHRONICLE_WERROR=ON
+
+      - name: Build
+        run: cmake --build --preset dev -j "$(nproc)"
+
+      - name: Unit tests
+        run: ctest --preset dev
+
+      - name: Validate bundled examples
+        run: |
+          ./build/src/chronicle validate --scenario examples/minimal
+          ./build/src/chronicle validate --scenario examples/broken_wheel
+          ./build/src/chronicle inspect --scenario examples/minimal > /dev/null
