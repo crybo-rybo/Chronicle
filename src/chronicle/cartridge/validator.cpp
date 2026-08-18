@@ -5,6 +5,7 @@
 #include <set>
 
 #include "chronicle/cartridge/loader.hpp"
+#include "chronicle/game/npc_tools.hpp"
 
 namespace chronicle {
 
@@ -295,7 +296,7 @@ std::vector<ValidationIssue> validate_world(const WorldState &world) {
         require_unique(policy.allowed_flags, "npc " + npc_id + " allowed_flags", issues);
         require_unique(policy.allowed_locations, "npc " + npc_id + " allowed_locations", issues);
         for (const auto &tool : policy.allowed_tools) {
-            if (!contains(npc_tool_names(), tool)) {
+            if (!tools::is_known_tool(tool)) {
                 error(issues, "npc " + npc_id + ": unknown tool " + tool);
             }
         }

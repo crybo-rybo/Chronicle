@@ -1,0 +1,7 @@
+#pragma once
+
+namespace chronicle {
+
+inline constexpr const char *CHRONICLE_VERSION = "@PROJECT_VERSION@";
+
+} // namespace chronicle

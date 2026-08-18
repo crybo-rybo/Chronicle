@@ -12,7 +12,7 @@ When starting a new session, read `README.md` first, then `docs/invariants.md`,
 ## Invariants
 
 1. LLM proposes; console decides.
-2. Single action gate for all model-driven world writes.
+2. Single action gate for all world writes.
 3. Deterministic durable state.
 4. Authored knowledge only.
 5. Graceful degradation without a model.

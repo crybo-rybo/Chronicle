@@ -12,7 +12,6 @@ namespace chronicle {
 inline constexpr int SCHEMA_VERSION = 1;
 
 [[nodiscard]] const std::vector<std::string> &valid_moods();
-[[nodiscard]] const std::vector<std::string> &npc_tool_names();
 [[nodiscard]] const std::vector<std::string> &period_names();
 
 struct ScenarioFiles {

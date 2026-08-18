@@ -13,10 +13,11 @@ internals.
 ## Requirements
 
 - **GCC 16+** (the reflection component needs `-std=c++26 -freflection`)
-- CMake ≥ 3.25, libcurl development headers
+- CMake ≥ 3.28, libcurl development headers
 - Linux or macOS (macOS via Homebrew GCC 16)
 
-Dependencies (scry, nlohmann/json, miniz, GoogleTest) are fetched by CMake.
+Dependencies (scry, nlohmann/json, miniz, GoogleTest) are fetched at pinned
+commits or content hashes by CMake.
 
 ## Build
 
@@ -26,6 +27,14 @@ cmake --build --preset dev -j
 ```
 
 Or, with [`just`](https://github.com/casey/just): `just build`.
+
+Install a release build (the executable, bundled examples, and documentation):
+
+```bash
+cmake --preset release
+cmake --build --preset release -j
+cmake --install build-release --prefix /your/prefix
+```
 
 ## Run
 
@@ -79,7 +88,7 @@ Docs:
 ## Testing
 
 ```bash
-just ci            # build + unit tests + validate examples (same as GitHub Actions)
+just ci            # format + warning-clean build + tests + example validation
 just test          # unit tests only (no model required)
 just integration   # live Ollama playthrough tests
 ```

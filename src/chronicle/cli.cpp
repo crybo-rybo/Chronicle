@@ -31,6 +31,70 @@ bool is_subcommand(const std::string &word) {
            word == "install" || word == "pack";
 }
 
+std::optional<std::string> semantic_error(const CliArgs &args) {
+    if (args.help || args.version) {
+        return std::nullopt;
+    }
+    const auto rejects_model_options = [&] {
+        return args.base_url || args.model
+                   ? std::optional<std::string>(args.command + " does not accept model options")
+                   : std::nullopt;
+    };
+    const auto rejects_common_play_options = [&]() -> std::optional<std::string> {
+        if (args.tiny) {
+            return args.command + " does not accept --tiny";
+        }
+        if (const auto issue = rejects_model_options()) {
+            return issue;
+        }
+        return std::nullopt;
+    };
+
+    if (args.command == "play") {
+        if (!args.positional.empty() || args.output) {
+            return "play accepts only --scenario, --tiny, and model options";
+        }
+        if (args.tiny && args.scenario) {
+            return "--tiny and --scenario are mutually exclusive";
+        }
+        return std::nullopt;
+    }
+    if (args.command == "run") {
+        if (args.positional.size() != 1) {
+            return "run requires exactly one cartridge id";
+        }
+        if (args.scenario || args.output || args.tiny) {
+            return "run accepts one cartridge id and model options";
+        }
+        return std::nullopt;
+    }
+    if (args.command == "validate" || args.command == "inspect") {
+        if (args.positional.size() != 0 || !args.scenario || args.output) {
+            return args.command + " requires exactly one --scenario";
+        }
+        return rejects_common_play_options();
+    }
+    if (args.command == "list") {
+        if (!args.positional.empty() || args.scenario || args.output) {
+            return "list does not accept arguments";
+        }
+        return rejects_common_play_options();
+    }
+    if (args.command == "install") {
+        if (args.positional.size() != 1 || args.scenario || args.output) {
+            return "install requires exactly one path";
+        }
+        return rejects_common_play_options();
+    }
+    if (args.command == "pack") {
+        if (!args.positional.empty() || !args.scenario || !args.output) {
+            return "pack requires exactly one --scenario and one --output";
+        }
+        return rejects_common_play_options();
+    }
+    return "Unknown command: " + args.command;
+}
+
 int print_issues_and_status(const std::vector<ValidationIssue> &issues) {
     for (const auto &issue : issues) {
         if (issue.level == IssueLevel::warning) {
@@ -66,7 +130,11 @@ CliArgs parse_cli(const std::vector<std::string> &args) {
 
     const auto take_value = [&](const std::string &flag, std::optional<std::string> &out) -> bool {
         if (args[index] == flag) {
-            if (index + 1 >= args.size()) {
+            if (out) {
+                parsed.error = flag + " may be specified only once";
+                return true;
+            }
+            if (index + 1 >= args.size() || args[index + 1].starts_with("--")) {
                 parsed.error = flag + " requires a value";
                 return true;
             }
@@ -74,7 +142,14 @@ CliArgs parse_cli(const std::vector<std::string> &args) {
             return true;
         }
         if (args[index].starts_with(flag + "=")) {
+            if (out) {
+                parsed.error = flag + " may be specified only once";
+                return true;
+            }
             out = args[index].substr(flag.size() + 1);
+            if (out->empty()) {
+                parsed.error = flag + " requires a value";
+            }
             return true;
         }
         return false;
@@ -105,6 +180,9 @@ CliArgs parse_cli(const std::vector<std::string> &args) {
         } else {
             parsed.error = "Unknown option: " + arg;
         }
+    }
+    if (!parsed.error) {
+        parsed.error = semantic_error(parsed);
     }
     return parsed;
 }
@@ -245,7 +323,7 @@ int run_cli(int argc, char **argv) {
             for (const auto &line : info.warnings) {
                 std::cout << line << '\n';
             }
-            return 0;
+            return info.ready ? 0 : 1;
         }
         if (args.command == "list") {
             const auto items = list_cartridges();

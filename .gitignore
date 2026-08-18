@@ -1,5 +1,8 @@
 # Build trees
 build/
+build-ci/
+build-install-smoke/
+build-linux-ci/
 build-release/
 compile_commands.json
 .cache/

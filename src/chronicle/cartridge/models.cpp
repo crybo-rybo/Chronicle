@@ -43,13 +43,6 @@ const std::vector<std::string> &valid_moods() {
     return moods;
 }
 
-const std::vector<std::string> &npc_tool_names() {
-    static const std::vector<std::string> tools = {
-        "say",       "give_item",        "take_item", "update_mood", "update_trust",
-        "move_self", "reveal_knowledge", "remember",  "set_flag",    "inspect_item"};
-    return tools;
-}
-
 const std::vector<std::string> &period_names() {
     static const std::vector<std::string> periods = {"morning", "afternoon", "evening", "night"};
     return periods;

@@ -8,6 +8,10 @@
 #include <miniz.h>
 #include <set>
 
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+#endif
+
 #include "chronicle/cartridge/loader.hpp"
 
 namespace chronicle {
@@ -18,6 +22,42 @@ namespace {
 
 constexpr std::uintmax_t MAX_ARCHIVE_BYTES = 64U * 1024U * 1024U;
 constexpr std::uintmax_t MAX_COMPRESSION_RATIO = 100U;
+
+std::optional<fs::path> executable_path() {
+#ifdef __linux__
+    std::error_code ec;
+    auto path = fs::canonical("/proc/self/exe", ec);
+    if (!ec) {
+        return path;
+    }
+#elif defined(__APPLE__)
+    std::uint32_t size = 0;
+    (void)_NSGetExecutablePath(nullptr, &size);
+    std::vector<char> buffer(size);
+    if (_NSGetExecutablePath(buffer.data(), &size) == 0) {
+        std::error_code ec;
+        auto path = fs::weakly_canonical(buffer.data(), ec);
+        if (!ec) {
+            return path;
+        }
+    }
+#endif
+    return std::nullopt;
+}
+
+std::optional<fs::path> installed_minimal_scenario() {
+    const auto executable = executable_path();
+    if (!executable) {
+        return std::nullopt;
+    }
+    const auto candidate =
+        (executable->parent_path() / CHRONICLE_DATA_FROM_BINDIR / "examples" / "minimal")
+            .lexically_normal();
+    if (fs::is_directory(candidate) && !fs::is_symlink(candidate)) {
+        return fs::weakly_canonical(candidate);
+    }
+    return std::nullopt;
+}
 
 class ScopedDirectory {
   public:
@@ -387,6 +427,9 @@ fs::path resolve_scenario(const std::optional<std::string> &scenario,
         if (fs::is_directory(candidate)) {
             return fs::weakly_canonical(candidate);
         }
+    }
+    if (const auto installed = installed_minimal_scenario()) {
+        return *installed;
     }
     throw LibraryError("No scenario specified and no examples/minimal found");
 }

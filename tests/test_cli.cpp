@@ -2,6 +2,7 @@
 
 #include "chronicle/cartridge/validator.hpp"
 #include "chronicle/cli.hpp"
+#include "helpers.hpp"
 
 namespace chronicle {
 namespace {
@@ -49,6 +50,12 @@ TEST(Cli, MissingFlagValueIsError) {
     EXPECT_NE(args.error->find("--scenario"), std::string::npos);
 }
 
+TEST(Cli, EmptyAndDuplicateFlagValuesAreErrors) {
+    EXPECT_TRUE(parse_cli({"--model="}).error.has_value());
+    EXPECT_TRUE(parse_cli({"--model", "first", "--model", "second"}).error.has_value());
+    EXPECT_TRUE(parse_cli({"--scenario", "--tiny"}).error.has_value());
+}
+
 TEST(Cli, UnknownOptionIsError) {
     const auto args = parse_cli({"--frobnicate"});
     ASSERT_TRUE(args.error.has_value());
@@ -61,6 +68,22 @@ TEST(Cli, SubcommandNameAfterCommandIsPositional) {
     EXPECT_EQ(args.positional.front(), "list");
 }
 
+TEST(Cli, CommandShapesAndOptionDomainsAreStrict) {
+    const std::vector<std::vector<std::string>> invalid_commands{
+        {"run"},
+        {"run", "one", "two"},
+        {"list", "extra"},
+        {"list", "--model", "m"},
+        {"validate", "--scenario", "s", "extra"},
+        {"install", "one", "two"},
+        {"pack", "--scenario", "s"},
+        {"--tiny", "--scenario", "s"},
+    };
+    for (const auto &invalid : invalid_commands) {
+        EXPECT_TRUE(parse_cli(invalid).error.has_value());
+    }
+}
+
 TEST(Cli, TinyWorldIsValid) {
     const WorldState world = build_tiny_world();
     EXPECT_FALSE(has_errors(validate_world(world)));
@@ -68,6 +91,24 @@ TEST(Cli, TinyWorldIsValid) {
     EXPECT_TRUE(world.npcs.contains("stranger"));
     const auto &allowed = world.npcs.at("stranger").identity.tool_policy.allowed_tools;
     EXPECT_EQ(allowed, std::vector<std::string>{"say"});
+}
+
+TEST(Cli, InspectReturnsFailureForInvalidCartridge) {
+    testing::TempDir package("cli-inspect-invalid");
+    testing::write_package(package.path(), {{"scenario", {{"chronicle_schema_version", 99}}}});
+    std::vector<std::string> storage{"chronicle", "inspect", "--scenario", package.path().string()};
+    std::vector<char *> argv;
+    argv.reserve(storage.size());
+    for (auto &arg : storage) {
+        argv.push_back(arg.data());
+    }
+
+    ::testing::internal::CaptureStdout();
+    const int result = run_cli(static_cast<int>(argv.size()), argv.data());
+    const std::string output = ::testing::internal::GetCapturedStdout();
+
+    EXPECT_EQ(result, 1);
+    EXPECT_NE(output.find("ready:   false"), std::string::npos);
 }
 
 } // namespace

@@ -12,8 +12,25 @@ build:
 test: build
     ctest --preset dev
 
-# Full local CI: build, unit tests, validate bundled examples
-ci: test validate
+# Full local CI: formatting, warning-clean build, unit tests, examples, release install smoke
+ci: check-format
+    cmake --preset ci
+    cmake --build --preset ci -j
+    ctest --preset ci
+    ./build-ci/src/chronicle validate --scenario examples/minimal
+    ./build-ci/src/chronicle validate --scenario examples/broken_wheel
+    ./build-ci/src/chronicle inspect --scenario examples/minimal > /dev/null
+    cmake --preset release
+    cmake --build --preset release -j
+    cmake --install build-release --prefix build-install-smoke
+    (cd build-install-smoke && printf 'quit\n' | ./bin/chronicle > /dev/null)
+    cmake -E remove_directory build-install-smoke
+
+# Verify formatting without modifying the worktree
+check-format:
+    clang-format --dry-run --Werror src/main.cpp src/chronicle/*.hpp src/chronicle/*.cpp \
+        src/chronicle/*/*.hpp src/chronicle/*/*.cpp tests/*.hpp tests/*.cpp \
+        tests/integration/*.cpp
 
 # Validate the bundled example cartridges with the built console
 validate: build
@@ -48,4 +65,8 @@ format:
         tests/integration/*.cpp
 
 clean:
-    rm -rf build build-release
+    cmake -E remove_directory build
+    cmake -E remove_directory build-ci
+    cmake -E remove_directory build-install-smoke
+    cmake -E remove_directory build-linux-ci
+    cmake -E remove_directory build-release

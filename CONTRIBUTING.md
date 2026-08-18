@@ -12,8 +12,10 @@ CMake.
 just ci
 ```
 
-That builds the `dev` preset, runs the unit tests, and validates the bundled
-example cartridges — the same checks GitHub Actions runs. Individual recipes:
+That checks formatting, builds with warnings as errors, runs the unit tests,
+and validates the bundled example cartridges. GitHub Actions additionally runs
+the same suite with ASan/UBSan and smoke-tests a release installation.
+Individual recipes:
 
 | Recipe | Purpose |
 | --- | --- |
@@ -22,9 +24,10 @@ example cartridges — the same checks GitHub Actions runs. Individual recipes:
 | `just validate` | Validate example cartridges |
 | `just integration` | Live Ollama playthroughs (optional) |
 | `just format` | clang-format over Chronicle sources |
+| `just check-format` | Verify formatting without modifying files |
 
-Without `just`: `cmake --preset dev && cmake --build --preset dev -j &&
-ctest --preset dev`.
+Without `just`: `cmake --preset ci && cmake --build --preset ci -j &&
+ctest --preset ci`.
 
 ## Tests
 

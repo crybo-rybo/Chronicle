@@ -4,35 +4,57 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   ci:
     name: build-test (ubuntu, gcc-16)
     runs-on: ubuntu-26.04
+    timeout-minutes: 20
     env:
       CC: gcc-16
       CXX: g++-16
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Install toolchain
         run: |
           sudo apt-get update
-          sudo apt-get install -y g++-16 libcurl4-openssl-dev
+          sudo apt-get install -y clang-format g++-16 libcurl4-openssl-dev
+
+      - name: Formatting
+        run: |
+          clang-format --dry-run --Werror src/main.cpp src/chronicle/*.hpp src/chronicle/*.cpp \
+            src/chronicle/*/*.hpp src/chronicle/*/*.cpp tests/*.hpp tests/*.cpp \
+            tests/integration/*.cpp
 
       - name: Configure
-        run: cmake --preset dev -DCHRONICLE_WERROR=ON
+        run: cmake --preset linux-ci
 
       - name: Build
-        run: cmake --build --preset dev -j "$(nproc)"
+        run: cmake --build --preset linux-ci -j "$(nproc)"
 
       - name: Unit tests
-        run: ctest --preset dev
+        run: ctest --preset linux-ci
 
       - name: Validate bundled examples
         run: |
-          ./build/src/chronicle validate --scenario examples/minimal
-          ./build/src/chronicle validate --scenario examples/broken_wheel
-          ./build/src/chronicle inspect --scenario examples/minimal > /dev/null
+          ./build-linux-ci/src/chronicle validate --scenario examples/minimal
+          ./build-linux-ci/src/chronicle validate --scenario examples/broken_wheel
+          ./build-linux-ci/src/chronicle inspect --scenario examples/minimal > /dev/null
+
+      - name: Release build and relocatable install smoke
+        run: |
+          cmake --preset release
+          cmake --build --preset release -j "$(nproc)"
+          cmake --install build-release --prefix "$RUNNER_TEMP/chronicle"
+          "$RUNNER_TEMP/chronicle/bin/chronicle" --version
+          cd "$RUNNER_TEMP"
+          printf 'quit\n' | "$RUNNER_TEMP/chronicle/bin/chronicle" > /dev/null

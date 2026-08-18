@@ -1,6 +1,7 @@
 #include "chronicle/llm/npc_sessions.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cstdint>
 #include <cstdlib>
 #include <scry/config.hpp>
@@ -10,6 +11,8 @@
 #include <stdexcept>
 #include <string_view>
 #include <tuple>
+#include <type_traits>
+#include <utility>
 
 #include "chronicle/prompt.hpp"
 
@@ -31,53 +34,43 @@ namespace reflected {
 
 struct Say {
     [[= scry::reflection::description{"Dialogue to speak aloud to the player"}]] std::string text;
-    [[nodiscard]] tools::NpcToolCall into_call() && { return tools::Say{.text = std::move(text)}; }
+    [[nodiscard]] tools::Say into_call() && { return {.text = std::move(text)}; }
 };
 
 struct GiveItem {
     [[= scry::reflection::description{
         "Authored id of an item you currently hold"}]] std::string item_id;
-    [[nodiscard]] tools::NpcToolCall into_call() && {
-        return tools::GiveItem{.item_id = std::move(item_id)};
-    }
+    [[nodiscard]] tools::GiveItem into_call() && { return {.item_id = std::move(item_id)}; }
 };
 
 struct TakeItem {
     [[= scry::reflection::description{
         "Authored id of an item the player currently holds"}]] std::string item_id;
-    [[nodiscard]] tools::NpcToolCall into_call() && {
-        return tools::TakeItem{.item_id = std::move(item_id)};
-    }
+    [[nodiscard]] tools::TakeItem into_call() && { return {.item_id = std::move(item_id)}; }
 };
 
 struct UpdateMood {
     [[= scry::reflection::description{
         "Your new mood from the fixed mood vocabulary"}]] tools::Mood mood;
-    [[nodiscard]] tools::NpcToolCall into_call() && { return tools::UpdateMood{.mood = mood}; }
+    [[nodiscard]] tools::UpdateMood into_call() && { return {.mood = mood}; }
 };
 
 struct UpdateTrust {
     [[= scry::reflection::description{
         "Signed trust adjustment from -100 to 100"}]] std::int16_t delta;
-    [[nodiscard]] tools::NpcToolCall into_call() && {
-        return tools::UpdateTrust{.delta = static_cast<int>(delta)};
-    }
+    [[nodiscard]] tools::UpdateTrust into_call() && { return {.delta = static_cast<int>(delta)}; }
 };
 
 struct MoveSelf {
     [[= scry::reflection::description{
         "Authored id of an allowed destination location"}]] std::string location_id;
-    [[nodiscard]] tools::NpcToolCall into_call() && {
-        return tools::MoveSelf{.location_id = std::move(location_id)};
-    }
+    [[nodiscard]] tools::MoveSelf into_call() && { return {.location_id = std::move(location_id)}; }
 };
 
 struct RevealKnowledge {
     [[= scry::reflection::description{
         "Authored id of a fact you know and may reveal"}]] std::string fact_id;
-    [[nodiscard]] tools::NpcToolCall into_call() && {
-        return tools::RevealKnowledge{.fact_id = std::move(fact_id)};
-    }
+    [[nodiscard]] tools::RevealKnowledge into_call() && { return {.fact_id = std::move(fact_id)}; }
 };
 
 struct Remember {
@@ -85,9 +78,8 @@ struct Remember {
         "Short factual memory of this conversation"}]] std::string summary;
     [[= scry::reflection::description{
         "Importance from 1 (minor) to 10 (critical)"}]] std::uint16_t importance{5};
-    [[nodiscard]] tools::NpcToolCall into_call() && {
-        return tools::Remember{.summary = std::move(summary),
-                               .importance = static_cast<int>(importance)};
+    [[nodiscard]] tools::Remember into_call() && {
+        return {.summary = std::move(summary), .importance = static_cast<int>(importance)};
     }
 };
 
@@ -95,45 +87,58 @@ struct SetFlag {
     [[= scry::reflection::description{
         "Authored id of a flag allowed by your policy"}]] std::string flag_id;
     [[= scry::reflection::description{"Explicit value to store in the flag"}]] bool value;
-    [[nodiscard]] tools::NpcToolCall into_call() && {
-        return tools::SetFlag{.flag_id = std::move(flag_id), .value = value};
+    [[nodiscard]] tools::SetFlag into_call() && {
+        return {.flag_id = std::move(flag_id), .value = value};
     }
 };
 
 struct InspectItem {
     [[= scry::reflection::description{
         "Authored id of an item you are allowed to inspect"}]] std::string item_id;
-    [[nodiscard]] tools::NpcToolCall into_call() && {
-        return tools::InspectItem{.item_id = std::move(item_id)};
-    }
+    [[nodiscard]] tools::InspectItem into_call() && { return {.item_id = std::move(item_id)}; }
 };
 
 } // namespace reflected
 
-template <typename Arguments> struct ToolBinding {
+template <typename Arguments, typename DomainCall> struct ToolBinding {
     using arguments_type = Arguments;
+    using domain_call_type = DomainCall;
     std::string_view name;
     std::string_view description;
 };
 
-template <typename Arguments>
-constexpr ToolBinding<Arguments> bind(const std::string_view name,
-                                      const std::string_view description) {
-    return {.name = name, .description = description};
+template <typename Arguments, typename DomainCall>
+constexpr ToolBinding<Arguments, DomainCall> bind(const std::string_view description) {
+    return {.name = DomainCall::name, .description = description};
 }
 
 constexpr auto TOOL_BINDINGS = std::tuple{
-    bind<reflected::Say>("say", "Speak aloud to the player."),
-    bind<reflected::GiveItem>("give_item", "Give an item you hold to the player."),
-    bind<reflected::TakeItem>("take_item", "Take an item from the player."),
-    bind<reflected::UpdateMood>("update_mood", "Change your mood."),
-    bind<reflected::UpdateTrust>("update_trust", "Adjust trust toward the player."),
-    bind<reflected::MoveSelf>("move_self", "Move to another allowed location."),
-    bind<reflected::RevealKnowledge>("reveal_knowledge", "Reveal an authored fact you know."),
-    bind<reflected::Remember>("remember", "Store a short memory about this conversation."),
-    bind<reflected::SetFlag>("set_flag", "Set an authored narrative flag."),
-    bind<reflected::InspectItem>("inspect_item", "Inspect an item without changing the world."),
+    bind<reflected::Say, tools::Say>("Speak aloud to the player."),
+    bind<reflected::GiveItem, tools::GiveItem>("Give an item you hold to the player."),
+    bind<reflected::TakeItem, tools::TakeItem>("Take an item from the player."),
+    bind<reflected::UpdateMood, tools::UpdateMood>("Change your mood."),
+    bind<reflected::UpdateTrust, tools::UpdateTrust>("Adjust trust toward the player."),
+    bind<reflected::MoveSelf, tools::MoveSelf>("Move to another allowed location."),
+    bind<reflected::RevealKnowledge, tools::RevealKnowledge>("Reveal an authored fact you know."),
+    bind<reflected::Remember, tools::Remember>("Store a short memory about this conversation."),
+    bind<reflected::SetFlag, tools::SetFlag>("Set an authored narrative flag."),
+    bind<reflected::InspectItem, tools::InspectItem>("Inspect an item without changing the world."),
 };
+
+constexpr auto TOOL_BINDING_NAMES =
+    std::apply([](const auto &...binding) { return std::array{binding.name...}; }, TOOL_BINDINGS);
+
+consteval bool binds_exact_tool_catalog() {
+    if (TOOL_BINDING_NAMES.size() != tools::NPC_TOOL_NAMES.size()) {
+        return false;
+    }
+    return std::ranges::all_of(tools::NPC_TOOL_NAMES, [](const std::string_view expected) {
+        return std::ranges::count(TOOL_BINDING_NAMES, expected) == 1;
+    });
+}
+
+static_assert(binds_exact_tool_catalog(),
+              "Every Chronicle NPC tool must have exactly one reflected Scry binding");
 
 template <typename Function> void for_each_tool_binding(Function &&function) {
     std::apply([&](const auto &...binding) { (function(binding), ...); }, TOOL_BINDINGS);
@@ -333,6 +338,9 @@ NpcSessionManager::Session &NpcSessionManager::get_or_create(const std::string &
             }
             found = true;
             using Arguments = typename Binding::arguments_type;
+            using DomainCall = typename Binding::domain_call_type;
+            static_assert(
+                std::is_same_v<decltype(std::declval<Arguments &&>().into_call()), DomainCall>);
             auto status = scry::reflection::add<Arguments>(
                 harness.tools(),
                 {.name = std::string(binding.name),
