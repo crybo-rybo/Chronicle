@@ -1,5 +1,6 @@
-// The action gate: validation and application of every NPC tool.
+// NPC policy validation and translation into the single world-action gate.
 #include <gtest/gtest.h>
+#include <limits>
 
 #include "chronicle/game/cartridge_game.hpp"
 #include "helpers.hpp"
@@ -13,7 +14,7 @@ class GateTest : public ::testing::Test {
   protected:
     GateTest() : saves_("gatesaves"), game_(ct::make_test_world(), saves_.path()) {}
 
-    [[nodiscard]] NpcData &keeper() { return game_.world().npcs.at("keeper"); }
+    [[nodiscard]] const NpcData &keeper() const { return game_.world().npcs.at("keeper"); }
 
     ct::TempDir saves_;
     CartridgeGame game_;
@@ -34,8 +35,10 @@ TEST_F(GateTest, UnknownNpcRejected) {
 }
 
 TEST_F(GateTest, ToolNotInPolicyRejected) {
-    keeper().identity.tool_policy.allowed_tools = {"say"};
-    const auto outcome = game_.submit_npc_tool("keeper", tools::UpdateTrust{.delta = 5});
+    WorldState world = ct::make_test_world();
+    world.npcs.at("keeper").identity.tool_policy.allowed_tools = {"say"};
+    CartridgeGame game(std::move(world), saves_.path());
+    const auto outcome = game.submit_npc_tool("keeper", tools::UpdateTrust{.delta = 5});
     ASSERT_FALSE(outcome.has_value());
     EXPECT_NE(outcome.error().reason.find("not allowed for Keeper"), std::string::npos);
 }
@@ -44,9 +47,8 @@ TEST_F(GateTest, GiveItemTransfersToPlayer) {
     const auto outcome = game_.submit_npc_tool("keeper", tools::GiveItem{.item_id = "keepsake"});
     ASSERT_TRUE(outcome.has_value());
     EXPECT_EQ(outcome->front().text, "Keeper hands you the Keepsake.");
-    EXPECT_EQ(game_.world().item_owners.at("keepsake"), "player");
-    EXPECT_TRUE(std::ranges::count(game_.world().player.inventory, std::string("keepsake")) == 1);
-    EXPECT_TRUE(keeper().state.inventory.empty());
+    EXPECT_TRUE(game_.world().item_positions.at("keepsake").is_player());
+    EXPECT_EQ(items_at(game_.world(), ItemHolder::player), std::vector<std::string>{"keepsake"});
 }
 
 TEST_F(GateTest, GiveItemNotHeldRejected) {
@@ -56,8 +58,10 @@ TEST_F(GateTest, GiveItemNotHeldRejected) {
 }
 
 TEST_F(GateTest, GiveItemOutsideAllowedItemsRejected) {
-    keeper().identity.tool_policy.allowed_items = {"old_coin"};
-    const auto outcome = game_.submit_npc_tool("keeper", tools::GiveItem{.item_id = "keepsake"});
+    WorldState world = ct::make_test_world();
+    world.npcs.at("keeper").identity.tool_policy.allowed_items = {"old_coin"};
+    CartridgeGame game(std::move(world), saves_.path());
+    const auto outcome = game.submit_npc_tool("keeper", tools::GiveItem{.item_id = "keepsake"});
     ASSERT_FALSE(outcome.has_value());
     EXPECT_NE(outcome.error().reason.find("not allowed"), std::string::npos);
 }
@@ -67,11 +71,11 @@ TEST_F(GateTest, TakeItemRequiresPlayerHolding) {
     ASSERT_FALSE(rejected.has_value());
     EXPECT_EQ(rejected.error().reason, "Player does not hold that item");
 
-    (void)game_.handle_player("take old coin");
+    (void)game_.dispatch_player("take old coin");
     const auto outcome = game_.submit_npc_tool("keeper", tools::TakeItem{.item_id = "old_coin"});
     ASSERT_TRUE(outcome.has_value());
     EXPECT_EQ(outcome->front().text, "Keeper takes the Old Coin.");
-    EXPECT_EQ(game_.world().item_owners.at("old_coin"), "keeper");
+    EXPECT_TRUE(game_.world().item_positions.at("old_coin").is_npc("keeper"));
 }
 
 TEST_F(GateTest, UnknownItemRejected) {
@@ -102,18 +106,27 @@ TEST_F(GateTest, UpdateTrustClampsAndRevealsSecret) {
 
     (void)game_.submit_npc_tool("keeper", tools::UpdateTrust{.delta = 999});
     EXPECT_EQ(keeper().state.trust_toward_player, 100);
+
+    (void)game_.submit_npc_tool("keeper",
+                                tools::UpdateTrust{.delta = std::numeric_limits<int>::max()});
+    EXPECT_EQ(keeper().state.trust_toward_player, 100);
+    (void)game_.submit_npc_tool("keeper",
+                                tools::UpdateTrust{.delta = std::numeric_limits<int>::min()});
+    EXPECT_EQ(keeper().state.trust_toward_player, 0);
 }
 
 TEST_F(GateTest, MoveSelfChecksPolicyAndEndsConversationWhenLeaving) {
+    WorldState restricted_world = ct::make_test_world();
+    restricted_world.npcs.at("keeper").identity.tool_policy.allowed_locations = {"hall"};
+    CartridgeGame restricted(std::move(restricted_world), saves_.path());
     ASSERT_FALSE(
-        game_.submit_npc_tool("keeper", tools::MoveSelf{.location_id = "void"}).has_value());
-    keeper().identity.tool_policy.allowed_locations = {"hall"};
-    const auto rejected = game_.submit_npc_tool("keeper", tools::MoveSelf{.location_id = "garden"});
+        restricted.submit_npc_tool("keeper", tools::MoveSelf{.location_id = "void"}).has_value());
+    const auto rejected =
+        restricted.submit_npc_tool("keeper", tools::MoveSelf{.location_id = "garden"});
     ASSERT_FALSE(rejected.has_value());
     EXPECT_EQ(rejected.error().reason, "Location not allowed");
 
-    keeper().identity.tool_policy.allowed_locations = {"hall", "garden"};
-    (void)game_.handle_player("talk keeper");
+    (void)game_.dispatch_player("talk keeper");
     ASSERT_EQ(game_.phase(), GamePhase::in_conversation);
     const auto outcome = game_.submit_npc_tool("keeper", tools::MoveSelf{.location_id = "garden"});
     ASSERT_TRUE(outcome.has_value());
@@ -131,14 +144,16 @@ TEST_F(GateTest, RevealKnowledgeChecksAndReveals) {
     ASSERT_FALSE(unknown.has_value());
     EXPECT_EQ(unknown.error().reason, "NPC does not know that fact");
 
-    keeper().identity.tool_policy.allowed_facts = {"fact_other"};
-    keeper().identity.knowledge.push_back("fact_other");
+    WorldState restricted_world = ct::make_test_world();
+    auto &restricted_keeper = restricted_world.npcs.at("keeper");
+    restricted_keeper.identity.tool_policy.allowed_facts = {"fact_other"};
+    restricted_keeper.identity.knowledge.push_back("fact_other");
+    CartridgeGame restricted(std::move(restricted_world), saves_.path());
     const auto not_allowed =
-        game_.submit_npc_tool("keeper", tools::RevealKnowledge{.fact_id = "fact_gate"});
+        restricted.submit_npc_tool("keeper", tools::RevealKnowledge{.fact_id = "fact_gate"});
     ASSERT_FALSE(not_allowed.has_value());
     EXPECT_EQ(not_allowed.error().reason, "Fact not allowed");
 
-    keeper().identity.tool_policy.allowed_facts = {};
     const auto outcome =
         game_.submit_npc_tool("keeper", tools::RevealKnowledge{.fact_id = "fact_gate"});
     ASSERT_TRUE(outcome.has_value());
@@ -152,6 +167,11 @@ TEST_F(GateTest, RememberStoresMemoryWithPeriodTimestamp) {
     const auto rejected = game_.submit_npc_tool("keeper", tools::Remember{.summary = "   "});
     ASSERT_FALSE(rejected.has_value());
     EXPECT_EQ(rejected.error().reason, "Memory summary required");
+
+    const auto bad_importance =
+        game_.submit_npc_tool("keeper", tools::Remember{.summary = "Important.", .importance = 11});
+    ASSERT_FALSE(bad_importance.has_value());
+    EXPECT_EQ(bad_importance.error().reason, "Memory importance must be between 1 and 10");
 
     const auto outcome = game_.submit_npc_tool(
         "keeper", tools::Remember{.summary = "The visitor asked about the gate.", .importance = 8});
@@ -180,24 +200,28 @@ TEST_F(GateTest, InspectItemReadsWithoutMutation) {
     ASSERT_EQ(outcome->size(), 1u);
     EXPECT_EQ(outcome->front().kind, EventKind::tool_result);
     EXPECT_EQ(outcome->front().text, "[inspect] Old Coin: A worn coin.");
-    EXPECT_EQ(game_.world().item_owners.at("old_coin"), "location");
+    EXPECT_TRUE(game_.world().item_positions.at("old_coin").is_location("hall"));
 }
 
 TEST_F(GateTest, CustomNarrationTemplateWins) {
-    game_.world().config.mutation_narration_templates["give_item_to_player"] =
+    WorldState world = ct::make_test_world();
+    world.config.mutation_narration_templates["give_item_to_player"] =
         "{npc} presses the {item} into your hands.";
-    const auto outcome = game_.submit_npc_tool("keeper", tools::GiveItem{.item_id = "keepsake"});
+    CartridgeGame game(std::move(world), saves_.path());
+    const auto outcome = game.submit_npc_tool("keeper", tools::GiveItem{.item_id = "keepsake"});
     ASSERT_TRUE(outcome.has_value());
     EXPECT_EQ(outcome->front().text, "Keeper presses the Keepsake into your hands.");
 }
 
 TEST_F(GateTest, EmptyNarrationTemplateSuppressesEvent) {
-    game_.world().config.mutation_narration_templates["update_npc_mood"] = "";
+    WorldState world = ct::make_test_world();
+    world.config.mutation_narration_templates["update_npc_mood"] = "";
+    CartridgeGame game(std::move(world), saves_.path());
     const auto outcome =
-        game_.submit_npc_tool("keeper", tools::UpdateMood{.mood = tools::Mood::friendly});
+        game.submit_npc_tool("keeper", tools::UpdateMood{.mood = tools::Mood::friendly});
     ASSERT_TRUE(outcome.has_value());
     EXPECT_TRUE(outcome->empty());
-    EXPECT_EQ(keeper().state.mood, "friendly");
+    EXPECT_EQ(game.world().npcs.at("keeper").state.mood, "friendly");
 }
 
 } // namespace

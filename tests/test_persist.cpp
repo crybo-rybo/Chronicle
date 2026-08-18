@@ -13,16 +13,15 @@ TEST(Persist, SaveLoadRoundTripPreservesWorld) {
     ct::TempDir dir("persist");
     SaveSystem saves(dir.path());
     WorldState world = ct::make_test_world();
-    world.player.inventory.push_back("old_coin");
+    world.item_positions["old_coin"] = ItemPosition{.holder = ItemHolder::player, .id = {}};
     world.flags["gate_seen"] = true;
     world.revealed_facts.insert("fact_gate");
-    world.npcs.at("keeper").state.memories.push_back(
-        {.timestamp = "morning",
-         .type = "observation",
-         .summary = "Met the visitor.",
-         .importance = 5,
-         .related_npc = "",
-         .related_item = ""});
+    world.npcs.at("keeper").state.memories.push_back({.timestamp = "morning",
+                                                      .type = "observation",
+                                                      .summary = "Met the visitor.",
+                                                      .importance = 5,
+                                                      .related_npc = "",
+                                                      .related_item = ""});
     world.clock.turns_elapsed = 3;
 
     const nlohmann::json conversations{{"keeper", {{"messages", nlohmann::json::array()}}}};
@@ -32,7 +31,7 @@ TEST(Persist, SaveLoadRoundTripPreservesWorld) {
     ASSERT_TRUE(loaded.has_value());
     EXPECT_EQ(loaded->phase, GamePhase::in_conversation);
     EXPECT_EQ(loaded->active_npc, "keeper");
-    EXPECT_EQ(loaded->world.player.inventory, world.player.inventory);
+    EXPECT_EQ(loaded->world.item_positions, world.item_positions);
     EXPECT_TRUE(loaded->world.flags.at("gate_seen"));
     EXPECT_TRUE(loaded->world.revealed_facts.contains("fact_gate"));
     EXPECT_EQ(loaded->world.npcs.at("keeper").state.memories.size(), 1u);

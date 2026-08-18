@@ -106,11 +106,9 @@ std::string build_npc_turn_message(const WorldState &world, const std::string &n
     out << "\n";
 
     std::vector<std::string> visible_items;
-    for (const auto &[iid, owner] : world.item_owners) {
-        const auto location_it = world.item_locations.find(iid);
+    for (const auto &[iid, position] : world.item_positions) {
         const auto item_it = world.items.find(iid);
-        if (owner == "location" && location_it != world.item_locations.end() &&
-            location_it->second == state.current_location && item_it != world.items.end() &&
+        if (position.is_location(state.current_location) && item_it != world.items.end() &&
             !item_it->second.hidden) {
             visible_items.push_back(item_it->second.name);
         }
@@ -126,7 +124,7 @@ std::string build_npc_turn_message(const WorldState &world, const std::string &n
     out << "\n\n[Player]\n";
 
     nlohmann::json inventory_names = nlohmann::json::array();
-    for (const auto &iid : world.player.inventory) {
+    for (const auto &iid : items_at(world, ItemHolder::player)) {
         const auto item = world.items.find(iid);
         if (item != world.items.end()) {
             inventory_names.push_back(item->second.name);

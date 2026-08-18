@@ -15,10 +15,9 @@ TEST(CartridgeLoad, MinimalExampleLoads) {
     EXPECT_EQ(world.locations.size(), 2u);
     EXPECT_TRUE(world.npcs.contains("warden"));
     EXPECT_EQ(world.player.current_location, "foyer");
-    EXPECT_TRUE(world.player.inventory.empty());
+    EXPECT_TRUE(items_at(world, ItemHolder::player).empty());
     // Items get placed from location lists.
-    EXPECT_EQ(world.item_owners.at("visitor_ledger"), "location");
-    EXPECT_EQ(world.item_locations.at("visitor_ledger"), "foyer");
+    EXPECT_TRUE(world.item_positions.at("visitor_ledger").is_location("foyer"));
 }
 
 TEST(CartridgeLoad, NpcIdentityIdDefaultsToMapKey) {
@@ -28,8 +27,8 @@ TEST(CartridgeLoad, NpcIdentityIdDefaultsToMapKey) {
 
 TEST(CartridgeLoad, NpcInventoryOwnsItems) {
     const WorldState world = ct::make_test_world();
-    EXPECT_EQ(world.item_owners.at("keepsake"), "keeper");
-    EXPECT_EQ(world.item_locations.at("keepsake"), "hall");
+    EXPECT_TRUE(world.item_positions.at("keepsake").is_npc("keeper"));
+    EXPECT_EQ(world.npcs.at("keeper").state.current_location, "hall");
 }
 
 TEST(CartridgeLoad, ClockAdoptsConfig) {
@@ -136,6 +135,26 @@ TEST(CartridgeLoad, SymbolicLinksAreRejected) {
     EXPECT_THROW((void)load_package(dir.path()), CartridgeError);
 }
 
+TEST(CartridgeLoad, DuplicateInitialItemPlacementIsRejected) {
+    using nlohmann::json;
+    ct::TempDir dir("duplicateplacement");
+    const json world{
+        {"start_location", "cell"},
+        {"locations",
+         {{"cell",
+           {{"name", "Cell"}, {"base_description", "A cell."}, {"items", json::array({"coin"})}}}}},
+        {"items", {{"coin", {{"name", "Coin"}, {"description", "A coin."}}}}},
+    };
+    const json npcs{
+        {"npcs",
+         {{"guard",
+           {{"identity", {{"name", "Guard"}}},
+            {"state", {{"current_location", "cell"}, {"inventory", json::array({"coin"})}}}}}}},
+    };
+    ct::write_package(dir.path(), {{"world", world}, {"npcs", npcs}});
+    EXPECT_THROW((void)load_package(dir.path()), CartridgeError);
+}
+
 TEST(CartridgeLoad, LockedExitsAcceptStringAndObjectForms) {
     using nlohmann::json;
     ct::TempDir dir("lockforms");
@@ -177,7 +196,7 @@ TEST(CartridgeModels, WorldStateJsonRoundTrip) {
     const WorldState decoded = encoded.get<WorldState>();
     EXPECT_EQ(decoded.manifest.id, world.manifest.id);
     EXPECT_EQ(decoded.npcs.at("keeper").identity.secret, "The garden hides a grave.");
-    EXPECT_EQ(decoded.item_owners, world.item_owners);
+    EXPECT_EQ(decoded.item_positions, world.item_positions);
     EXPECT_EQ(decoded.flags, world.flags);
     EXPECT_EQ(decoded.events.at("evt_second_turn").actions.size(), 1u);
     const nlohmann::json reencoded = decoded;

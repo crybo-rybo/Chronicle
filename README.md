@@ -95,5 +95,5 @@ CHRONICLE_MODEL=qwen3.5:9b just integration
 
 ## Design in one line
 
-LLM proposes; console decides. All model-driven world changes flow through a
-single validated action gate. Cartridges are data, not trusted code.
+LLM proposes; console decides. Every runtime world change flows through a single
+validated action gate. Cartridges are data, not trusted code.

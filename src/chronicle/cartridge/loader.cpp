@@ -132,16 +132,17 @@ WorldState assemble_world(const json &manifest_raw, const json &config_raw, cons
     const auto flags_file = parse_as<FlagsFile>(flags_raw, "flags");
     const auto events_file = parse_as<EventsFile>(events_raw, "events");
 
-    // Ensure npc identity ids match map keys.
-    for (auto &[npc_id, npc] : npcs_file.npcs) {
-        if (npc.identity.id.empty()) {
-            npc.identity.id = npc_id;
-        }
+    for (auto &[location_id, authored] : world.locations) {
+        state.locations.emplace(location_id, std::move(authored.location));
     }
-
-    state.locations = world.locations;
     state.items = world.items;
-    state.npcs = npcs_file.npcs;
+    for (auto &[npc_id, authored] : npcs_file.npcs) {
+        if (authored.identity.id.empty()) {
+            authored.identity.id = npc_id;
+        }
+        state.npcs.emplace(npc_id, NpcData{.identity = std::move(authored.identity),
+                                           .state = std::move(authored.state.state)});
+    }
     state.facts = facts_file.facts;
     state.flag_meta = flags_file.flags;
     for (const auto &[flag_id, meta] : flags_file.flags) {
@@ -149,16 +150,19 @@ WorldState assemble_world(const json &manifest_raw, const json &config_raw, cons
     }
     state.events = events_file.events;
 
-    for (const auto &[loc_id, loc] : world.locations) {
-        for (const auto &item_id : loc.items) {
-            state.item_owners[item_id] = "location";
-            state.item_locations[item_id] = loc_id;
+    const auto place_item = [&](const std::string &item_id, ItemPosition position) {
+        if (!state.item_positions.emplace(item_id, std::move(position)).second) {
+            throw CartridgeError("Item is placed more than once: " + item_id);
+        }
+    };
+    for (const auto &[location_id, authored] : world.locations) {
+        for (const auto &item_id : authored.items) {
+            place_item(item_id, ItemPosition{.holder = ItemHolder::location, .id = location_id});
         }
     }
-    for (const auto &[npc_id, npc] : state.npcs) {
-        for (const auto &item_id : npc.state.inventory) {
-            state.item_owners[item_id] = npc_id;
-            state.item_locations[item_id] = npc.state.current_location;
+    for (const auto &[npc_id, authored] : npcs_file.npcs) {
+        for (const auto &item_id : authored.state.inventory) {
+            place_item(item_id, ItemPosition{.holder = ItemHolder::npc, .id = npc_id});
         }
     }
     for (const auto &[fact_id, fact] : state.facts) {
@@ -167,7 +171,7 @@ WorldState assemble_world(const json &manifest_raw, const json &config_raw, cons
         }
     }
 
-    state.player = PlayerState{.current_location = world.start_location, .inventory = {}};
+    state.player = PlayerState{.current_location = world.start_location};
     state.clock = ClockState{.turns_elapsed = 0,
                              .turns_per_period = state.config.turns_per_period,
                              .total_periods = state.config.total_periods};

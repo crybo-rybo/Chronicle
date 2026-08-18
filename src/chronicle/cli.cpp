@@ -133,8 +133,7 @@ WorldState build_tiny_world() {
             {"base_description", "You stand in a bare room. A quiet stranger waits here. "
                                  "Type 'talk stranger' to speak, or 'quit' to leave."},
             {"exits", json::object()},
-            {"items", json::array()},
-            {"npcs", json::array()}}}}},
+            {"items", json::array()}}}}},
         {"items", json::object()},
     };
     const json npcs{

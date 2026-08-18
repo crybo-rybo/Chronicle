@@ -1,4 +1,5 @@
 // Scripted event conditions and actions.
+#include <functional>
 #include <gtest/gtest.h>
 
 #include "chronicle/game/cartridge_game.hpp"
@@ -11,14 +12,17 @@ namespace ct = chronicle::testing;
 
 class EventsTest : public ::testing::Test {
   protected:
-    EventsTest() : saves_("eventsaves") {
-        WorldState world = ct::make_test_world();
-        world.events.clear(); // each test installs its own
-        game_ = std::make_unique<CartridgeGame>(std::move(world), saves_.path());
-    }
+    EventsTest() : saves_("eventsaves") {}
 
-    void install_event(const std::string &id, EventTriggerData event) {
-        game_->world().events[id] = std::move(event);
+    void install_event(const std::string &id, EventTriggerData event,
+                       std::function<void(WorldState &)> configure = {}) {
+        WorldState world = ct::make_test_world();
+        world.events.clear();
+        world.events[id] = std::move(event);
+        if (configure) {
+            configure(world);
+        }
+        game_ = std::make_unique<CartridgeGame>(std::move(world), saves_.path());
     }
 
     [[nodiscard]] GameEvents fire() { return game_->after_turn(); }
@@ -65,7 +69,8 @@ TEST_F(EventsTest, ConditionsAreAnded) {
                            .once = true,
                            .fired = false});
     EXPECT_TRUE(fire().empty());
-    game_->world().flags["gate_seen"] = true;
+    ASSERT_TRUE(game_->submit_world_action(
+        actions::SetFlag{.flag_id = "gate_seen", .value = true, .significant = false}));
     EXPECT_EQ(fire().size(), 1u);
 }
 
@@ -76,7 +81,7 @@ TEST_F(EventsTest, ClockIsCondition) {
                    .once = true,
                    .fired = false});
     EXPECT_TRUE(fire().empty());
-    game_->world().clock.turns_elapsed = 2; // turns_per_period=2 -> afternoon
+    ASSERT_TRUE(game_->submit_world_action(actions::AdvanceClock{.turns = 2}));
     EXPECT_EQ(fire().size(), 1u);
 }
 
@@ -86,7 +91,8 @@ TEST_F(EventsTest, NpcTrustGeCondition) {
                               .once = true,
                               .fired = false});
     EXPECT_TRUE(fire().empty());
-    game_->world().npcs.at("keeper").state.trust_toward_player = 50;
+    ASSERT_TRUE(
+        game_->submit_world_action(actions::AdjustNpcTrust{.npc_id = "keeper", .delta = 50}));
     EXPECT_EQ(fire().size(), 1u);
 }
 
@@ -97,7 +103,7 @@ TEST_F(EventsTest, NpcAtAndItemInInventoryConditions) {
                             .once = true,
                             .fired = false});
     EXPECT_TRUE(fire().empty());
-    (void)game_->handle_player("take old coin");
+    (void)game_->dispatch_player("take old coin");
     EXPECT_FALSE(fire().empty());
 }
 
@@ -107,7 +113,7 @@ TEST_F(EventsTest, TurnGeConditionViaSignificantTurns) {
                             .once = true,
                             .fired = false});
     EXPECT_TRUE(fire().empty()); // turn 0
-    (void)game_->handle_player("take old coin");
+    (void)game_->dispatch_player("take old coin");
     const auto events = fire(); // clock advances to 1, then events run
     ASSERT_EQ(events.size(), 1u);
     EXPECT_EQ(events.front().text, "Time passes.");
@@ -124,12 +130,27 @@ TEST_F(EventsTest, MoveNpcAction) {
     EXPECT_EQ(game_->world().npcs.at("keeper").state.current_location, "garden");
     ASSERT_EQ(events.size(), 1u);
     EXPECT_EQ(events.front().text, "Keeper moves to Garden.");
+    EXPECT_TRUE(game_->world().item_positions.at("keepsake").is_npc("keeper"));
 }
 
-TEST_F(EventsTest, SetFlagActionCoercesStrings) {
+TEST_F(EventsTest, MovingActiveNpcEndsConversation) {
+    install_event("departure",
+                  {.conditions = {},
+                   .actions = {{.type = "move_npc",
+                                .params = {{"npc_id", "keeper"}, {"location_id", "garden"}}}},
+                   .once = true,
+                   .fired = false});
+    (void)game_->dispatch_player("talk keeper");
+    ASSERT_EQ(game_->phase(), GamePhase::in_conversation);
+    (void)fire();
+    EXPECT_EQ(game_->phase(), GamePhase::playing);
+    EXPECT_FALSE(game_->active_npc_id().has_value());
+}
+
+TEST_F(EventsTest, SetFlagActionRequiresBoolean) {
     install_event("mark", {.conditions = {},
                            .actions = {{.type = "set_flag",
-                                        .params = {{"flag_id", "gate_seen"}, {"value", "yes"}}}},
+                                        .params = {{"flag_id", "gate_seen"}, {"value", true}}}},
                            .once = true,
                            .fired = false});
     (void)fire();
@@ -145,8 +166,8 @@ TEST_F(EventsTest, SpawnItemAction) {
                    .once = true,
                    .fired = false});
     const auto events = fire();
-    EXPECT_EQ(game_->world().item_owners.at("keepsake"), "location");
-    EXPECT_EQ(game_->world().item_locations.at("keepsake"), "garden");
+    EXPECT_TRUE(game_->world().item_positions.at("keepsake").is_location("garden"));
+    EXPECT_TRUE(items_at(game_->world(), ItemHolder::npc, "keeper").empty());
     ASSERT_EQ(events.size(), 1u);
     EXPECT_EQ(events.front().text, "Something new appears in Garden.");
 }
@@ -171,6 +192,19 @@ TEST_F(EventsTest, EndGameDefaultText) {
     const auto events = fire();
     ASSERT_EQ(events.size(), 1u);
     EXPECT_EQ(events.front().text, "The scenario ends.");
+}
+
+TEST_F(EventsTest, AuthoredEndingAtDeadlineWinsOverFallbackEnding) {
+    install_event("deadline",
+                  {.conditions = {{.type = "turn_ge", .args = {"6"}}},
+                   .actions = {{.type = "end_game", .params = {{"text", "The authored ending."}}}},
+                   .once = true,
+                   .fired = false},
+                  [](WorldState &world) { world.clock.turns_elapsed = 5; });
+    (void)game_->dispatch_player("take old coin");
+    const auto events = fire();
+    ASSERT_EQ(events.size(), 1u);
+    EXPECT_EQ(events.front().text, "The authored ending.");
 }
 
 } // namespace

@@ -61,12 +61,6 @@ TEST(Validator, ConfigResourceBoundsAreEnforced) {
     EXPECT_TRUE(has_issue_containing(issues, "clock limits"));
 }
 
-TEST(Validator, DuplicateItemPlacementIsRejected) {
-    WorldState world = ct::make_test_world();
-    world.npcs.at("keeper").state.inventory.push_back("old_coin");
-    EXPECT_TRUE(has_issue_containing(validate_world(world), "old_coin is placed more than once"));
-}
-
 TEST(Validator, UnknownStartLocation) {
     WorldState world = ct::make_test_world();
     world.player.current_location = "nowhere";
@@ -96,7 +90,7 @@ TEST(Validator, NpcIssues) {
     npc.state.current_location = "void";
     npc.state.mood = "confused";
     npc.identity.knowledge.push_back("fact_missing");
-    npc.state.inventory.push_back("item_missing");
+    world.item_positions["item_missing"] = ItemPosition{.holder = ItemHolder::npc, .id = "keeper"};
     npc.identity.tool_policy.allowed_tools.push_back("teleport");
     npc.identity.tool_policy.allowed_items.push_back("item_missing");
     npc.identity.tool_policy.allowed_facts.push_back("fact_missing");
@@ -106,7 +100,7 @@ TEST(Validator, NpcIssues) {
     EXPECT_TRUE(has_issue_containing(issues, "unknown location void"));
     EXPECT_TRUE(has_issue_containing(issues, "invalid mood confused"));
     EXPECT_TRUE(has_issue_containing(issues, "unknown knowledge fact fact_missing"));
-    EXPECT_TRUE(has_issue_containing(issues, "unknown inventory item item_missing"));
+    EXPECT_TRUE(has_issue_containing(issues, "item position references unknown item item_missing"));
     EXPECT_TRUE(has_issue_containing(issues, "unknown tool teleport"));
     EXPECT_TRUE(has_issue_containing(issues, "allowed_items unknown item_missing"));
     EXPECT_TRUE(has_issue_containing(issues, "allowed_facts unknown fact_missing"));

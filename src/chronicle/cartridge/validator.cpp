@@ -198,34 +198,29 @@ std::vector<ValidationIssue> validate_world(const WorldState &world) {
         error(issues, "start_location unknown: " + world.player.current_location);
     }
 
-    std::map<std::string, std::string> item_placement;
     for (const auto &[loc_id, loc] : world.locations) {
         for (const auto &[direction, dest] : loc.exits) {
             if (!world.locations.contains(dest)) {
                 error(issues, "location " + loc_id + ": exit " + direction + " -> unknown " + dest);
             }
         }
-        for (const auto &item_id : loc.items) {
-            if (!world.items.contains(item_id)) {
-                error(issues, "location " + loc_id + ": unknown item " + item_id);
-            }
-            if (const auto [it, inserted] = item_placement.emplace(item_id, "location " + loc_id);
-                !inserted) {
-                error(issues, "item " + item_id + " is placed more than once (" + it->second +
-                                  " and location " + loc_id + ")");
-            }
-        }
-        for (const auto &npc_id : loc.npcs) {
-            const auto npc = world.npcs.find(npc_id);
-            if (npc == world.npcs.end() || npc->second.state.current_location != loc_id) {
-                error(issues, "location " + loc_id + ": inconsistent npc " + npc_id);
-            }
-        }
     }
 
     for (const auto &[item_id, item] : world.items) {
-        if (!world.item_owners.contains(item_id)) {
+        if (!world.item_positions.contains(item_id)) {
             warning(issues, "item " + item_id + " is not placed anywhere");
+        }
+    }
+    for (const auto &[item_id, position] : world.item_positions) {
+        if (!world.items.contains(item_id)) {
+            error(issues, "item position references unknown item " + item_id);
+        } else if (position.holder == ItemHolder::location &&
+                   !world.locations.contains(position.id)) {
+            error(issues, "item " + item_id + ": unknown location " + position.id);
+        } else if (position.holder == ItemHolder::npc && !world.npcs.contains(position.id)) {
+            error(issues, "item " + item_id + ": unknown owning npc " + position.id);
+        } else if (position.holder == ItemHolder::player && !position.id.empty()) {
+            error(issues, "item " + item_id + ": invalid player position");
         }
     }
 
@@ -239,16 +234,6 @@ std::vector<ValidationIssue> validate_world(const WorldState &world) {
         for (const auto &fact_id : npc.identity.knowledge) {
             if (!world.facts.contains(fact_id)) {
                 error(issues, "npc " + npc_id + ": unknown knowledge fact " + fact_id);
-            }
-        }
-        for (const auto &item_id : npc.state.inventory) {
-            if (!world.items.contains(item_id)) {
-                error(issues, "npc " + npc_id + ": unknown inventory item " + item_id);
-            }
-            if (const auto [it, inserted] = item_placement.emplace(item_id, "npc " + npc_id);
-                !inserted) {
-                error(issues, "item " + item_id + " is placed more than once (" + it->second +
-                                  " and npc " + npc_id + ")");
             }
         }
         const auto &policy = npc.identity.tool_policy;

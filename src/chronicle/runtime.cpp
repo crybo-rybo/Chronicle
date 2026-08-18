@@ -38,12 +38,13 @@ GameEvents ConsoleRuntime::handle_line(const std::string &line) {
         return events;
     }
 
-    append(game_.handle_player(line));
+    auto dispatch = game_.dispatch_player(line);
+    append(std::move(dispatch.events));
     if (game_.phase() == GamePhase::game_over) {
         return events;
     }
-    if (game_.wants_llm_turn(line)) {
-        append(run_llm_turn(line));
+    if (dispatch.npc_turn) {
+        append(run_llm_turn(*dispatch.npc_turn));
     }
     // Significant turns (movement, items, successful dialogue tools) advance
     // the clock and may fire scripted events.
@@ -51,19 +52,14 @@ GameEvents ConsoleRuntime::handle_line(const std::string &line) {
     return events;
 }
 
-GameEvents ConsoleRuntime::run_llm_turn(const std::string &text) {
-    const auto &npc_id = game_.active_npc_id();
-    if (!npc_id) {
-        return {};
-    }
+GameEvents ConsoleRuntime::run_llm_turn(const NpcTurnRequest &request) {
     if (sessions_ != nullptr) {
-        return sessions_->run_turn(*npc_id, text);
+        return sessions_->run_turn(request.npc_id, request.player_text);
     }
-    return run_stub_turn();
+    return run_stub_turn(request.npc_id);
 }
 
-GameEvents ConsoleRuntime::run_stub_turn() {
-    const auto &npc_id = *game_.active_npc_id();
+GameEvents ConsoleRuntime::run_stub_turn(const std::string &npc_id) {
     const auto &npc = game_.world().npcs.at(npc_id);
     const auto &allowed = npc.identity.tool_policy.allowed_tools;
     if (std::ranges::find(allowed, std::string("say")) != allowed.end()) {

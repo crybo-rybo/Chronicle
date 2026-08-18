@@ -1,9 +1,7 @@
 // Default cartridge-backed mystery/social-sim game.
 //
-// All world mutation driven by the model flows through submit_npc_tool(),
-// the single action gate: it validates a typed tool call against the world
-// and the NPC's tool policy, then applies it. A rejection carries the reason
-// so the LLM layer can surface it back to the model as a tool error.
+// Player commands, scripted events, persistence restores, and model tools all
+// translate into typed world actions applied by one mutation gate.
 #pragma once
 
 #include <expected>
@@ -14,6 +12,7 @@
 
 #include "chronicle/cartridge/models.hpp"
 #include "chronicle/game/npc_tools.hpp"
+#include "chronicle/game/world_actions.hpp"
 #include "chronicle/persist.hpp"
 #include "chronicle/types.hpp"
 
@@ -25,6 +24,16 @@ struct ToolRejection {
 
 using ToolOutcome = std::expected<GameEvents, ToolRejection>;
 
+struct NpcTurnRequest {
+    std::string npc_id;
+    std::string player_text;
+};
+
+struct PlayerDispatch {
+    GameEvents events;
+    std::optional<NpcTurnRequest> npc_turn;
+};
+
 class CartridgeGame {
   public:
     // Extra payload persisted alongside the world (NPC conversation history).
@@ -35,16 +44,24 @@ class CartridgeGame {
                            std::optional<std::filesystem::path> save_dir = std::nullopt);
     CartridgeGame(WorldState world, std::optional<std::filesystem::path> save_dir = std::nullopt);
 
+    CartridgeGame(const CartridgeGame &) = delete;
+    CartridgeGame &operator=(const CartridgeGame &) = delete;
+    CartridgeGame(CartridgeGame &&) = delete;
+    CartridgeGame &operator=(CartridgeGame &&) = delete;
+
     [[nodiscard]] GamePhase phase() const { return phase_; }
     [[nodiscard]] const std::optional<std::string> &active_npc_id() const { return active_npc_; }
-    [[nodiscard]] WorldState &world() { return world_; }
     [[nodiscard]] const WorldState &world() const { return world_; }
 
     [[nodiscard]] GameEvents bootstrap();
-    [[nodiscard]] GameEvents handle_player(const std::string &text);
-    [[nodiscard]] bool wants_llm_turn(const std::string &text) const;
+    [[nodiscard]] PlayerDispatch dispatch_player(const std::string &text);
 
-    // The action gate: validate then apply one NPC tool call.
+    // The only accepted path for runtime world writes. Public so an optional
+    // GameBackend and deterministic tests can submit the same typed actions.
+    [[nodiscard]] actions::ActionOutcome submit_world_action(actions::WorldAction action);
+
+    // NPC authorization boundary: validate policy, then translate the tool to
+    // typed world actions handled by the single mutation gate.
     [[nodiscard]] ToolOutcome submit_npc_tool(const std::string &npc_id,
                                               const tools::NpcToolCall &call);
 
@@ -78,8 +95,8 @@ class CartridgeGame {
     // Gate internals: empty optional means valid.
     [[nodiscard]] std::optional<std::string>
     validate_npc_tool(const std::string &npc_id, const tools::NpcToolCall &call) const;
-    [[nodiscard]] GameEvents apply_npc_tool(const std::string &npc_id,
-                                            const tools::NpcToolCall &call);
+    [[nodiscard]] ToolOutcome apply_npc_tool(const std::string &npc_id,
+                                             const tools::NpcToolCall &call);
     [[nodiscard]] std::optional<GameEvent>
     narrate(const std::string &key, const std::map<std::string, std::string> &args) const;
 
@@ -91,6 +108,7 @@ class CartridgeGame {
     GamePhase phase_ = GamePhase::playing;
     std::optional<std::string> active_npc_;
     bool significant_ = false;
+    actions::ActionGate action_gate_;
     SaveSystem saves_;
     SnapshotHook conversation_snapshot_;
     RestoreHook conversation_restore_;

@@ -32,8 +32,8 @@ class ConsoleRuntime {
     [[nodiscard]] bool using_stub() const { return sessions_ == nullptr; }
 
   private:
-    [[nodiscard]] GameEvents run_llm_turn(const std::string &text);
-    [[nodiscard]] GameEvents run_stub_turn();
+    [[nodiscard]] GameEvents run_llm_turn(const NpcTurnRequest &request);
+    [[nodiscard]] GameEvents run_stub_turn(const std::string &npc_id);
 
     CartridgeGame &game_;
     TerminalRenderer renderer_;

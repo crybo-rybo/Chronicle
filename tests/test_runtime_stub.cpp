@@ -42,9 +42,12 @@ TEST_F(StubRuntimeTest, ConversationTurnGoesThroughGate) {
 }
 
 TEST_F(StubRuntimeTest, SaylessNpcFallsBackToPlainDialogue) {
-    game_.world().npcs.at("keeper").identity.tool_policy.allowed_tools = {"remember"};
-    (void)runtime_.handle_line("talk keeper");
-    const auto events = runtime_.handle_line("hello?");
+    WorldState world = ct::make_test_world();
+    world.npcs.at("keeper").identity.tool_policy.allowed_tools = {"remember"};
+    CartridgeGame game(std::move(world), saves_.path());
+    ConsoleRuntime runtime(game, std::nullopt);
+    (void)runtime.handle_line("talk keeper");
+    const auto events = runtime.handle_line("hello?");
     ASSERT_FALSE(events.empty());
     EXPECT_EQ(events.front().kind, EventKind::dialogue);
     EXPECT_NE(events.front().text.find(STUB_REPLY), std::string::npos);
@@ -55,16 +58,45 @@ TEST_F(StubRuntimeTest, EmptyLineProducesNothing) {
 }
 
 TEST_F(StubRuntimeTest, AfterTurnEventsAppendedToCommands) {
-    game_.world().events["chime"] = EventTriggerData{
+    WorldState world = ct::make_test_world();
+    world.events["chime"] = EventTriggerData{
         .conditions = {{.type = "turn_ge", .args = {"1"}}},
         .actions = {{.type = "narrate", .params = {{"text", "A clock chimes."}}}},
         .once = true,
         .fired = false,
     };
-    const auto events = runtime_.handle_line("take old coin");
+    CartridgeGame game(std::move(world), saves_.path());
+    ConsoleRuntime runtime(game, std::nullopt);
+    const auto events = runtime.handle_line("take old coin");
     const auto text = joined(events);
     EXPECT_NE(text.find("You take the Old Coin."), std::string::npos);
     EXPECT_NE(text.find("A clock chimes."), std::string::npos);
+}
+
+TEST_F(StubRuntimeTest, StartingConversationDoesNotAlsoRunNpcTurn) {
+    const auto events = runtime_.handle_line("talk keeper");
+    ASSERT_EQ(events.size(), 1u);
+    EXPECT_EQ(events.front().kind, EventKind::narration);
+}
+
+TEST_F(StubRuntimeTest, BlockedConversationCommandDoesNotReachNpc) {
+    (void)runtime_.handle_line("talk keeper");
+    const auto events = runtime_.handle_line("go north");
+    ASSERT_EQ(events.size(), 1u);
+    EXPECT_EQ(events.front().kind, EventKind::narration);
+    EXPECT_NE(events.front().text.find("Finish the conversation"), std::string::npos);
+}
+
+TEST_F(StubRuntimeTest, AliasedHardCommandIsRoutedExactlyOnce) {
+    WorldState world = ct::make_test_world();
+    world.config.verb_aliases["bag"] = "inventory";
+    CartridgeGame game(std::move(world), saves_.path());
+    ConsoleRuntime runtime(game, std::nullopt);
+    (void)runtime.handle_line("talk keeper");
+    const auto events = runtime.handle_line("bag");
+    ASSERT_EQ(events.size(), 1u);
+    EXPECT_EQ(events.front().kind, EventKind::narration);
+    EXPECT_NE(events.front().text.find("carrying nothing"), std::string::npos);
 }
 
 TEST_F(StubRuntimeTest, GameOverStopsFurtherProcessing) {

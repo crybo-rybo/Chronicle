@@ -60,12 +60,6 @@ bool contains(const std::vector<std::string> &haystack, const std::string &needl
     return std::ranges::find(haystack, needle) != haystack.end();
 }
 
-void erase_value(std::vector<std::string> &values, const std::string &value) {
-    if (const auto it = std::ranges::find(values, value); it != values.end()) {
-        values.erase(it);
-    }
-}
-
 std::optional<int> parse_int(const std::string &text) {
     int value = 0;
     const auto [ptr, ec] = std::from_chars(text.data(), text.data() + text.size(), value);
@@ -73,17 +67,6 @@ std::optional<int> parse_int(const std::string &text) {
         return std::nullopt;
     }
     return value;
-}
-
-bool truthy_param(const nlohmann::json &value, const bool fallback) {
-    if (value.is_boolean()) {
-        return value.get<bool>();
-    }
-    if (value.is_string()) {
-        const auto text = lower(value.get<std::string>());
-        return text == "1" || text == "true" || text == "yes";
-    }
-    return fallback;
 }
 
 std::string format_template(std::string text, const std::map<std::string, std::string> &args) {
@@ -116,7 +99,8 @@ CartridgeGame::CartridgeGame(const std::filesystem::path &package_dir,
     : CartridgeGame(load_package(package_dir), std::move(save_dir)) {}
 
 CartridgeGame::CartridgeGame(WorldState world, std::optional<std::filesystem::path> save_dir)
-    : world_(std::move(world)), saves_(save_directory_for(world_, save_dir)) {}
+    : world_(std::move(world)), action_gate_(world_, phase_, active_npc_, significant_),
+      saves_(save_directory_for(world_, save_dir)) {}
 
 void CartridgeGame::set_conversation_hooks(SnapshotHook snapshot, RestoreHook restore) {
     conversation_snapshot_ = std::move(snapshot);
@@ -131,13 +115,14 @@ GameEvents CartridgeGame::bootstrap() {
     return events;
 }
 
-GameEvents CartridgeGame::handle_player(const std::string &text) {
+PlayerDispatch CartridgeGame::dispatch_player(const std::string &text) {
     const std::string raw = strip(text);
     if (raw.empty()) {
         return {};
     }
     if (phase_ == GamePhase::game_over) {
-        return {{EventKind::narration, "The scenario has ended. Type quit to exit."}};
+        return {.events = {{EventKind::narration, "The scenario has ended. Type quit to exit."}},
+                .npc_turn = std::nullopt};
     }
 
     const std::string expanded = expand_alias(raw);
@@ -145,50 +130,42 @@ GameEvents CartridgeGame::handle_player(const std::string &text) {
 
     if (phase_ == GamePhase::in_conversation) {
         if (EXIT_PHRASES.contains(lowered)) {
-            phase_ = GamePhase::playing;
-            active_npc_.reset();
-            return {{EventKind::narration, "You end the conversation."}};
+            (void)submit_world_action(actions::EndConversation{});
+            return {.events = {{EventKind::narration, "You end the conversation."}},
+                    .npc_turn = std::nullopt};
         }
         const auto [first, ignored] = split_command(lowered);
         if (HARD_CONVERSATION_COMMANDS.contains(first)) {
-            return dispatch_playing(expanded);
+            return {.events = dispatch_playing(expanded), .npc_turn = std::nullopt};
         }
         if (BLOCKED_CONVERSATION_COMMANDS.contains(first)) {
-            return {{EventKind::narration, "Finish the conversation first (say 'bye')."}};
+            return {
+                .events = {{EventKind::narration, "Finish the conversation first (say 'bye')."}},
+                .npc_turn = std::nullopt};
         }
-        // Free text is handled by the LLM path.
-        return {};
+        return {.events = {},
+                .npc_turn = NpcTurnRequest{.npc_id = *active_npc_, .player_text = raw}};
     }
 
-    return dispatch_playing(expanded);
+    return {.events = dispatch_playing(expanded), .npc_turn = std::nullopt};
 }
 
-bool CartridgeGame::wants_llm_turn(const std::string &text) const {
-    if (phase_ != GamePhase::in_conversation || !active_npc_) {
-        return false;
-    }
-    const std::string lowered = strip(lower(text));
-    if (lowered.empty() || EXIT_PHRASES.contains(lowered)) {
-        return false;
-    }
-    const auto [first, ignored] = split_command(lowered);
-    return !HARD_CONVERSATION_COMMANDS.contains(first);
+actions::ActionOutcome CartridgeGame::submit_world_action(actions::WorldAction action) {
+    return action_gate_.submit(std::move(action));
 }
 
 GameEvents CartridgeGame::after_turn() {
     GameEvents events;
     if (significant_ && phase_ != GamePhase::game_over) {
-        world_.clock.turns_elapsed += 1;
-        significant_ = false;
-        if (world_.clock.time_expired()) {
-            phase_ = GamePhase::game_over;
-            events.push_back({EventKind::ending,
-                              "Time has run out. The scenario ends without a clearer resolution."});
-            return events;
-        }
+        (void)submit_world_action(actions::AdvanceClock{});
     }
     auto fired = evaluate_events();
     events.insert(events.end(), fired.begin(), fired.end());
+    if (phase_ != GamePhase::game_over && world_.clock.time_expired()) {
+        (void)submit_world_action(actions::EndGame{});
+        events.push_back({EventKind::ending,
+                          "Time has run out. The scenario ends without a clearer resolution."});
+    }
     return events;
 }
 
@@ -227,7 +204,7 @@ GameEvents CartridgeGame::dispatch_playing(const std::string &text) {
     const auto words = split_words(lower(text));
 
     if (cmd == "quit" || cmd == "q") {
-        phase_ = GamePhase::game_over;
+        (void)submit_world_action(actions::EndGame{});
         return {{EventKind::system, "Goodbye."}};
     }
     if (cmd == "help") {
@@ -278,9 +255,15 @@ GameEvents CartridgeGame::do_load(const int slot) {
         return {{EventKind::warning,
                  "Could not load slot " + std::to_string(slot) + ": " + loaded.error().message}};
     }
-    world_ = std::move(loaded->world);
-    phase_ = loaded->phase;
-    active_npc_ = loaded->active_npc;
+    auto restored = submit_world_action(actions::RestoreRuntime{
+        .world = std::move(loaded->world),
+        .phase = loaded->phase,
+        .active_npc = std::move(loaded->active_npc),
+    });
+    if (!restored) {
+        return {{EventKind::warning,
+                 "Could not load slot " + std::to_string(slot) + ": " + restored.error().reason}};
+    }
     if (conversation_restore_) {
         conversation_restore_(loaded->conversations);
     }
@@ -296,11 +279,9 @@ GameEvents CartridgeGame::look() const {
     std::vector<std::string> lines = {loc.name, loc.base_description};
 
     std::vector<std::string> item_names;
-    for (const auto &[iid, owner] : world_.item_owners) {
-        const auto location_it = world_.item_locations.find(iid);
+    for (const auto &[iid, position] : world_.item_positions) {
         const auto item_it = world_.items.find(iid);
-        if (owner == "location" && location_it != world_.item_locations.end() &&
-            location_it->second == loc_id && item_it != world_.items.end() &&
+        if (position.is_location(loc_id) && item_it != world_.items.end() &&
             !item_it->second.hidden) {
             item_names.push_back(item_it->second.name);
         }
@@ -349,12 +330,13 @@ GameEvents CartridgeGame::look() const {
 }
 
 GameEvents CartridgeGame::show_inventory() const {
-    if (world_.player.inventory.empty()) {
+    const auto inventory = items_at(world_, ItemHolder::player);
+    if (inventory.empty()) {
         return {{EventKind::narration, "You are carrying nothing."}};
     }
     std::string line = "You are carrying: ";
     bool first = true;
-    for (const auto &iid : world_.player.inventory) {
+    for (const auto &iid : inventory) {
         const auto it = world_.items.find(iid);
         if (it == world_.items.end()) {
             continue;
@@ -404,7 +386,7 @@ GameEvents CartridgeGame::go(const std::string &direction_arg) {
     if (direction.empty()) {
         return {{EventKind::narration, "Go where?"}};
     }
-    auto &loc = world_.locations.at(world_.player.current_location);
+    const auto &loc = world_.locations.at(world_.player.current_location);
     const auto exit_it = loc.exits.find(direction);
     if (exit_it == loc.exits.end()) {
         return {{EventKind::narration, "You can't go that way."}};
@@ -412,8 +394,9 @@ GameEvents CartridgeGame::go(const std::string &direction_arg) {
     if (loc.locked_directions().contains(direction)) {
         return {{EventKind::narration, "That way is locked."}};
     }
-    world_.player.current_location = exit_it->second;
-    significant_ = true;
+    if (auto moved = submit_world_action(actions::MovePlayer{.direction = direction}); !moved) {
+        return {{EventKind::warning, moved.error().reason}};
+    }
     return look();
 }
 
@@ -434,15 +417,12 @@ GameEvents CartridgeGame::examine(const std::string &arg) const {
 }
 
 bool CartridgeGame::item_accessible(const std::string &item_id) const {
-    const auto owner_it = world_.item_owners.find(item_id);
-    const std::string owner = owner_it == world_.item_owners.end() ? "" : owner_it->second;
-    if (owner == "player" || contains(world_.player.inventory, item_id)) {
+    if (item_is_at(world_, item_id, ItemHolder::player)) {
         return true;
     }
-    const auto &here = world_.player.current_location;
-    const auto location_it = world_.item_locations.find(item_id);
-    return owner == "location" && location_it != world_.item_locations.end() &&
-           location_it->second == here;
+    const auto item = world_.items.find(item_id);
+    return item != world_.items.end() && !item->second.hidden &&
+           item_is_at(world_, item_id, ItemHolder::location, world_.player.current_location);
 }
 
 GameEvents CartridgeGame::take(const std::string &arg) {
@@ -452,35 +432,36 @@ GameEvents CartridgeGame::take(const std::string &arg) {
     }
     const auto &item = world_.items.at(*item_id);
     const auto &loc_id = world_.player.current_location;
-    const auto owner_it = world_.item_owners.find(*item_id);
-    const auto location_it = world_.item_locations.find(*item_id);
-    if (owner_it == world_.item_owners.end() || owner_it->second != "location" ||
-        location_it == world_.item_locations.end() || location_it->second != loc_id) {
+    if (!item_is_at(world_, *item_id, ItemHolder::location, loc_id) || item.hidden) {
         return {{EventKind::narration, "You don't see that here."}};
     }
     if (!item.takeable) {
         return {{EventKind::narration, "You can't take that."}};
     }
-    world_.item_owners[*item_id] = "player";
-    world_.item_locations[*item_id] = loc_id;
-    world_.player.inventory.push_back(*item_id);
-    erase_value(world_.locations.at(loc_id).items, *item_id);
-    significant_ = true;
+    if (auto moved = submit_world_action(actions::RelocateItem{
+            .item_id = *item_id,
+            .destination = ItemPosition{.holder = ItemHolder::player, .id = {}},
+        });
+        !moved) {
+        return {{EventKind::warning, moved.error().reason}};
+    }
     return {{EventKind::narration, "You take the " + item.name + "."}};
 }
 
 GameEvents CartridgeGame::drop(const std::string &arg) {
     const auto item_id = resolve_item_ref(arg);
-    if (!item_id || !contains(world_.player.inventory, *item_id)) {
+    if (!item_id || !item_is_at(world_, *item_id, ItemHolder::player)) {
         return {{EventKind::narration, "You aren't carrying that."}};
     }
     const auto &item = world_.items.at(*item_id);
     const auto &loc_id = world_.player.current_location;
-    erase_value(world_.player.inventory, *item_id);
-    world_.item_owners[*item_id] = "location";
-    world_.item_locations[*item_id] = loc_id;
-    world_.locations.at(loc_id).items.push_back(*item_id);
-    significant_ = true;
+    if (auto moved = submit_world_action(actions::RelocateItem{
+            .item_id = *item_id,
+            .destination = ItemPosition{.holder = ItemHolder::location, .id = loc_id},
+        });
+        !moved) {
+        return {{EventKind::warning, moved.error().reason}};
+    }
     return {{EventKind::narration, "You drop the " + item.name + "."}};
 }
 
@@ -493,11 +474,11 @@ GameEvents CartridgeGame::use(const std::string &arg) {
     }
     const auto item_id = resolve_item_ref(match[1].str());
     const std::string target = strip(lower(match[2].str()));
-    if (!item_id || !contains(world_.player.inventory, *item_id)) {
+    if (!item_id || !item_is_at(world_, *item_id, ItemHolder::player)) {
         return {{EventKind::narration, "You aren't carrying that."}};
     }
     const auto &item = world_.items.at(*item_id);
-    auto &loc = world_.locations.at(world_.player.current_location);
+    const auto &loc = world_.locations.at(world_.player.current_location);
     const std::string unlock = strip(lower(item.unlock_target));
 
     // unlock_target may be a direction or a destination location id.
@@ -516,10 +497,13 @@ GameEvents CartridgeGame::use(const std::string &arg) {
         }
         if (unlocked_any || locked_now.contains(target) || locked_now.contains(unlock)) {
             const std::string direction_to_clear = loc.exits.contains(target) ? target : unlock;
-            std::erase_if(loc.locked_exits, [&](const LockedExitEntry &entry) {
-                return entry.direction == direction_to_clear;
-            });
-            significant_ = true;
+            if (auto result = submit_world_action(actions::UnlockExit{
+                    .location_id = world_.player.current_location,
+                    .direction = direction_to_clear,
+                });
+                !result) {
+                return {{EventKind::warning, result.error().reason}};
+            }
             return {{EventKind::narration, "You use the " + item.name + ". The way is unlocked."}};
         }
     }
@@ -531,13 +515,13 @@ GameEvents CartridgeGame::talk(const std::string &arg) {
     if (!npc_id) {
         return {{EventKind::narration, "Talk to whom?"}};
     }
-    auto &npc = world_.npcs.at(*npc_id);
+    const auto &npc = world_.npcs.at(*npc_id);
     if (npc.state.current_location != world_.player.current_location) {
         return {{EventKind::narration, npc.identity.name + " isn't here."}};
     }
-    phase_ = GamePhase::in_conversation;
-    active_npc_ = *npc_id;
-    npc.state.has_met_player = true;
+    if (auto begun = submit_world_action(actions::BeginConversation{.npc_id = *npc_id}); !begun) {
+        return {{EventKind::warning, begun.error().reason}};
+    }
     return {{EventKind::narration, "You begin talking with " + npc.identity.name + "."}};
 }
 
@@ -576,6 +560,7 @@ std::optional<std::string> CartridgeGame::validate_npc_tool(const std::string &n
     struct Visitor {
         const CartridgeGame &game;
         const NpcData &npc;
+        const std::string &npc_id;
         const ToolPolicy &policy;
         const decltype(check_item) &item_check;
 
@@ -584,7 +569,7 @@ std::optional<std::string> CartridgeGame::validate_npc_tool(const std::string &n
             if (auto issue = item_check(args.item_id)) {
                 return issue;
             }
-            if (!contains(npc.state.inventory, args.item_id)) {
+            if (!item_is_at(game.world_, args.item_id, ItemHolder::npc, npc_id)) {
                 return "NPC does not hold that item";
             }
             return std::nullopt;
@@ -593,7 +578,7 @@ std::optional<std::string> CartridgeGame::validate_npc_tool(const std::string &n
             if (auto issue = item_check(args.item_id)) {
                 return issue;
             }
-            if (!contains(game.world_.player.inventory, args.item_id)) {
+            if (!item_is_at(game.world_, args.item_id, ItemHolder::player)) {
                 return "Player does not hold that item";
             }
             return std::nullopt;
@@ -630,6 +615,9 @@ std::optional<std::string> CartridgeGame::validate_npc_tool(const std::string &n
             if (strip(args.summary).empty()) {
                 return "Memory summary required";
             }
+            if (args.importance < 1 || args.importance > 10) {
+                return "Memory importance must be between 1 and 10";
+            }
             return std::nullopt;
         }
         std::optional<std::string> operator()(const tools::SetFlag &args) const {
@@ -646,7 +634,7 @@ std::optional<std::string> CartridgeGame::validate_npc_tool(const std::string &n
             return item_check(args.item_id);
         }
     };
-    return std::visit(Visitor{*this, npc, policy, check_item}, call);
+    return std::visit(Visitor{*this, npc, npc_id, policy, check_item}, call);
 }
 
 std::optional<GameEvent>
@@ -659,122 +647,136 @@ CartridgeGame::narrate(const std::string &key,
     return GameEvent{EventKind::narration, format_template(it->second, args)};
 }
 
-GameEvents CartridgeGame::apply_npc_tool(const std::string &npc_id, const NpcToolCall &call) {
-    auto &npc = world_.npcs.at(npc_id);
+ToolOutcome CartridgeGame::apply_npc_tool(const std::string &npc_id, const NpcToolCall &call) {
+    const auto &npc = world_.npcs.at(npc_id);
+
+    const auto submit = [this](actions::WorldAction action) -> std::optional<ToolRejection> {
+        auto outcome = submit_world_action(std::move(action));
+        if (!outcome) {
+            return ToolRejection{.reason = outcome.error().reason};
+        }
+        return std::nullopt;
+    };
 
     struct Visitor {
         CartridgeGame &game;
-        NpcData &npc;
+        const NpcData &npc;
         const std::string &npc_id;
+        const decltype(submit) &submit_action;
 
-        GameEvents operator()(const tools::Say &args) const {
-            return {{EventKind::dialogue, npc.identity.name + ": \"" + strip(args.text) + "\""}};
+        ToolOutcome operator()(const tools::Say &args) const {
+            return GameEvents{
+                {EventKind::dialogue, npc.identity.name + ": \"" + strip(args.text) + "\""}};
         }
-        GameEvents operator()(const tools::GiveItem &args) const {
-            auto &world = game.world_;
-            const auto &item = world.items.at(args.item_id);
-            erase_value(npc.state.inventory, args.item_id);
-            world.player.inventory.push_back(args.item_id);
-            world.item_owners[args.item_id] = "player";
-            world.item_locations[args.item_id] = world.player.current_location;
-            game.significant_ = true;
-            const auto ev = game.narrate("give_item_to_player",
-                                         {{"npc", npc.identity.name}, {"item", item.name}});
-            if (ev) {
-                return {*ev};
+        ToolOutcome operator()(const tools::GiveItem &args) const {
+            const auto &item = game.world_.items.at(args.item_id);
+            if (auto rejected = submit_action(actions::RelocateItem{
+                    .item_id = args.item_id,
+                    .destination = ItemPosition{.holder = ItemHolder::player, .id = {}},
+                })) {
+                return std::unexpected(std::move(*rejected));
             }
-            return {
-                {EventKind::narration, npc.identity.name + " gives you the " + item.name + "."}};
+            const auto event = game.narrate("give_item_to_player",
+                                            {{"npc", npc.identity.name}, {"item", item.name}});
+            return event ? GameEvents{*event}
+                         : GameEvents{{EventKind::narration,
+                                       npc.identity.name + " gives you the " + item.name + "."}};
         }
-        GameEvents operator()(const tools::TakeItem &args) const {
-            auto &world = game.world_;
-            const auto &item = world.items.at(args.item_id);
-            erase_value(world.player.inventory, args.item_id);
-            npc.state.inventory.push_back(args.item_id);
-            world.item_owners[args.item_id] = npc_id;
-            world.item_locations[args.item_id] = npc.state.current_location;
-            game.significant_ = true;
-            const auto ev = game.narrate("take_item_from_player",
-                                         {{"npc", npc.identity.name}, {"item", item.name}});
-            if (ev) {
-                return {*ev};
+        ToolOutcome operator()(const tools::TakeItem &args) const {
+            const auto &item = game.world_.items.at(args.item_id);
+            if (auto rejected = submit_action(actions::RelocateItem{
+                    .item_id = args.item_id,
+                    .destination = ItemPosition{.holder = ItemHolder::npc, .id = npc_id},
+                })) {
+                return std::unexpected(std::move(*rejected));
             }
-            return {{EventKind::narration, npc.identity.name + " takes the " + item.name + "."}};
+            const auto event = game.narrate("take_item_from_player",
+                                            {{"npc", npc.identity.name}, {"item", item.name}});
+            return event ? GameEvents{*event}
+                         : GameEvents{{EventKind::narration,
+                                       npc.identity.name + " takes the " + item.name + "."}};
         }
-        GameEvents operator()(const tools::UpdateMood &args) const {
+        ToolOutcome operator()(const tools::UpdateMood &args) const {
             const std::string mood = tools::to_string(args.mood);
-            npc.state.mood = mood;
-            const auto ev =
+            if (auto rejected =
+                    submit_action(actions::UpdateNpcMood{.npc_id = npc_id, .mood = mood})) {
+                return std::unexpected(std::move(*rejected));
+            }
+            const auto event =
                 game.narrate("update_npc_mood", {{"npc", npc.identity.name}, {"mood", mood}});
-            return ev ? GameEvents{*ev} : GameEvents{};
+            return event ? GameEvents{*event} : GameEvents{};
         }
-        GameEvents operator()(const tools::UpdateTrust &args) const {
-            npc.state.trust_toward_player =
-                std::clamp(npc.state.trust_toward_player + args.delta, 0, 100);
-            if (!npc.identity.secret.empty() &&
-                npc.state.trust_toward_player >= npc.identity.trust_reveal_threshold) {
-                npc.state.secret_revealed = true;
+        ToolOutcome operator()(const tools::UpdateTrust &args) const {
+            if (auto rejected =
+                    submit_action(actions::AdjustNpcTrust{.npc_id = npc_id, .delta = args.delta})) {
+                return std::unexpected(std::move(*rejected));
             }
-            const auto ev = game.narrate("update_npc_trust", {{"npc", npc.identity.name}});
-            return ev ? GameEvents{*ev} : GameEvents{};
+            const auto event = game.narrate("update_npc_trust", {{"npc", npc.identity.name}});
+            return event ? GameEvents{*event} : GameEvents{};
         }
-        GameEvents operator()(const tools::MoveSelf &args) const {
-            auto &world = game.world_;
-            npc.state.current_location = args.location_id;
-            game.significant_ = true;
-            if (game.active_npc_ == npc_id && args.location_id != world.player.current_location) {
-                game.phase_ = GamePhase::playing;
-                game.active_npc_.reset();
+        ToolOutcome operator()(const tools::MoveSelf &args) const {
+            const std::string location_name = game.world_.locations.at(args.location_id).name;
+            if (auto rejected = submit_action(actions::MoveNpc{
+                    .npc_id = npc_id, .destination = args.location_id, .significant = true})) {
+                return std::unexpected(std::move(*rejected));
             }
-            const auto ev =
-                game.narrate("move_npc", {{"npc", npc.identity.name},
-                                          {"location", world.locations.at(args.location_id).name}});
-            return ev ? GameEvents{*ev} : GameEvents{};
+            const auto event =
+                game.narrate("move_npc", {{"npc", npc.identity.name}, {"location", location_name}});
+            return event ? GameEvents{*event} : GameEvents{};
         }
-        GameEvents operator()(const tools::RevealKnowledge &args) const {
-            auto &world = game.world_;
-            const auto &fact = world.facts.at(args.fact_id);
-            world.revealed_facts.insert(args.fact_id);
-            game.significant_ = true;
+        ToolOutcome operator()(const tools::RevealKnowledge &args) const {
+            const std::string fact_text = game.world_.facts.at(args.fact_id).text;
+            if (auto rejected = submit_action(actions::RevealFact{.fact_id = args.fact_id})) {
+                return std::unexpected(std::move(*rejected));
+            }
             GameEvents events;
-            if (const auto ev = game.narrate("reveal_knowledge", {})) {
-                events.push_back(*ev);
+            if (const auto event = game.narrate("reveal_knowledge", {})) {
+                events.push_back(*event);
             }
-            events.push_back({EventKind::knowledge, fact.text});
+            events.push_back({EventKind::knowledge, fact_text});
             return events;
         }
-        GameEvents operator()(const tools::Remember &args) const {
-            npc.state.memories.push_back(MemoryEntry{
-                .timestamp = game.world_.clock.period_name(),
-                .type = "observation",
-                .summary = strip(args.summary),
-                .importance = args.importance,
-                .related_npc = "",
-                .related_item = "",
-            });
-            const auto ev = game.narrate("add_memory", {});
-            return ev ? GameEvents{*ev} : GameEvents{};
+        ToolOutcome operator()(const tools::Remember &args) const {
+            if (auto rejected = submit_action(actions::AddMemory{
+                    .npc_id = npc_id,
+                    .memory =
+                        MemoryEntry{
+                            .timestamp = game.world_.clock.period_name(),
+                            .type = "observation",
+                            .summary = strip(args.summary),
+                            .importance = args.importance,
+                            .related_npc = "",
+                            .related_item = "",
+                        },
+                })) {
+                return std::unexpected(std::move(*rejected));
+            }
+            const auto event = game.narrate("add_memory", {});
+            return event ? GameEvents{*event} : GameEvents{};
         }
-        GameEvents operator()(const tools::SetFlag &args) const {
-            game.world_.flags[args.flag_id] = args.value;
-            game.significant_ = true;
-            const auto ev = game.narrate("set_flag", {});
-            return ev ? GameEvents{*ev} : GameEvents{};
+        ToolOutcome operator()(const tools::SetFlag &args) const {
+            if (auto rejected =
+                    submit_action(actions::SetFlag{.flag_id = args.flag_id, .value = args.value})) {
+                return std::unexpected(std::move(*rejected));
+            }
+            const auto event = game.narrate("set_flag", {});
+            return event ? GameEvents{*event} : GameEvents{};
         }
-        GameEvents operator()(const tools::InspectItem &args) const {
+        ToolOutcome operator()(const tools::InspectItem &args) const {
             const auto &item = game.world_.items.at(args.item_id);
-            return {{EventKind::tool_result, "[inspect] " + item.name + ": " + item.description}};
+            return GameEvents{
+                {EventKind::tool_result, "[inspect] " + item.name + ": " + item.description}};
         }
     };
-    return std::visit(Visitor{*this, npc, npc_id}, call);
+    return std::visit(Visitor{*this, npc, npc_id, submit}, call);
 }
 
 // --- scripted events -----------------------------------------------------
 
 GameEvents CartridgeGame::evaluate_events() {
     GameEvents events;
-    std::vector<EventActionData> pending;
-    for (auto &[event_id, trigger] : world_.events) {
+    std::vector<std::pair<std::string, std::vector<EventActionData>>> pending;
+    for (const auto &[event_id, trigger] : world_.events) {
         if (trigger.once && trigger.fired) {
             continue;
         }
@@ -783,12 +785,18 @@ GameEvents CartridgeGame::evaluate_events() {
         if (!met) {
             continue;
         }
-        trigger.fired = true;
-        pending.insert(pending.end(), trigger.actions.begin(), trigger.actions.end());
+        pending.emplace_back(event_id, trigger.actions);
     }
-    for (const auto &action : pending) {
-        auto applied = apply_event_action(action);
-        events.insert(events.end(), applied.begin(), applied.end());
+    for (const auto &[event_id, event_actions] : pending) {
+        if (auto marked = submit_world_action(actions::MarkEventFired{.event_id = event_id});
+            !marked) {
+            events.push_back({EventKind::warning, marked.error().reason});
+            continue;
+        }
+        for (const auto &action : event_actions) {
+            auto applied = apply_event_action(action);
+            events.insert(events.end(), applied.begin(), applied.end());
+        }
     }
     return events;
 }
@@ -828,7 +836,7 @@ bool CartridgeGame::condition_met(const ConditionData &cond) const {
         return npc != world_.npcs.end() && npc->second.state.current_location == args[1];
     }
     if (cond.type == "item_in_player_inv") {
-        return !args.empty() && contains(world_.player.inventory, args[0]);
+        return !args.empty() && item_is_at(world_, args[0], ItemHolder::player);
     }
     if (cond.type == "turn_ge") {
         if (args.empty()) {
@@ -851,8 +859,9 @@ GameEvents CartridgeGame::apply_event_action(const EventActionData &action) {
         return {{EventKind::narration, str_param("text")}};
     }
     if (action.type == "end_game") {
-        phase_ = GamePhase::game_over;
-        active_npc_.reset();
+        if (auto ended = submit_world_action(actions::EndGame{}); !ended) {
+            return {{EventKind::warning, ended.error().reason}};
+        }
         const std::string text = str_param("text");
         return {{EventKind::ending, text.empty() ? "The scenario ends." : text}};
     }
@@ -862,7 +871,11 @@ GameEvents CartridgeGame::apply_event_action(const EventActionData &action) {
         if (npc_it == world_.npcs.end() || loc_it == world_.locations.end()) {
             return {};
         }
-        npc_it->second.state.current_location = loc_it->first;
+        if (auto moved = submit_world_action(actions::MoveNpc{
+                .npc_id = npc_it->first, .destination = loc_it->first, .significant = false});
+            !moved) {
+            return {{EventKind::warning, moved.error().reason}};
+        }
         return {{EventKind::narration,
                  npc_it->second.identity.name + " moves to " + loc_it->second.name + "."}};
     }
@@ -872,7 +885,14 @@ GameEvents CartridgeGame::apply_event_action(const EventActionData &action) {
             return {};
         }
         const auto value_it = params.find("value");
-        world_.flags[flag_id] = value_it == params.end() ? true : truthy_param(*value_it, true);
+        if (value_it == params.end() || !value_it->is_boolean()) {
+            return {{EventKind::warning, "Event set_flag value is not boolean"}};
+        }
+        if (auto set = submit_world_action(actions::SetFlag{
+                .flag_id = flag_id, .value = value_it->get<bool>(), .significant = false});
+            !set) {
+            return {{EventKind::warning, set.error().reason}};
+        }
         return {};
     }
     if (action.type == "spawn_item") {
@@ -881,10 +901,13 @@ GameEvents CartridgeGame::apply_event_action(const EventActionData &action) {
         if (item_id.empty() || loc_it == world_.locations.end()) {
             return {};
         }
-        world_.item_owners[item_id] = "location";
-        world_.item_locations[item_id] = loc_it->first;
-        if (!contains(loc_it->second.items, item_id)) {
-            loc_it->second.items.push_back(item_id);
+        if (auto moved = submit_world_action(actions::RelocateItem{
+                .item_id = item_id,
+                .destination = ItemPosition{.holder = ItemHolder::location, .id = loc_it->first},
+                .significant = false,
+            });
+            !moved) {
+            return {{EventKind::warning, moved.error().reason}};
         }
         return {{EventKind::narration, "Something new appears in " + loc_it->second.name + "."}};
     }

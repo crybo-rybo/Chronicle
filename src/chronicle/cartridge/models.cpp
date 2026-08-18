@@ -94,6 +94,36 @@ bool ClockState::time_expired() const {
     return period_index() >= total_periods;
 }
 
+bool ItemPosition::is_location(const std::string &location_id) const {
+    return holder == ItemHolder::location && id == location_id;
+}
+
+bool ItemPosition::is_player() const {
+    return holder == ItemHolder::player;
+}
+
+bool ItemPosition::is_npc(const std::string &npc_id) const {
+    return holder == ItemHolder::npc && id == npc_id;
+}
+
+std::vector<std::string> items_at(const WorldState &world, const ItemHolder holder,
+                                  const std::string &id) {
+    std::vector<std::string> result;
+    for (const auto &[item_id, position] : world.item_positions) {
+        if (position.holder == holder && (holder == ItemHolder::player || position.id == id)) {
+            result.push_back(item_id);
+        }
+    }
+    return result;
+}
+
+bool item_is_at(const WorldState &world, const std::string &item_id, const ItemHolder holder,
+                const std::string &id) {
+    const auto position = world.item_positions.find(item_id);
+    return position != world.item_positions.end() && position->second.holder == holder &&
+           (holder == ItemHolder::player || position->second.id == id);
+}
+
 // --- from_json -----------------------------------------------------------
 
 void from_json(const json &j, ScenarioFiles &v) {
@@ -158,14 +188,20 @@ void from_json(const json &j, LockedExitEntry &v) {
 }
 
 void from_json(const json &j, LocationData &v) {
-    reject_unknown(j, {"name", "base_description", "exits", "items", "npcs", "locked_exits"},
-                   "location");
+    reject_unknown(j, {"name", "base_description", "exits", "locked_exits"}, "saved location");
     req(j, "name", v.name);
     req(j, "base_description", v.base_description);
     opt(j, "exits", v.exits);
-    opt(j, "items", v.items);
-    opt(j, "npcs", v.npcs);
     opt(j, "locked_exits", v.locked_exits);
+}
+
+void from_json(const json &j, AuthoredLocationData &v) {
+    reject_unknown(j, {"name", "base_description", "exits", "items", "locked_exits"}, "location");
+    req(j, "name", v.location.name);
+    req(j, "base_description", v.location.base_description);
+    opt(j, "exits", v.location.exits);
+    opt(j, "items", v.items);
+    opt(j, "locked_exits", v.location.locked_exits);
 }
 
 void from_json(const json &j, ItemData &v) {
@@ -230,22 +266,44 @@ void from_json(const json &j, MemoryEntry &v) {
 
 void from_json(const json &j, NpcState &v) {
     reject_unknown(j,
-                   {"current_location", "mood", "trust_toward_player", "inventory", "memories",
-                    "has_met_player", "secret_revealed"},
-                   "npc state");
+                   {"current_location", "mood", "trust_toward_player", "memories", "has_met_player",
+                    "secret_revealed"},
+                   "saved npc state");
     req(j, "current_location", v.current_location);
     opt(j, "mood", v.mood);
     if (std::ranges::find(valid_moods(), v.mood) == valid_moods().end()) {
         throw std::invalid_argument("invalid mood: " + v.mood);
     }
     opt(j, "trust_toward_player", v.trust_toward_player);
-    opt(j, "inventory", v.inventory);
     opt(j, "memories", v.memories);
     opt(j, "has_met_player", v.has_met_player);
     opt(j, "secret_revealed", v.secret_revealed);
 }
 
+void from_json(const json &j, AuthoredNpcState &v) {
+    reject_unknown(j,
+                   {"current_location", "mood", "trust_toward_player", "inventory", "memories",
+                    "has_met_player", "secret_revealed"},
+                   "npc state");
+    req(j, "current_location", v.state.current_location);
+    opt(j, "mood", v.state.mood);
+    if (std::ranges::find(valid_moods(), v.state.mood) == valid_moods().end()) {
+        throw std::invalid_argument("invalid mood: " + v.state.mood);
+    }
+    opt(j, "trust_toward_player", v.state.trust_toward_player);
+    opt(j, "inventory", v.inventory);
+    opt(j, "memories", v.state.memories);
+    opt(j, "has_met_player", v.state.has_met_player);
+    opt(j, "secret_revealed", v.state.secret_revealed);
+}
+
 void from_json(const json &j, NpcData &v) {
+    reject_unknown(j, {"identity", "state"}, "npc");
+    req(j, "identity", v.identity);
+    req(j, "state", v.state);
+}
+
+void from_json(const json &j, AuthoredNpcData &v) {
     reject_unknown(j, {"identity", "state"}, "npc");
     req(j, "identity", v.identity);
     req(j, "state", v.state);
@@ -308,9 +366,28 @@ void from_json(const json &j, EventsFile &v) {
 }
 
 void from_json(const json &j, PlayerState &v) {
-    reject_unknown(j, {"current_location", "inventory"}, "player state");
+    reject_unknown(j, {"current_location"}, "player state");
     req(j, "current_location", v.current_location);
-    opt(j, "inventory", v.inventory);
+}
+
+void from_json(const json &j, ItemPosition &v) {
+    reject_unknown(j, {"holder", "id"}, "item position");
+    std::string holder;
+    req(j, "holder", holder);
+    opt(j, "id", v.id);
+    if (holder == "location") {
+        v.holder = ItemHolder::location;
+    } else if (holder == "player") {
+        v.holder = ItemHolder::player;
+    } else if (holder == "npc") {
+        v.holder = ItemHolder::npc;
+    } else {
+        throw std::invalid_argument("invalid item holder: " + holder);
+    }
+    if ((v.holder == ItemHolder::player && !v.id.empty()) ||
+        (v.holder != ItemHolder::player && v.id.empty())) {
+        throw std::invalid_argument("invalid item position id");
+    }
 }
 
 void from_json(const json &j, ClockState &v) {
@@ -323,8 +400,7 @@ void from_json(const json &j, ClockState &v) {
 void from_json(const json &j, WorldState &v) {
     reject_unknown(j,
                    {"manifest", "config", "locations", "items", "npcs", "facts", "flags",
-                    "flag_meta", "events", "player", "clock", "revealed_facts", "item_locations",
-                    "item_owners"},
+                    "flag_meta", "events", "player", "clock", "revealed_facts", "item_positions"},
                    "saved world");
     req(j, "manifest", v.manifest);
     req(j, "config", v.config);
@@ -338,8 +414,7 @@ void from_json(const json &j, WorldState &v) {
     req(j, "player", v.player);
     req(j, "clock", v.clock);
     opt(j, "revealed_facts", v.revealed_facts);
-    opt(j, "item_locations", v.item_locations);
-    opt(j, "item_owners", v.item_owners);
+    opt(j, "item_positions", v.item_positions);
 }
 
 // --- to_json -------------------------------------------------------------
@@ -379,9 +454,10 @@ void to_json(json &j, const LockedExitEntry &v) {
 }
 
 void to_json(json &j, const LocationData &v) {
-    j = json{{"name", v.name},   {"base_description", v.base_description},
-             {"exits", v.exits}, {"items", v.items},
-             {"npcs", v.npcs},   {"locked_exits", v.locked_exits}};
+    j = json{{"name", v.name},
+             {"base_description", v.base_description},
+             {"exits", v.exits},
+             {"locked_exits", v.locked_exits}};
 }
 
 void to_json(json &j, const ItemData &v) {
@@ -422,13 +498,10 @@ void to_json(json &j, const MemoryEntry &v) {
 }
 
 void to_json(json &j, const NpcState &v) {
-    j = json{{"current_location", v.current_location},
-             {"mood", v.mood},
-             {"trust_toward_player", v.trust_toward_player},
-             {"inventory", v.inventory},
-             {"memories", v.memories},
-             {"has_met_player", v.has_met_player},
-             {"secret_revealed", v.secret_revealed}};
+    j = json{
+        {"current_location", v.current_location},       {"mood", v.mood},
+        {"trust_toward_player", v.trust_toward_player}, {"memories", v.memories},
+        {"has_met_player", v.has_met_player},           {"secret_revealed", v.secret_revealed}};
 }
 
 void to_json(json &j, const NpcData &v) {
@@ -458,7 +531,17 @@ void to_json(json &j, const EventTriggerData &v) {
 }
 
 void to_json(json &j, const PlayerState &v) {
-    j = json{{"current_location", v.current_location}, {"inventory", v.inventory}};
+    j = json{{"current_location", v.current_location}};
+}
+
+void to_json(json &j, const ItemPosition &v) {
+    const char *holder = "location";
+    if (v.holder == ItemHolder::player) {
+        holder = "player";
+    } else if (v.holder == ItemHolder::npc) {
+        holder = "npc";
+    }
+    j = json{{"holder", holder}, {"id", v.id}};
 }
 
 void to_json(json &j, const ClockState &v) {
@@ -480,8 +563,7 @@ void to_json(json &j, const WorldState &v) {
              {"player", v.player},
              {"clock", v.clock},
              {"revealed_facts", v.revealed_facts},
-             {"item_locations", v.item_locations},
-             {"item_owners", v.item_owners}};
+             {"item_positions", v.item_positions}};
 }
 
 } // namespace chronicle

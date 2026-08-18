@@ -30,7 +30,7 @@ TEST(Prompt, EmptyKnowledgeShowsNone) {
 
 TEST(Prompt, TurnMessageCarriesWorldStateAndPlayerPayload) {
     WorldState world = ct::make_test_world();
-    world.player.inventory.push_back("old_coin");
+    world.item_positions["old_coin"] = ItemPosition{.holder = ItemHolder::player, .id = {}};
     const std::string message = build_npc_turn_message(world, "keeper", "who are you?");
     EXPECT_NE(message.find("Time: morning (turn 0)"), std::string::npos);
     EXPECT_NE(message.find("Your location: Hall"), std::string::npos);

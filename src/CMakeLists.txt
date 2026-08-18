@@ -4,6 +4,7 @@ add_library(chronicle_core STATIC
     chronicle/cartridge/loader.cpp
     chronicle/cartridge/validator.cpp
     chronicle/game/cartridge_game.cpp
+    chronicle/game/world_actions.cpp
     chronicle/library.cpp
     chronicle/persist.cpp
     chronicle/prompt.cpp

@@ -67,11 +67,16 @@ struct LocationData {
     std::string name;
     std::string base_description;
     std::map<std::string, std::string> exits; // direction -> location_id
-    std::vector<std::string> items;
-    std::vector<std::string> npcs;
     std::vector<LockedExitEntry> locked_exits;
 
     [[nodiscard]] std::set<std::string> locked_directions() const;
+};
+
+// Cartridge-input shape. Initial item placement is consumed while assembling
+// the runtime and does not remain as a second mutable source of truth.
+struct AuthoredLocationData {
+    LocationData location;
+    std::vector<std::string> items;
 };
 
 struct ItemData {
@@ -86,7 +91,7 @@ struct ItemData {
 
 struct WorldData {
     std::string start_location;
-    std::map<std::string, LocationData> locations;
+    std::map<std::string, AuthoredLocationData> locations;
     std::map<std::string, ItemData> items;
 };
 
@@ -124,10 +129,14 @@ struct NpcState {
     std::string current_location;
     std::string mood = "neutral";
     int trust_toward_player = 0;
-    std::vector<std::string> inventory;
     std::vector<MemoryEntry> memories;
     bool has_met_player = false;
     bool secret_revealed = false;
+};
+
+struct AuthoredNpcState {
+    NpcState state;
+    std::vector<std::string> inventory;
 };
 
 struct NpcData {
@@ -135,8 +144,13 @@ struct NpcData {
     NpcState state;
 };
 
+struct AuthoredNpcData {
+    NpcIdentity identity;
+    AuthoredNpcState state;
+};
+
 struct NpcsFile {
-    std::map<std::string, NpcData> npcs;
+    std::map<std::string, AuthoredNpcData> npcs;
 };
 
 struct FactData {
@@ -181,7 +195,19 @@ struct EventsFile {
 
 struct PlayerState {
     std::string current_location;
-    std::vector<std::string> inventory;
+};
+
+enum class ItemHolder { location, player, npc };
+
+struct ItemPosition {
+    ItemHolder holder = ItemHolder::location;
+    // Location or NPC id. Empty for the player.
+    std::string id;
+
+    [[nodiscard]] bool is_location(const std::string &location_id) const;
+    [[nodiscard]] bool is_player() const;
+    [[nodiscard]] bool is_npc(const std::string &npc_id) const;
+    bool operator==(const ItemPosition &) const = default;
 };
 
 struct ClockState {
@@ -208,10 +234,14 @@ struct WorldState {
     PlayerState player;
     ClockState clock;
     std::set<std::string> revealed_facts;
-    std::map<std::string, std::string> item_locations;
-    // item_id -> "location" | "player" | npc_id
-    std::map<std::string, std::string> item_owners;
+    // The sole runtime source of truth for item placement.
+    std::map<std::string, ItemPosition> item_positions;
 };
+
+[[nodiscard]] std::vector<std::string> items_at(const WorldState &world, ItemHolder holder,
+                                                const std::string &id = {});
+[[nodiscard]] bool item_is_at(const WorldState &world, const std::string &item_id,
+                              ItemHolder holder, const std::string &id = {});
 
 // nlohmann ADL hooks. from_json throws nlohmann::json::exception on missing
 // required fields or invalid values (e.g. an unknown mood).
@@ -221,13 +251,16 @@ void from_json(const nlohmann::json &j, ScenarioManifest &v);
 void from_json(const nlohmann::json &j, ConfigData &v);
 void from_json(const nlohmann::json &j, LockedExitEntry &v);
 void from_json(const nlohmann::json &j, LocationData &v);
+void from_json(const nlohmann::json &j, AuthoredLocationData &v);
 void from_json(const nlohmann::json &j, ItemData &v);
 void from_json(const nlohmann::json &j, WorldData &v);
 void from_json(const nlohmann::json &j, ToolPolicy &v);
 void from_json(const nlohmann::json &j, NpcIdentity &v);
 void from_json(const nlohmann::json &j, MemoryEntry &v);
 void from_json(const nlohmann::json &j, NpcState &v);
+void from_json(const nlohmann::json &j, AuthoredNpcState &v);
 void from_json(const nlohmann::json &j, NpcData &v);
+void from_json(const nlohmann::json &j, AuthoredNpcData &v);
 void from_json(const nlohmann::json &j, NpcsFile &v);
 void from_json(const nlohmann::json &j, FactData &v);
 void from_json(const nlohmann::json &j, FactsFile &v);
@@ -238,6 +271,7 @@ void from_json(const nlohmann::json &j, EventActionData &v);
 void from_json(const nlohmann::json &j, EventTriggerData &v);
 void from_json(const nlohmann::json &j, EventsFile &v);
 void from_json(const nlohmann::json &j, PlayerState &v);
+void from_json(const nlohmann::json &j, ItemPosition &v);
 void from_json(const nlohmann::json &j, ClockState &v);
 void from_json(const nlohmann::json &j, WorldState &v);
 
@@ -259,6 +293,7 @@ void to_json(nlohmann::json &j, const ConditionData &v);
 void to_json(nlohmann::json &j, const EventActionData &v);
 void to_json(nlohmann::json &j, const EventTriggerData &v);
 void to_json(nlohmann::json &j, const PlayerState &v);
+void to_json(nlohmann::json &j, const ItemPosition &v);
 void to_json(nlohmann::json &j, const ClockState &v);
 void to_json(nlohmann::json &j, const WorldState &v);
 
