@@ -40,6 +40,33 @@ TEST(Validator, EmptyScenarioId) {
     EXPECT_TRUE(has_issue_containing(validate_world(world), "scenario id"));
 }
 
+TEST(Validator, ScenarioIdMustBeASafeDirectoryComponent) {
+    for (const std::string id :
+         {"../escape", "/absolute", "has/slash", "Uppercase", ".hidden", "has space", ""}) {
+        WorldState world = ct::make_test_world();
+        world.manifest.id = id;
+        EXPECT_TRUE(has_issue_containing(validate_world(world), "scenario id")) << id;
+    }
+    EXPECT_TRUE(is_safe_cartridge_id("case-42_alpha"));
+}
+
+TEST(Validator, ConfigResourceBoundsAreEnforced) {
+    WorldState world = ct::make_test_world();
+    world.config.max_response_tokens = 1'000'000;
+    world.config.inference_timeout_ms = 1;
+    world.config.total_periods = 0;
+    const auto issues = validate_world(world);
+    EXPECT_TRUE(has_issue_containing(issues, "max_response_tokens"));
+    EXPECT_TRUE(has_issue_containing(issues, "inference_timeout_ms"));
+    EXPECT_TRUE(has_issue_containing(issues, "clock limits"));
+}
+
+TEST(Validator, DuplicateItemPlacementIsRejected) {
+    WorldState world = ct::make_test_world();
+    world.npcs.at("keeper").state.inventory.push_back("old_coin");
+    EXPECT_TRUE(has_issue_containing(validate_world(world), "old_coin is placed more than once"));
+}
+
 TEST(Validator, UnknownStartLocation) {
     WorldState world = ct::make_test_world();
     world.player.current_location = "nowhere";
@@ -113,6 +140,19 @@ TEST(Validator, EventActionIssues) {
     EXPECT_TRUE(has_issue_containing(issues, "action move_npc: bad npc/location"));
     EXPECT_TRUE(has_issue_containing(issues, "unknown flag flag_missing"));
     EXPECT_TRUE(has_issue_containing(issues, "unknown action type"));
+}
+
+TEST(Validator, EventActionParametersAreExactAndTyped) {
+    WorldState world = ct::make_test_world();
+    world.events["bad_params"] = EventTriggerData{
+        .conditions = {},
+        .actions = {{.type = "set_flag",
+                     .params = {{"flag_id", "gate_seen"}, {"value", "true"}, {"extra", 1}}},
+                    {.type = "narrate", .params = {{"text", 42}}}},
+    };
+    const auto issues = validate_world(world);
+    EXPECT_TRUE(has_issue_containing(issues, "action set_flag"));
+    EXPECT_TRUE(has_issue_containing(issues, "action narrate"));
 }
 
 TEST(Validator, LoadFailureBecomesSingleError) {

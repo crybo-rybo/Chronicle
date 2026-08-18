@@ -51,22 +51,6 @@ std::optional<EndpointConfig> resolve_endpoint(const std::optional<std::string> 
     EndpointConfig endpoint;
     endpoint.base_url = base_url_flag ? strip_copy(*base_url_flag) : env_text("CHRONICLE_BASE_URL");
     endpoint.model = model_flag ? strip_copy(*model_flag) : env_text("CHRONICLE_MODEL");
-    std::string key = env_text("CHRONICLE_API_KEY");
-    if (key.empty()) {
-        key = env_text("OPENAI_API_KEY");
-    }
-    if (!key.empty()) {
-        endpoint.api_key = key;
-    }
-
-    if (!endpoint.configured() && cartridge_config != nullptr &&
-        cartridge_config->has_llm_endpoint()) {
-        endpoint.base_url = strip_copy(cartridge_config->llm_base_url);
-        endpoint.model = strip_copy(cartridge_config->llm_model);
-        if (!strip_copy(cartridge_config->llm_api_key).empty()) {
-            endpoint.api_key = strip_copy(cartridge_config->llm_api_key);
-        }
-    }
     if (cartridge_config != nullptr) {
         endpoint.temperature = cartridge_config->temperature;
         endpoint.max_tokens = cartridge_config->max_response_tokens;
@@ -77,6 +61,13 @@ std::optional<EndpointConfig> resolve_endpoint(const std::optional<std::string> 
 
     if (!endpoint.configured()) {
         return std::nullopt;
+    }
+    std::string key = env_text("CHRONICLE_API_KEY");
+    if (key.empty()) {
+        key = env_text("OPENAI_API_KEY");
+    }
+    if (!key.empty()) {
+        endpoint.api_key = std::move(key);
     }
     return endpoint;
 }

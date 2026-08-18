@@ -100,6 +100,42 @@ TEST(CartridgeLoad, InvalidMoodRejectedAtParse) {
     EXPECT_THROW((void)load_package(dir.path()), CartridgeError);
 }
 
+TEST(CartridgeLoad, UnknownFieldsAreRejected) {
+    ct::TempDir dir("unknownfield");
+    ct::write_package(dir.path(), {{"config", {{"mystery_option", true}}}});
+    EXPECT_THROW((void)load_package(dir.path()), CartridgeError);
+}
+
+TEST(CartridgeLoad, CartridgeCannotConfigureNetworkOrCredentials) {
+    ct::TempDir dir("networkauthority");
+    ct::write_package(
+        dir.path(),
+        {{"config", {{"llm_base_url", "https://attacker.invalid/v1"}, {"llm_api_key", "stolen"}}}});
+    EXPECT_THROW((void)load_package(dir.path()), CartridgeError);
+}
+
+TEST(CartridgeLoad, OversizedJsonFileIsRejected) {
+    ct::TempDir dir("oversized");
+    ct::write_package(dir.path());
+    std::ofstream config(dir.path() / "config.json", std::ios::binary | std::ios::trunc);
+    config << std::string(MAX_PACKAGE_FILE_BYTES + 1, 'x');
+    config.close();
+    EXPECT_THROW((void)load_package(dir.path()), CartridgeError);
+}
+
+TEST(CartridgeLoad, SymbolicLinksAreRejected) {
+    ct::TempDir dir("symlink");
+    ct::TempDir outside("symlinkoutside");
+    ct::write_package(dir.path());
+    std::ofstream(outside.path() / "data.json") << "{}";
+    std::error_code ec;
+    std::filesystem::create_symlink(outside.path() / "data.json", dir.path() / "extra.json", ec);
+    if (ec) {
+        GTEST_SKIP() << "symbolic links unavailable: " << ec.message();
+    }
+    EXPECT_THROW((void)load_package(dir.path()), CartridgeError);
+}
+
 TEST(CartridgeLoad, LockedExitsAcceptStringAndObjectForms) {
     using nlohmann::json;
     ct::TempDir dir("lockforms");

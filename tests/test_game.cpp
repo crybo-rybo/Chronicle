@@ -193,5 +193,12 @@ TEST_F(GameTest, LoadMissingSlot) {
     EXPECT_NE(joined(game_.handle_player("load 7")).find("No save in slot 7"), std::string::npos);
 }
 
+TEST(GameConstruction, UnsafeCartridgeIdCannotSelectASavePath) {
+    WorldState world = ct::make_test_world();
+    world.manifest.id = "../escape";
+    ct::TempDir saves("unsafeidsaves");
+    EXPECT_THROW((void)CartridgeGame(std::move(world), saves.path()), std::invalid_argument);
+}
+
 } // namespace
 } // namespace chronicle

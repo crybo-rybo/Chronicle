@@ -11,6 +11,15 @@ using nlohmann::json;
 namespace {
 
 json read_json_file(const fs::path &path) {
+    std::error_code ec;
+    const auto status = fs::status(path, ec);
+    if (ec || !fs::is_regular_file(status)) {
+        throw CartridgeError("Missing package file: " + path.string());
+    }
+    const auto size = fs::file_size(path, ec);
+    if (ec || size > MAX_PACKAGE_FILE_BYTES) {
+        throw CartridgeError("Package file exceeds the 4 MiB limit: " + path.string());
+    }
     std::ifstream stream(path);
     if (!stream) {
         throw CartridgeError("Missing package file: " + path.string());
@@ -24,20 +33,21 @@ json read_json_file(const fs::path &path) {
 
 // Reject absolute paths, parent traversal, and anything resolving outside root.
 fs::path resolve_inside(const fs::path &root, const std::string &relative) {
-    if (relative.empty() || relative.front() == '/' || relative.front() == '\\') {
+    const fs::path rel(relative);
+    if (relative.empty() || relative.contains('\\') || rel.is_absolute() || rel.has_root_name() ||
+        rel.has_root_directory()) {
         throw CartridgeError("Unsafe package path: '" + relative + "'");
     }
-    const fs::path rel(relative);
     for (const auto &part : rel) {
-        if (part == "..") {
+        if (part == "." || part == ".." || part.empty()) {
             throw CartridgeError("Unsafe package path: '" + relative + "'");
         }
     }
-    fs::path resolved = fs::weakly_canonical(root / rel);
+    const fs::path resolved = fs::weakly_canonical(root / rel);
     const fs::path root_resolved = fs::weakly_canonical(root);
-    const auto [root_end, ignored] =
-        std::mismatch(root_resolved.begin(), root_resolved.end(), resolved.begin(), resolved.end());
-    if (root_end != root_resolved.end()) {
+    const fs::path from_root = resolved.lexically_relative(root_resolved);
+    if (from_root.empty() || from_root.is_absolute() ||
+        (!from_root.empty() && *from_root.begin() == "..")) {
         throw CartridgeError("Path escapes package directory: '" + relative + "'");
     }
     return resolved;
@@ -53,8 +63,58 @@ template <typename T> T parse_as(const json &raw, const char *what) {
 
 } // namespace
 
+PackageContents inspect_package_tree(const fs::path &package_dir) {
+    const fs::path root = fs::weakly_canonical(package_dir);
+    if (!fs::is_directory(root)) {
+        throw CartridgeError("Not a directory: " + root.string());
+    }
+
+    PackageContents contents;
+    std::error_code ec;
+    fs::recursive_directory_iterator it(root, fs::directory_options::none, ec);
+    if (ec) {
+        throw CartridgeError("Cannot inspect package: " + ec.message());
+    }
+    for (const fs::recursive_directory_iterator end; it != end; it.increment(ec)) {
+        if (ec) {
+            throw CartridgeError("Cannot inspect package: " + ec.message());
+        }
+        const auto link_status = it->symlink_status(ec);
+        if (ec) {
+            throw CartridgeError("Cannot inspect package entry: " + it->path().string());
+        }
+        if (fs::is_symlink(link_status)) {
+            throw CartridgeError("Package contains a symbolic link: " + it->path().string());
+        }
+        if (fs::is_directory(link_status)) {
+            continue;
+        }
+        if (!fs::is_regular_file(link_status)) {
+            throw CartridgeError("Package contains a special file: " + it->path().string());
+        }
+        if (contents.files.size() >= MAX_PACKAGE_FILES) {
+            throw CartridgeError("Package contains more than 256 files");
+        }
+        const auto size = it->file_size(ec);
+        if (ec || size > MAX_PACKAGE_FILE_BYTES) {
+            throw CartridgeError("Package file exceeds the 4 MiB limit: " + it->path().string());
+        }
+        if (contents.total_bytes > MAX_PACKAGE_TOTAL_BYTES - size) {
+            throw CartridgeError("Package exceeds the 32 MiB total size limit");
+        }
+        contents.total_bytes += size;
+        contents.files.push_back(it->path());
+    }
+    if (ec) {
+        throw CartridgeError("Cannot inspect package: " + ec.message());
+    }
+    std::ranges::sort(contents.files);
+    return contents;
+}
+
 ScenarioManifest load_manifest(const fs::path &package_dir) {
-    const json raw = read_json_file(package_dir / "scenario.json");
+    const fs::path root = fs::weakly_canonical(package_dir);
+    const json raw = read_json_file(resolve_inside(root, "scenario.json"));
     return parse_as<ScenarioManifest>(raw, "scenario.json");
 }
 
@@ -115,12 +175,14 @@ WorldState assemble_world(const json &manifest_raw, const json &config_raw, cons
 }
 
 WorldState load_package(const fs::path &package_dir) {
-    const fs::path root = fs::absolute(package_dir);
+    const fs::path root = fs::weakly_canonical(package_dir);
     if (!fs::is_directory(root)) {
         throw CartridgeError("Not a directory: " + root.string());
     }
 
-    const json manifest_raw = read_json_file(root / "scenario.json");
+    (void)inspect_package_tree(root);
+
+    const json manifest_raw = read_json_file(resolve_inside(root, "scenario.json"));
     const auto manifest = parse_as<ScenarioManifest>(manifest_raw, "scenario.json");
     const auto &files = manifest.files;
 

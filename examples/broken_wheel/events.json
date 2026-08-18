@@ -10,7 +10,7 @@
           "type": "set_flag",
           "params": {
             "flag_id": "cargo_inquiry_public",
-            "value": "true"
+            "value": true
           }
         },
         {

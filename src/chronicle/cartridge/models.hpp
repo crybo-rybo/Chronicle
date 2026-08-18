@@ -48,16 +48,10 @@ struct ConfigData {
     int max_memory_tokens = 800;
     int max_world_tokens = 400;
     int max_history_tokens = 600;
-    std::string save_directory;
     bool use_tui = false;
     bool use_color = true;
-    std::string llm_base_url;
-    std::string llm_model;
-    std::string llm_api_key;
     std::map<std::string, std::string> verb_aliases;
     std::map<std::string, std::string> mutation_narration_templates;
-
-    [[nodiscard]] bool has_llm_endpoint() const;
 };
 
 [[nodiscard]] std::map<std::string, std::string> default_narration_templates();

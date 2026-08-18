@@ -1,13 +1,27 @@
 #include "chronicle/cartridge/models.hpp"
 
 #include <algorithm>
+#include <initializer_list>
 #include <stdexcept>
+#include <string_view>
 
 namespace chronicle {
 
 using nlohmann::json;
 
 namespace {
+
+void reject_unknown(const json &j, const std::initializer_list<std::string_view> allowed,
+                    const std::string_view object_name) {
+    if (!j.is_object()) {
+        throw std::invalid_argument(std::string(object_name) + " must be an object");
+    }
+    for (const auto &[key, ignored] : j.items()) {
+        if (std::ranges::find(allowed, key) == allowed.end()) {
+            throw std::invalid_argument(std::string(object_name) + ": unknown field '" + key + "'");
+        }
+    }
+}
 
 // Read an optional field, falling back to the member's current (default) value.
 template <typename T> void opt(const json &j, const char *key, T &out) {
@@ -39,13 +53,6 @@ const std::vector<std::string> &npc_tool_names() {
 const std::vector<std::string> &period_names() {
     static const std::vector<std::string> periods = {"morning", "afternoon", "evening", "night"};
     return periods;
-}
-
-bool ConfigData::has_llm_endpoint() const {
-    const auto has_text = [](const std::string &s) {
-        return s.find_first_not_of(" \t\r\n") != std::string::npos;
-    };
-    return has_text(llm_base_url) && has_text(llm_model);
 }
 
 std::map<std::string, std::string> default_narration_templates() {
@@ -90,6 +97,7 @@ bool ClockState::time_expired() const {
 // --- from_json -----------------------------------------------------------
 
 void from_json(const json &j, ScenarioFiles &v) {
+    reject_unknown(j, {"config", "world", "npcs", "facts", "flags", "events"}, "files");
     req(j, "config", v.config);
     req(j, "world", v.world);
     req(j, "npcs", v.npcs);
@@ -99,12 +107,15 @@ void from_json(const json &j, ScenarioFiles &v) {
 }
 
 void from_json(const json &j, ScenarioMetadata &v) {
+    reject_unknown(j, {"description", "author", "license"}, "metadata");
     opt(j, "description", v.description);
     opt(j, "author", v.author);
     opt(j, "license", v.license);
 }
 
 void from_json(const json &j, ScenarioManifest &v) {
+    reject_unknown(j, {"id", "name", "version", "chronicle_schema_version", "files", "metadata"},
+                   "scenario.json");
     req(j, "id", v.id);
     req(j, "name", v.name);
     req(j, "version", v.version);
@@ -114,6 +125,12 @@ void from_json(const json &j, ScenarioManifest &v) {
 }
 
 void from_json(const json &j, ConfigData &v) {
+    reject_unknown(j,
+                   {"temperature", "max_response_tokens", "inference_timeout_ms",
+                    "turns_per_period", "total_periods", "max_memory_tokens", "max_world_tokens",
+                    "max_history_tokens", "use_tui", "use_color", "verb_aliases",
+                    "mutation_narration_templates"},
+                   "config.json");
     opt(j, "temperature", v.temperature);
     opt(j, "max_response_tokens", v.max_response_tokens);
     opt(j, "inference_timeout_ms", v.inference_timeout_ms);
@@ -122,12 +139,8 @@ void from_json(const json &j, ConfigData &v) {
     opt(j, "max_memory_tokens", v.max_memory_tokens);
     opt(j, "max_world_tokens", v.max_world_tokens);
     opt(j, "max_history_tokens", v.max_history_tokens);
-    opt(j, "save_directory", v.save_directory);
     opt(j, "use_tui", v.use_tui);
     opt(j, "use_color", v.use_color);
-    opt(j, "llm_base_url", v.llm_base_url);
-    opt(j, "llm_model", v.llm_model);
-    opt(j, "llm_api_key", v.llm_api_key);
     opt(j, "verb_aliases", v.verb_aliases);
     v.mutation_narration_templates = default_narration_templates();
     opt(j, "mutation_narration_templates", v.mutation_narration_templates);
@@ -139,11 +152,14 @@ void from_json(const json &j, LockedExitEntry &v) {
         v.unlocked = false;
         return;
     }
+    reject_unknown(j, {"direction", "unlocked"}, "locked exit");
     opt(j, "direction", v.direction);
     opt(j, "unlocked", v.unlocked);
 }
 
 void from_json(const json &j, LocationData &v) {
+    reject_unknown(j, {"name", "base_description", "exits", "items", "npcs", "locked_exits"},
+                   "location");
     req(j, "name", v.name);
     req(j, "base_description", v.base_description);
     opt(j, "exits", v.exits);
@@ -153,6 +169,9 @@ void from_json(const json &j, LocationData &v) {
 }
 
 void from_json(const json &j, ItemData &v) {
+    reject_unknown(
+        j, {"name", "description", "takeable", "key_item", "hidden", "unlock_target", "properties"},
+        "item");
     req(j, "name", v.name);
     req(j, "description", v.description);
     opt(j, "takeable", v.takeable);
@@ -163,12 +182,17 @@ void from_json(const json &j, ItemData &v) {
 }
 
 void from_json(const json &j, WorldData &v) {
+    reject_unknown(j, {"start_location", "locations", "items"}, "world.json");
     req(j, "start_location", v.start_location);
     req(j, "locations", v.locations);
     opt(j, "items", v.items);
 }
 
 void from_json(const json &j, ToolPolicy &v) {
+    reject_unknown(
+        j,
+        {"allowed_tools", "allowed_items", "allowed_facts", "allowed_flags", "allowed_locations"},
+        "tool_policy");
     opt(j, "allowed_tools", v.allowed_tools);
     opt(j, "allowed_items", v.allowed_items);
     opt(j, "allowed_facts", v.allowed_facts);
@@ -177,6 +201,10 @@ void from_json(const json &j, ToolPolicy &v) {
 }
 
 void from_json(const json &j, NpcIdentity &v) {
+    reject_unknown(j,
+                   {"id", "name", "role", "personality_summary", "backstory", "secret", "goals",
+                    "knowledge", "trust_reveal_threshold", "tool_policy"},
+                   "npc identity");
     opt(j, "id", v.id);
     req(j, "name", v.name);
     opt(j, "role", v.role);
@@ -190,6 +218,8 @@ void from_json(const json &j, NpcIdentity &v) {
 }
 
 void from_json(const json &j, MemoryEntry &v) {
+    reject_unknown(j, {"timestamp", "type", "summary", "importance", "related_npc", "related_item"},
+                   "memory");
     opt(j, "timestamp", v.timestamp);
     opt(j, "type", v.type);
     req(j, "summary", v.summary);
@@ -199,6 +229,10 @@ void from_json(const json &j, MemoryEntry &v) {
 }
 
 void from_json(const json &j, NpcState &v) {
+    reject_unknown(j,
+                   {"current_location", "mood", "trust_toward_player", "inventory", "memories",
+                    "has_met_player", "secret_revealed"},
+                   "npc state");
     req(j, "current_location", v.current_location);
     opt(j, "mood", v.mood);
     if (std::ranges::find(valid_moods(), v.mood) == valid_moods().end()) {
@@ -212,39 +246,47 @@ void from_json(const json &j, NpcState &v) {
 }
 
 void from_json(const json &j, NpcData &v) {
+    reject_unknown(j, {"identity", "state"}, "npc");
     req(j, "identity", v.identity);
     req(j, "state", v.state);
 }
 
 void from_json(const json &j, NpcsFile &v) {
+    reject_unknown(j, {"npcs"}, "npcs.json");
     req(j, "npcs", v.npcs);
 }
 
 void from_json(const json &j, FactData &v) {
+    reject_unknown(j, {"text", "category", "revealed_by_default"}, "fact");
     req(j, "text", v.text);
     opt(j, "category", v.category);
     opt(j, "revealed_by_default", v.revealed_by_default);
 }
 
 void from_json(const json &j, FactsFile &v) {
+    reject_unknown(j, {"facts"}, "facts.json");
     opt(j, "facts", v.facts);
 }
 
 void from_json(const json &j, FlagData &v) {
+    reject_unknown(j, {"default", "description"}, "flag");
     opt(j, "default", v.default_value);
     opt(j, "description", v.description);
 }
 
 void from_json(const json &j, FlagsFile &v) {
+    reject_unknown(j, {"flags"}, "flags.json");
     opt(j, "flags", v.flags);
 }
 
 void from_json(const json &j, ConditionData &v) {
+    reject_unknown(j, {"type", "args"}, "event condition");
     req(j, "type", v.type);
     opt(j, "args", v.args);
 }
 
 void from_json(const json &j, EventActionData &v) {
+    reject_unknown(j, {"type", "params"}, "event action");
     req(j, "type", v.type);
     const auto it = j.find("params");
     if (it != j.end() && it->is_object()) {
@@ -253,6 +295,7 @@ void from_json(const json &j, EventActionData &v) {
 }
 
 void from_json(const json &j, EventTriggerData &v) {
+    reject_unknown(j, {"conditions", "actions", "once", "fired"}, "event");
     opt(j, "conditions", v.conditions);
     opt(j, "actions", v.actions);
     opt(j, "once", v.once);
@@ -260,21 +303,29 @@ void from_json(const json &j, EventTriggerData &v) {
 }
 
 void from_json(const json &j, EventsFile &v) {
+    reject_unknown(j, {"events"}, "events.json");
     opt(j, "events", v.events);
 }
 
 void from_json(const json &j, PlayerState &v) {
+    reject_unknown(j, {"current_location", "inventory"}, "player state");
     req(j, "current_location", v.current_location);
     opt(j, "inventory", v.inventory);
 }
 
 void from_json(const json &j, ClockState &v) {
+    reject_unknown(j, {"turns_elapsed", "turns_per_period", "total_periods"}, "clock state");
     opt(j, "turns_elapsed", v.turns_elapsed);
     opt(j, "turns_per_period", v.turns_per_period);
     opt(j, "total_periods", v.total_periods);
 }
 
 void from_json(const json &j, WorldState &v) {
+    reject_unknown(j,
+                   {"manifest", "config", "locations", "items", "npcs", "facts", "flags",
+                    "flag_meta", "events", "player", "clock", "revealed_facts", "item_locations",
+                    "item_owners"},
+                   "saved world");
     req(j, "manifest", v.manifest);
     req(j, "config", v.config);
     req(j, "locations", v.locations);
@@ -317,12 +368,8 @@ void to_json(json &j, const ConfigData &v) {
              {"max_memory_tokens", v.max_memory_tokens},
              {"max_world_tokens", v.max_world_tokens},
              {"max_history_tokens", v.max_history_tokens},
-             {"save_directory", v.save_directory},
              {"use_tui", v.use_tui},
              {"use_color", v.use_color},
-             {"llm_base_url", v.llm_base_url},
-             {"llm_model", v.llm_model},
-             {"llm_api_key", v.llm_api_key},
              {"verb_aliases", v.verb_aliases},
              {"mutation_narration_templates", v.mutation_narration_templates}};
 }

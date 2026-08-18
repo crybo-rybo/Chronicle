@@ -32,10 +32,10 @@ struct EndpointConfig {
     [[nodiscard]] bool configured() const { return !base_url.empty() && !model.empty(); }
 };
 
-// Resolution order: CLI flags, CHRONICLE_* environment variables, then the
-// cartridge's own config endpoint. Sampling limits always come from the
-// cartridge config when one is present. Returns nullopt when no endpoint is
-// configured anywhere (the console then degrades to the stub).
+// Endpoint authority comes only from host-controlled CLI flags and
+// CHRONICLE_* environment variables. Cartridges may tune bounded sampling
+// values, but cannot select a network destination or receive host credentials.
+// Returns nullopt when the host did not configure an endpoint.
 [[nodiscard]] std::optional<EndpointConfig>
 resolve_endpoint(const std::optional<std::string> &base_url_flag,
                  const std::optional<std::string> &model_flag, const ConfigData *cartridge_config);

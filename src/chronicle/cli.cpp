@@ -23,7 +23,7 @@ constexpr const char *USAGE = R"(Usage:
   chronicle pack --scenario PATH --output PATH
 
 Run a cartridge (default) or a subcommand. Without a model endpoint
-(CHRONICLE_BASE_URL / CHRONICLE_MODEL or cartridge config), NPC dialogue
+(CLI flags or CHRONICLE_BASE_URL / CHRONICLE_MODEL), NPC dialogue
 uses a deterministic stub so mechanics remain playable.)";
 
 bool is_subcommand(const std::string &word) {
@@ -199,9 +199,23 @@ int run_cli(int argc, char **argv) {
                 std::cerr << "run requires a cartridge id\n";
                 return 2;
             }
-            const auto path = default_library_dir() / args.positional.front();
-            if (!std::filesystem::is_directory(path)) {
+            const auto &id = args.positional.front();
+            if (!is_safe_cartridge_id(id)) {
+                std::cerr << "Invalid cartridge id: " << id << '\n';
+                return 1;
+            }
+            const auto path = default_library_dir() / id;
+            if (!std::filesystem::is_directory(path) || std::filesystem::is_symlink(path)) {
                 std::cerr << "Not installed: " << args.positional.front() << '\n';
+                return 1;
+            }
+            const auto issues = validate_package(path);
+            if (has_errors(issues)) {
+                for (const auto &issue : issues) {
+                    if (issue.level == IssueLevel::error) {
+                        std::cerr << issue.to_string() << '\n';
+                    }
+                }
                 return 1;
             }
             CartridgeGame game(path);

@@ -20,6 +20,10 @@ struct ValidationIssue {
     }
 };
 
+// Cartridge IDs become directory names in the library and save tree. Keep the
+// grammar deliberately narrower than a generic filename.
+[[nodiscard]] bool is_safe_cartridge_id(const std::string &id);
+
 [[nodiscard]] std::vector<ValidationIssue> validate_world(const WorldState &world);
 
 // Load then validate; load failures come back as a single error issue.

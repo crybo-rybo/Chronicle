@@ -7,6 +7,7 @@
 #include <sstream>
 
 #include "chronicle/cartridge/loader.hpp"
+#include "chronicle/cartridge/validator.hpp"
 
 namespace chronicle {
 
@@ -97,6 +98,17 @@ std::string format_template(std::string text, const std::map<std::string, std::s
     return text;
 }
 
+std::filesystem::path
+save_directory_for(const WorldState &world,
+                   const std::optional<std::filesystem::path> &override_directory) {
+    if (!is_safe_cartridge_id(world.manifest.id)) {
+        throw std::invalid_argument("Unsafe cartridge id cannot be used for saves: " +
+                                    world.manifest.id);
+    }
+    return override_directory.value_or(std::filesystem::current_path() / "saves" /
+                                       world.manifest.id);
+}
+
 } // namespace
 
 CartridgeGame::CartridgeGame(const std::filesystem::path &package_dir,
@@ -104,10 +116,7 @@ CartridgeGame::CartridgeGame(const std::filesystem::path &package_dir,
     : CartridgeGame(load_package(package_dir), std::move(save_dir)) {}
 
 CartridgeGame::CartridgeGame(WorldState world, std::optional<std::filesystem::path> save_dir)
-    : world_(std::move(world)),
-      saves_(save_dir.value_or(world_.config.save_directory.empty()
-                                   ? std::filesystem::current_path() / "saves" / world_.manifest.id
-                                   : std::filesystem::path(world_.config.save_directory))) {}
+    : world_(std::move(world)), saves_(save_directory_for(world_, save_dir)) {}
 
 void CartridgeGame::set_conversation_hooks(SnapshotHook snapshot, RestoreHook restore) {
     conversation_snapshot_ = std::move(snapshot);
