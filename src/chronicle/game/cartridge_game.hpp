@@ -45,8 +45,8 @@ struct RuntimeCheckpoint {
 class CartridgeGame {
   public:
     // Extra payload persisted alongside the world (NPC conversation history).
-    using SnapshotHook = std::function<nlohmann::json()>;
-    using RestoreHook = std::function<void(const nlohmann::json &)>;
+    using SnapshotHook = std::function<std::expected<nlohmann::json, std::string>()>;
+    using RestoreHook = std::function<std::expected<void, std::string>(const nlohmann::json &)>;
 
     explicit CartridgeGame(const std::filesystem::path &package_dir,
                            std::optional<std::filesystem::path> save_dir = std::nullopt);
@@ -79,7 +79,7 @@ class CartridgeGame {
     // Clock advance + scripted events after a significant turn.
     [[nodiscard]] GameEvents after_turn();
 
-    void save(int slot);
+    [[nodiscard]] SaveResult save(int slot);
     [[nodiscard]] std::string help_text() const;
 
     // Wired by the runtime so saves capture NPC conversations; optional.

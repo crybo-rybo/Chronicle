@@ -179,6 +179,7 @@ TEST_F(GateTest, RevealKnowledgeChecksAndReveals) {
 
     WorldState restricted_world = ct::make_test_world();
     auto &restricted_keeper = restricted_world.npcs.at("keeper");
+    restricted_world.facts["fact_other"] = FactData{.text = "Another authored fact."};
     restricted_keeper.identity.tool_policy.allowed_facts = {"fact_other"};
     restricted_keeper.identity.knowledge.push_back("fact_other");
     CartridgeGame restricted(std::move(restricted_world), saves_.path());

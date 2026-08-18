@@ -1,6 +1,7 @@
 // Shared runtime types.
 #pragma once
 
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -9,7 +10,7 @@ namespace chronicle {
 enum class GamePhase { playing, in_conversation, game_over };
 
 [[nodiscard]] std::string to_string(GamePhase phase);
-[[nodiscard]] GamePhase phase_from_string(const std::string &value);
+[[nodiscard]] std::optional<GamePhase> phase_from_string(const std::string &value);
 
 enum class EventKind {
     narration,
@@ -44,14 +45,17 @@ inline std::string to_string(const GamePhase phase) {
     return "playing";
 }
 
-inline GamePhase phase_from_string(const std::string &value) {
+inline std::optional<GamePhase> phase_from_string(const std::string &value) {
+    if (value == "playing") {
+        return GamePhase::playing;
+    }
     if (value == "in_conversation") {
         return GamePhase::in_conversation;
     }
     if (value == "game_over") {
         return GamePhase::game_over;
     }
-    return GamePhase::playing;
+    return std::nullopt;
 }
 
 } // namespace chronicle

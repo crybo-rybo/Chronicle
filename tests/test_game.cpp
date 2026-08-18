@@ -212,8 +212,33 @@ TEST_F(GameTest, SaveAndLoadRoundTrip) {
     EXPECT_TRUE(game_.world().item_positions.at("old_coin").is_player());
 }
 
+TEST_F(GameTest, FailedConversationRestoreRollsBackEntireLoad) {
+    game_.set_conversation_hooks(
+        []() -> std::expected<nlohmann::json, std::string> {
+            return nlohmann::json{{"keeper", nlohmann::json::object()}};
+        },
+        [](const nlohmann::json &) -> std::expected<void, std::string> {
+            return std::unexpected("conversation rejected");
+        });
+    (void)command("take old coin");
+    ASSERT_NE(joined(command("save 4")).find("Saved to slot 4"), std::string::npos);
+    (void)command("drop old coin");
+    ASSERT_TRUE(game_.world().item_positions.at("old_coin").is_location("hall"));
+
+    const auto loaded = joined(command("load 4"));
+    EXPECT_NE(loaded.find("conversation rejected"), std::string::npos);
+    EXPECT_TRUE(game_.world().item_positions.at("old_coin").is_location("hall"));
+    EXPECT_EQ(game_.phase(), GamePhase::playing);
+}
+
 TEST_F(GameTest, LoadMissingSlot) {
     EXPECT_NE(joined(command("load 7")).find("No save in slot 7"), std::string::npos);
+}
+
+TEST_F(GameTest, SaveAndLoadRejectMalformedSlots) {
+    EXPECT_NE(joined(command("save nope")).find("must be an integer"), std::string::npos);
+    EXPECT_NE(joined(command("load 1 extra")).find("Usage: load"), std::string::npos);
+    EXPECT_FALSE(std::filesystem::exists(saves_.path() / "slot_1.json"));
 }
 
 TEST(GameConstruction, UnsafeCartridgeIdCannotSelectASavePath) {

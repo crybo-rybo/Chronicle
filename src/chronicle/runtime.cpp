@@ -14,7 +14,7 @@ ConsoleRuntime::ConsoleRuntime(CartridgeGame &game, std::optional<EndpointConfig
         sessions_ = std::make_unique<NpcSessionManager>(game_, std::move(*endpoint));
         game_.set_conversation_hooks(
             [this] { return sessions_->snapshot_conversations(); },
-            [this](const nlohmann::json &docs) { sessions_->restore_conversations(docs); });
+            [this](const nlohmann::json &docs) { return sessions_->restore_conversations(docs); });
     }
 }
 

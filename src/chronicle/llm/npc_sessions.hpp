@@ -73,11 +73,13 @@ class NpcSessionManager {
     [[nodiscard]] NpcTurnResult run_turn(const std::string &npc_id, const std::string &player_text);
 
     // npc_id -> serialized scry conversation document, for save files.
-    [[nodiscard]] nlohmann::json snapshot_conversations();
+    [[nodiscard]] std::expected<nlohmann::json, std::string> snapshot_conversations();
 
-    // Drop live sessions and stage restored conversation documents; each is
-    // picked up when the player next talks to that NPC.
-    void restore_conversations(const nlohmann::json &conversations);
+    // Validate every restored document and its canonical system prompt before
+    // atomically replacing live sessions. Each document is picked up when the
+    // player next talks to that NPC.
+    [[nodiscard]] std::expected<void, std::string>
+    restore_conversations(const nlohmann::json &conversations);
 
   private:
     struct Session;

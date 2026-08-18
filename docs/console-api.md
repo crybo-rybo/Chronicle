@@ -15,8 +15,8 @@ listed here.
 | `use` | `<item> on/with <target>` | Use an item (including unlock targets) |
 | `talk` | `<npc>` | Begin a conversation |
 | `inventory` | — | List carried items |
-| `save` | `[slot]` | Save (default slot 1) |
-| `load` | `[slot]` | Load (default slot 1) |
+| `save` | `[slot]` | Save to slot 1–99 (default 1) |
+| `load` | `[slot]` | Load from slot 1–99 (default 1) |
 | `help` | — | Show help |
 | `quit` | — | Exit |
 
@@ -25,6 +25,16 @@ In conversation, free text goes to the active NPC. Hard commands still available
 (`bye`, `goodbye`, `leave`, `exit conversation`).
 
 Verb aliases may be defined in `config.json`.
+
+## Save Integrity
+
+Save files are versioned and bound to the exact cartridge id and content
+version. They contain only mutable runtime state; authored facts, NPC identities,
+tool policies, event definitions, and prompts are always reconstructed from the
+validated cartridge. Writes use atomic replacement, reads are size-bounded, and
+the complete world plus all Scry conversation documents are validated before a
+load commits. A failed world or conversation restore leaves the current session
+unchanged.
 
 ## NPC Tool Palette
 

@@ -108,6 +108,45 @@ TEST(Validator, NpcIssues) {
     EXPECT_TRUE(has_issue_containing(issues, "allowed_locations unknown void"));
 }
 
+TEST(Validator, MutableRuntimeStateIsBoundedAndReferentiallyValid) {
+    WorldState world = ct::make_test_world();
+    world.clock.turns_elapsed = -1;
+    world.clock.turns_per_period = 99;
+    world.flags["injected"] = true;
+    world.revealed_facts.insert("fact_missing");
+    auto &npc = world.npcs.at("keeper");
+    npc.state.trust_toward_player = 101;
+    npc.state.memories.push_back({.timestamp = "morning",
+                                  .type = "observation",
+                                  .summary = " ",
+                                  .importance = 11,
+                                  .related_npc = "ghost",
+                                  .related_item = "missing"});
+
+    const auto issues = validate_world(world);
+    EXPECT_TRUE(has_issue_containing(issues, "runtime clock"));
+    EXPECT_TRUE(has_issue_containing(issues, "runtime flag set"));
+    EXPECT_TRUE(has_issue_containing(issues, "revealed facts"));
+    EXPECT_TRUE(has_issue_containing(issues, "trust values"));
+    EXPECT_TRUE(has_issue_containing(issues, "memory summary"));
+    EXPECT_TRUE(has_issue_containing(issues, "memory importance"));
+    EXPECT_TRUE(has_issue_containing(issues, "memory references unknown NPC"));
+    EXPECT_TRUE(has_issue_containing(issues, "memory references unknown item"));
+}
+
+TEST(Validator, AuthoredIdentityAndLockedExitIntegrityAreEnforced) {
+    WorldState world = ct::make_test_world();
+    world.npcs.at("keeper").identity.id = "impostor";
+    world.npcs.at("keeper").identity.knowledge.push_back("fact_gate");
+    world.locations.at("hall").locked_exits.push_back(
+        LockedExitEntry{.direction = "north", .unlocked = false});
+
+    const auto issues = validate_world(world);
+    EXPECT_TRUE(has_issue_containing(issues, "identity id"));
+    EXPECT_TRUE(has_issue_containing(issues, "duplicate 'fact_gate'"));
+    EXPECT_TRUE(has_issue_containing(issues, "duplicate locked exit north"));
+}
+
 TEST(Validator, EventConditionIssues) {
     WorldState world = ct::make_test_world();
     world.events["bad"] = EventTriggerData{
@@ -118,8 +157,20 @@ TEST(Validator, EventConditionIssues) {
     };
     const auto issues = validate_world(world);
     EXPECT_TRUE(has_issue_containing(issues, "condition player_at: bad location"));
-    EXPECT_TRUE(has_issue_containing(issues, "turn count not an int"));
+    EXPECT_TRUE(has_issue_containing(issues, "turn count must be a non-negative int"));
     EXPECT_TRUE(has_issue_containing(issues, "unknown condition type"));
+}
+
+TEST(Validator, NumericEventThresholdsStayInsideRuntimeDomains) {
+    WorldState world = ct::make_test_world();
+    world.events["bad_thresholds"] = EventTriggerData{
+        .conditions = {{.type = "npc_trust_ge", .args = {"keeper", "101"}},
+                       {.type = "turn_ge", .args = {"-1"}}},
+        .actions = {},
+    };
+    const auto issues = validate_world(world);
+    EXPECT_TRUE(has_issue_containing(issues, "bad npc/threshold"));
+    EXPECT_TRUE(has_issue_containing(issues, "turn count must be a non-negative int"));
 }
 
 TEST(Validator, EventActionIssues) {

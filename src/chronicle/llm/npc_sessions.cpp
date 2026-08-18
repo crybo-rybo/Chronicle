@@ -429,7 +429,7 @@ NpcTurnResult NpcSessionManager::run_turn(const std::string &npc_id,
     return events;
 }
 
-nlohmann::json NpcSessionManager::snapshot_conversations() {
+std::expected<nlohmann::json, std::string> NpcSessionManager::snapshot_conversations() {
     nlohmann::json snapshot = nlohmann::json::object();
     for (const auto &[npc_id, document] : pending_restore_) {
         snapshot[npc_id] = document;
@@ -437,25 +437,62 @@ nlohmann::json NpcSessionManager::snapshot_conversations() {
     for (auto &[npc_id, session] : sessions_) {
         auto doc = session->conversation.to_json();
         if (!doc) {
-            continue;
+            return std::unexpected("could not serialize conversation for '" + npc_id +
+                                   "': " + doc.error().message);
         }
         auto parsed = nlohmann::json::parse(doc->text, nullptr, false);
-        if (!parsed.is_discarded()) {
-            snapshot[npc_id] = std::move(parsed);
+        if (parsed.is_discarded()) {
+            return std::unexpected("conversation for '" + npc_id + "' serialized to invalid JSON");
         }
+        snapshot[npc_id] = std::move(parsed);
     }
     return snapshot;
 }
 
-void NpcSessionManager::restore_conversations(const nlohmann::json &conversations) {
-    sessions_.clear();
-    pending_restore_.clear();
+std::expected<void, std::string>
+NpcSessionManager::restore_conversations(const nlohmann::json &conversations) {
     if (!conversations.is_object()) {
-        return;
+        return std::unexpected("conversations must be an object");
     }
+    if (conversations.size() > game_.world().npcs.size()) {
+        return std::unexpected("save contains too many NPC conversations");
+    }
+
+    std::map<std::string, nlohmann::json> staged;
     for (const auto &[npc_id, doc] : conversations.items()) {
-        pending_restore_[npc_id] = doc;
+        if (!game_.world().npcs.contains(npc_id)) {
+            return std::unexpected("conversation references unknown NPC '" + npc_id + "'");
+        }
+        if (!doc.is_object() || !doc.contains("system_prompt") ||
+            !doc["system_prompt"].is_string()) {
+            return std::unexpected("conversation for '" + npc_id + "' is malformed");
+        }
+        if (doc["system_prompt"].get_ref<const std::string &>() !=
+            build_npc_system_prompt(game_.world(), npc_id)) {
+            return std::unexpected("conversation for '" + npc_id +
+                                   "' has a non-canonical system prompt");
+        }
+
+        auto restored = scry::Conversation::from_json(scry::Json{.text = doc.dump()});
+        if (!restored) {
+            return std::unexpected("conversation for '" + npc_id +
+                                   "' is invalid: " + restored.error().message);
+        }
+        auto canonical = restored->to_json();
+        if (!canonical) {
+            return std::unexpected("conversation for '" + npc_id +
+                                   "' could not be normalized: " + canonical.error().message);
+        }
+        auto normalized = nlohmann::json::parse(canonical->text, nullptr, false);
+        if (normalized.is_discarded()) {
+            return std::unexpected("conversation for '" + npc_id + "' could not be normalized");
+        }
+        staged.emplace(npc_id, std::move(normalized));
     }
+
+    sessions_.clear();
+    pending_restore_ = std::move(staged);
+    return {};
 }
 
 } // namespace chronicle

@@ -100,7 +100,7 @@ CartridgeGame::CartridgeGame(const std::filesystem::path &package_dir,
 
 CartridgeGame::CartridgeGame(WorldState world, std::optional<std::filesystem::path> save_dir)
     : world_(std::move(world)), action_gate_(world_, phase_, active_npc_, significant_),
-      saves_(save_directory_for(world_, save_dir)) {}
+      saves_(save_directory_for(world_, save_dir), world_) {}
 
 void CartridgeGame::set_conversation_hooks(SnapshotHook snapshot, RestoreHook restore) {
     conversation_snapshot_ = std::move(snapshot);
@@ -187,12 +187,24 @@ GameEvents CartridgeGame::after_turn() {
     return events;
 }
 
-void CartridgeGame::save(const int slot) {
-    nlohmann::json conversations = nlohmann::json::object();
-    if (conversation_snapshot_) {
-        conversations = conversation_snapshot_();
+SaveResult CartridgeGame::save(const int slot) {
+    try {
+        nlohmann::json conversations = nlohmann::json::object();
+        if (conversation_snapshot_) {
+            auto snapshot = conversation_snapshot_();
+            if (!snapshot) {
+                return std::unexpected(
+                    SaveError{.kind = SaveError::Kind::io,
+                              .message = "Could not snapshot conversations: " + snapshot.error()});
+            }
+            conversations = std::move(*snapshot);
+        }
+        return saves_.save(slot, world_, phase_, active_npc_, conversations);
+    } catch (const std::exception &exception) {
+        return std::unexpected(SaveError{.kind = SaveError::Kind::io,
+                                         .message = "Could not snapshot conversations: " +
+                                                    std::string(exception.what())});
     }
-    saves_.save(slot, world_, phase_, active_npc_, conversations);
 }
 
 std::string CartridgeGame::help_text() const {
@@ -253,13 +265,29 @@ GameEvents CartridgeGame::dispatch_playing(const std::string &text) {
         return talk(arg);
     }
     if (cmd == "save") {
-        const int slot = words.size() > 1 ? parse_int(words[1]).value_or(1) : 1;
-        save(slot);
+        if (words.size() > 2) {
+            return {{EventKind::warning, "Usage: save [slot 1-99]"}};
+        }
+        const auto parsed_slot = words.size() == 2 ? parse_int(words[1]) : std::optional<int>{1};
+        if (!parsed_slot) {
+            return {{EventKind::warning, "Save slot must be an integer from 1 to 99."}};
+        }
+        const int slot = *parsed_slot;
+        if (auto saved = save(slot); !saved) {
+            return {{EventKind::warning,
+                     "Could not save slot " + std::to_string(slot) + ": " + saved.error().message}};
+        }
         return {{EventKind::narration, "Saved to slot " + std::to_string(slot) + "."}};
     }
     if (cmd == "load") {
-        const int slot = words.size() > 1 ? parse_int(words[1]).value_or(1) : 1;
-        return do_load(slot);
+        if (words.size() > 2) {
+            return {{EventKind::warning, "Usage: load [slot 1-99]"}};
+        }
+        const auto parsed_slot = words.size() == 2 ? parse_int(words[1]) : std::optional<int>{1};
+        if (!parsed_slot) {
+            return {{EventKind::warning, "Load slot must be an integer from 1 to 99."}};
+        }
+        return do_load(*parsed_slot);
     }
     return {{EventKind::narration, "Unknown command: " + text}};
 }
@@ -273,6 +301,7 @@ GameEvents CartridgeGame::do_load(const int slot) {
         return {{EventKind::warning,
                  "Could not load slot " + std::to_string(slot) + ": " + loaded.error().message}};
     }
+    auto checkpoint = checkpoint_runtime();
     auto restored = submit_world_action(actions::RestoreRuntime{
         .world = std::move(loaded->world),
         .phase = loaded->phase,
@@ -283,7 +312,14 @@ GameEvents CartridgeGame::do_load(const int slot) {
                  "Could not load slot " + std::to_string(slot) + ": " + restored.error().reason}};
     }
     if (conversation_restore_) {
-        conversation_restore_(loaded->conversations);
+        auto conversations = conversation_restore_(loaded->conversations);
+        if (!conversations) {
+            auto rolled_back = restore_runtime(std::move(checkpoint));
+            const std::string rollback =
+                rolled_back ? "" : "; rollback failed: " + rolled_back.error().reason;
+            return {{EventKind::warning, "Could not load slot " + std::to_string(slot) + ": " +
+                                             conversations.error() + rollback}};
+        }
     }
     GameEvents events{{EventKind::narration, "Loaded slot " + std::to_string(slot) + "."}};
     auto looked = look();

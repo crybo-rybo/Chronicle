@@ -186,7 +186,7 @@ TEST_F(EventsTest, EndGameAction) {
 
 TEST_F(EventsTest, EndGameDefaultText) {
     install_event("finale", {.conditions = {},
-                             .actions = {{.type = "end_game", .params = {}}},
+                             .actions = {{.type = "end_game", .params = nlohmann::json::object()}},
                              .once = true,
                              .fired = false});
     const auto events = fire();

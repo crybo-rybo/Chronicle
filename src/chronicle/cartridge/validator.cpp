@@ -14,10 +14,13 @@ bool contains(const std::vector<std::string> &haystack, const std::string &needl
     return std::ranges::find(haystack, needle) != haystack.end();
 }
 
-bool parses_as_int(const std::string &text) {
+std::optional<int> parsed_int(const std::string &text) {
     int value = 0;
     const auto [ptr, ec] = std::from_chars(text.data(), text.data() + text.size(), value);
-    return ec == std::errc{} && ptr == text.data() + text.size();
+    if (ec != std::errc{} || ptr != text.data() + text.size()) {
+        return std::nullopt;
+    }
+    return value;
 }
 
 bool bool_text(const std::string &text) {
@@ -34,6 +37,16 @@ void error(std::vector<ValidationIssue> &issues, std::string message) {
 
 void warning(std::vector<ValidationIssue> &issues, std::string message) {
     issues.push_back({.message = std::move(message), .level = IssueLevel::warning});
+}
+
+void require_unique(const std::vector<std::string> &values, const std::string &context,
+                    std::vector<ValidationIssue> &issues) {
+    std::set<std::string> seen;
+    for (const auto &value : values) {
+        if (!seen.insert(value).second) {
+            error(issues, context + ": duplicate '" + value + "'");
+        }
+    }
 }
 
 std::string param_str(const nlohmann::json &params, const char *key) {
@@ -76,7 +89,9 @@ void validate_condition(const WorldState &world, const std::string &event_id,
             error(issues, prefix + ": bad flag");
         }
     } else if (cond.type == "npc_trust_ge") {
-        if (args.size() != 2 || !world.npcs.contains(args[0]) || !parses_as_int(args[1])) {
+        const auto threshold = args.size() == 2 ? parsed_int(args[1]) : std::nullopt;
+        if (args.size() != 2 || !world.npcs.contains(args[0]) || !threshold || *threshold < 0 ||
+            *threshold > 100) {
             error(issues, prefix + ": bad npc/threshold");
         }
     } else if (cond.type == "npc_at") {
@@ -91,8 +106,8 @@ void validate_condition(const WorldState &world, const std::string &event_id,
     } else if (cond.type == "turn_ge") {
         if (args.size() != 1) {
             error(issues, prefix + ": expected turn count");
-        } else if (!parses_as_int(args[0])) {
-            error(issues, prefix + ": turn count not an int");
+        } else if (const auto turn = parsed_int(args[0]); !turn || *turn < 0) {
+            error(issues, prefix + ": turn count must be a non-negative int");
         }
     } else {
         error(issues, prefix + ": unknown condition type");
@@ -190,6 +205,13 @@ std::vector<ValidationIssue> validate_world(const WorldState &world) {
         config.max_history_tokens < 1 || config.max_history_tokens > 1'000'000) {
         error(issues, "prompt budgets must be between 1 and 1000000");
     }
+    const auto maximum_turns = static_cast<long long>(config.turns_per_period) *
+                               static_cast<long long>(config.total_periods);
+    if (world.clock.turns_elapsed < 0 || world.clock.turns_elapsed > maximum_turns ||
+        world.clock.turns_per_period != config.turns_per_period ||
+        world.clock.total_periods != config.total_periods) {
+        error(issues, "runtime clock is inconsistent with cartridge clock limits");
+    }
     if (world.locations.size() > 128 || world.items.size() > 512 || world.npcs.size() > 128 ||
         world.facts.size() > 512 || world.flags.size() > 512 || world.events.size() > 512) {
         error(issues, "cartridge exceeds entity-count limits");
@@ -202,6 +224,14 @@ std::vector<ValidationIssue> validate_world(const WorldState &world) {
         for (const auto &[direction, dest] : loc.exits) {
             if (!world.locations.contains(dest)) {
                 error(issues, "location " + loc_id + ": exit " + direction + " -> unknown " + dest);
+            }
+        }
+        std::set<std::string> locked_directions;
+        for (const auto &entry : loc.locked_exits) {
+            if (entry.direction.empty() || !loc.exits.contains(entry.direction)) {
+                error(issues, "location " + loc_id + ": locked exit is not a defined direction");
+            } else if (!locked_directions.insert(entry.direction).second) {
+                error(issues, "location " + loc_id + ": duplicate locked exit " + entry.direction);
             }
         }
     }
@@ -224,19 +254,46 @@ std::vector<ValidationIssue> validate_world(const WorldState &world) {
         }
     }
 
+    if (!std::ranges::equal(
+            world.flags, world.flag_meta, {}, [](const auto &entry) { return entry.first; },
+            [](const auto &entry) { return entry.first; })) {
+        error(issues, "runtime flag set differs from authored flag metadata");
+    }
+    for (const auto &fact_id : world.revealed_facts) {
+        if (!world.facts.contains(fact_id)) {
+            error(issues, "revealed facts references unknown fact " + fact_id);
+        }
+    }
+
     for (const auto &[npc_id, npc] : world.npcs) {
+        if (npc.identity.id != npc_id) {
+            error(issues, "npc " + npc_id + ": identity id must match its map key");
+        }
         if (!world.locations.contains(npc.state.current_location)) {
             error(issues, "npc " + npc_id + ": unknown location " + npc.state.current_location);
         }
         if (!contains(valid_moods(), npc.state.mood)) {
             error(issues, "npc " + npc_id + ": invalid mood " + npc.state.mood);
         }
+        if (npc.identity.trust_reveal_threshold < 0 || npc.identity.trust_reveal_threshold > 100 ||
+            npc.state.trust_toward_player < 0 || npc.state.trust_toward_player > 100) {
+            error(issues, "npc " + npc_id + ": trust values must be between 0 and 100");
+        }
+        if (npc.identity.goals.size() > 64 || npc.identity.knowledge.size() > world.facts.size()) {
+            error(issues, "npc " + npc_id + ": identity list exceeds cartridge limits");
+        }
+        require_unique(npc.identity.knowledge, "npc " + npc_id + " knowledge", issues);
         for (const auto &fact_id : npc.identity.knowledge) {
             if (!world.facts.contains(fact_id)) {
                 error(issues, "npc " + npc_id + ": unknown knowledge fact " + fact_id);
             }
         }
         const auto &policy = npc.identity.tool_policy;
+        require_unique(policy.allowed_tools, "npc " + npc_id + " allowed_tools", issues);
+        require_unique(policy.allowed_items, "npc " + npc_id + " allowed_items", issues);
+        require_unique(policy.allowed_facts, "npc " + npc_id + " allowed_facts", issues);
+        require_unique(policy.allowed_flags, "npc " + npc_id + " allowed_flags", issues);
+        require_unique(policy.allowed_locations, "npc " + npc_id + " allowed_locations", issues);
         for (const auto &tool : policy.allowed_tools) {
             if (!contains(npc_tool_names(), tool)) {
                 error(issues, "npc " + npc_id + ": unknown tool " + tool);
@@ -262,9 +319,31 @@ std::vector<ValidationIssue> validate_world(const WorldState &world) {
                 error(issues, "npc " + npc_id + ": allowed_locations unknown " + loc_id);
             }
         }
+        if (npc.state.memories.size() > 4'096) {
+            error(issues, "npc " + npc_id + ": memory count exceeds 4096");
+        }
+        for (const auto &memory : npc.state.memories) {
+            if (!nonblank(memory.summary)) {
+                error(issues, "npc " + npc_id + ": memory summary must be non-empty");
+            }
+            if (memory.importance < 1 || memory.importance > 10) {
+                error(issues, "npc " + npc_id + ": memory importance must be between 1 and 10");
+            }
+            if (!memory.related_npc.empty() && !world.npcs.contains(memory.related_npc)) {
+                error(issues,
+                      "npc " + npc_id + ": memory references unknown NPC " + memory.related_npc);
+            }
+            if (!memory.related_item.empty() && !world.items.contains(memory.related_item)) {
+                error(issues,
+                      "npc " + npc_id + ": memory references unknown item " + memory.related_item);
+            }
+        }
     }
 
     for (const auto &[event_id, event] : world.events) {
+        if (event.conditions.size() > 128 || event.actions.size() > 128) {
+            error(issues, "event " + event_id + ": exceeds condition/action limits");
+        }
         for (const auto &cond : event.conditions) {
             validate_condition(world, event_id, cond, issues);
         }
