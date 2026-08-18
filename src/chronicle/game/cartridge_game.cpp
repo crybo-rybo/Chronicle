@@ -154,6 +154,24 @@ actions::ActionOutcome CartridgeGame::submit_world_action(actions::WorldAction a
     return action_gate_.submit(std::move(action));
 }
 
+RuntimeCheckpoint CartridgeGame::checkpoint_runtime() const {
+    return RuntimeCheckpoint{
+        .world = world_,
+        .phase = phase_,
+        .active_npc = active_npc_,
+        .significant = significant_,
+    };
+}
+
+actions::ActionOutcome CartridgeGame::restore_runtime(RuntimeCheckpoint checkpoint) {
+    return submit_world_action(actions::RestoreRuntime{
+        .world = std::move(checkpoint.world),
+        .phase = checkpoint.phase,
+        .active_npc = std::move(checkpoint.active_npc),
+        .significant = checkpoint.significant,
+    });
+}
+
 GameEvents CartridgeGame::after_turn() {
     GameEvents events;
     if (significant_ && phase_ != GamePhase::game_over) {

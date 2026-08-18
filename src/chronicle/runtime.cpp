@@ -54,7 +54,18 @@ GameEvents ConsoleRuntime::handle_line(const std::string &line) {
 
 GameEvents ConsoleRuntime::run_llm_turn(const NpcTurnRequest &request) {
     if (sessions_ != nullptr) {
-        return sessions_->run_turn(request.npc_id, request.player_text);
+        auto turn = sessions_->run_turn(request.npc_id, request.player_text);
+        if (turn) {
+            return std::move(*turn);
+        }
+        auto events = run_stub_turn(request.npc_id);
+        const std::string state = turn.error().world_rolled_back
+                                      ? "the world remained unchanged"
+                                      : "world rollback failed; state may be inconsistent";
+        events.insert(events.begin(), {EventKind::warning,
+                                       "Inference failed (" + turn.error().message +
+                                           "). Deterministic dialogue was used; " + state + "."});
+        return events;
     }
     return run_stub_turn(request.npc_id);
 }

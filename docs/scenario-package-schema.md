@@ -27,6 +27,9 @@ Optional; empty object is valid. Common fields:
 
 Network endpoints, API credentials, and save locations are host policy. Cartridges cannot set
 them; use the CLI or `CHRONICLE_*` environment variables for model configuration.
+Prompt budgets are enforced with a deterministic four-bytes-per-token estimate:
+world context and player input are UTF-8-safe truncated, while conversation
+history drops the oldest complete turns first.
 
 ## World (`world.json`)
 

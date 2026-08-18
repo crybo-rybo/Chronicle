@@ -1,14 +1,47 @@
 // NPC policy validation and translation into the single world-action gate.
+#include <algorithm>
 #include <gtest/gtest.h>
 #include <limits>
+#include <ranges>
 
 #include "chronicle/game/cartridge_game.hpp"
+#include "chronicle/llm/npc_sessions.hpp"
 #include "helpers.hpp"
 
 namespace chronicle {
 namespace {
 
 namespace ct = chronicle::testing;
+
+TEST(ReflectedToolContracts, SchemasCarryDescriptionsEnumsAndRequiredValues) {
+    const auto schemas = npc_tool_schemas();
+    ASSERT_EQ(schemas.size(), 10U);
+
+    const auto schema_named = [&](const std::string &name) -> nlohmann::json {
+        const auto found = std::ranges::find(schemas, name, &ReflectedToolSchema::name);
+        EXPECT_NE(found, schemas.end());
+        return found == schemas.end() ? nlohmann::json::object()
+                                      : nlohmann::json::parse(found->input_schema);
+    };
+
+    const auto remember = schema_named("remember");
+    EXPECT_EQ(remember["properties"]["summary"]["description"],
+              "Short factual memory of this conversation");
+    EXPECT_EQ(remember["properties"]["importance"]["description"],
+              "Importance from 1 (minor) to 10 (critical)");
+
+    const auto mood = schema_named("update_mood");
+    EXPECT_EQ(
+        mood["properties"]["mood"]["enum"],
+        nlohmann::json({"fearful", "friendly", "grieving", "hostile", "neutral", "suspicious"}));
+
+    const auto set_flag = schema_named("set_flag");
+    EXPECT_TRUE(std::ranges::any_of(set_flag["required"], [](const nlohmann::json &field) {
+        return field.is_string() && field.get<std::string>() == "value";
+    }));
+    EXPECT_EQ(set_flag["properties"]["value"]["description"],
+              "Explicit value to store in the flag");
+}
 
 class GateTest : public ::testing::Test {
   protected:
@@ -184,7 +217,8 @@ TEST_F(GateTest, RememberStoresMemoryWithPeriodTimestamp) {
 }
 
 TEST_F(GateTest, SetFlagChecksPolicyAndApplies) {
-    const auto unknown = game_.submit_npc_tool("keeper", tools::SetFlag{.flag_id = "no_flag"});
+    const auto unknown =
+        game_.submit_npc_tool("keeper", tools::SetFlag{.flag_id = "no_flag", .value = false});
     ASSERT_FALSE(unknown.has_value());
     EXPECT_EQ(unknown.error().reason, "Unknown flag");
 

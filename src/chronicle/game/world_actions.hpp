@@ -76,6 +76,7 @@ struct RestoreRuntime {
     WorldState world;
     GamePhase phase = GamePhase::playing;
     std::optional<std::string> active_npc;
+    bool significant = false;
 };
 
 using WorldAction =

@@ -1,12 +1,15 @@
 #include "chronicle/llm/npc_sessions.hpp"
 
 #include <algorithm>
+#include <cstdint>
 #include <cstdlib>
 #include <scry/config.hpp>
 #include <scry/conversation.hpp>
 #include <scry/harness.hpp>
 #include <scry/reflection.hpp>
 #include <stdexcept>
+#include <string_view>
+#include <tuple>
 
 #include "chronicle/prompt.hpp"
 
@@ -14,10 +17,129 @@ namespace chronicle {
 
 namespace {
 
-// Reflected result returned to the model by every NPC tool handler.
+// Reflected tool results deliberately use a successful transport result for
+// policy rejections. That makes the exact rejection visible to the model so it
+// can choose another action instead of seeing Scry's generic handler failure.
 struct ToolAck {
-    std::string result;
+    [[= scry::reflection::description{"Whether Chronicle accepted the action"}]] bool ok;
+    [[= scry::reflection::description{"Action result when ok is true"}]] std::string result;
+    [[= scry::reflection::description{
+        "Exact rejection reason when ok is false"}]] std::string error;
 };
+
+namespace reflected {
+
+struct Say {
+    [[= scry::reflection::description{"Dialogue to speak aloud to the player"}]] std::string text;
+    [[nodiscard]] tools::NpcToolCall into_call() && { return tools::Say{.text = std::move(text)}; }
+};
+
+struct GiveItem {
+    [[= scry::reflection::description{
+        "Authored id of an item you currently hold"}]] std::string item_id;
+    [[nodiscard]] tools::NpcToolCall into_call() && {
+        return tools::GiveItem{.item_id = std::move(item_id)};
+    }
+};
+
+struct TakeItem {
+    [[= scry::reflection::description{
+        "Authored id of an item the player currently holds"}]] std::string item_id;
+    [[nodiscard]] tools::NpcToolCall into_call() && {
+        return tools::TakeItem{.item_id = std::move(item_id)};
+    }
+};
+
+struct UpdateMood {
+    [[= scry::reflection::description{
+        "Your new mood from the fixed mood vocabulary"}]] tools::Mood mood;
+    [[nodiscard]] tools::NpcToolCall into_call() && { return tools::UpdateMood{.mood = mood}; }
+};
+
+struct UpdateTrust {
+    [[= scry::reflection::description{
+        "Signed trust adjustment from -100 to 100"}]] std::int16_t delta;
+    [[nodiscard]] tools::NpcToolCall into_call() && {
+        return tools::UpdateTrust{.delta = static_cast<int>(delta)};
+    }
+};
+
+struct MoveSelf {
+    [[= scry::reflection::description{
+        "Authored id of an allowed destination location"}]] std::string location_id;
+    [[nodiscard]] tools::NpcToolCall into_call() && {
+        return tools::MoveSelf{.location_id = std::move(location_id)};
+    }
+};
+
+struct RevealKnowledge {
+    [[= scry::reflection::description{
+        "Authored id of a fact you know and may reveal"}]] std::string fact_id;
+    [[nodiscard]] tools::NpcToolCall into_call() && {
+        return tools::RevealKnowledge{.fact_id = std::move(fact_id)};
+    }
+};
+
+struct Remember {
+    [[= scry::reflection::description{
+        "Short factual memory of this conversation"}]] std::string summary;
+    [[= scry::reflection::description{
+        "Importance from 1 (minor) to 10 (critical)"}]] std::uint16_t importance{5};
+    [[nodiscard]] tools::NpcToolCall into_call() && {
+        return tools::Remember{.summary = std::move(summary),
+                               .importance = static_cast<int>(importance)};
+    }
+};
+
+struct SetFlag {
+    [[= scry::reflection::description{
+        "Authored id of a flag allowed by your policy"}]] std::string flag_id;
+    [[= scry::reflection::description{"Explicit value to store in the flag"}]] bool value;
+    [[nodiscard]] tools::NpcToolCall into_call() && {
+        return tools::SetFlag{.flag_id = std::move(flag_id), .value = value};
+    }
+};
+
+struct InspectItem {
+    [[= scry::reflection::description{
+        "Authored id of an item you are allowed to inspect"}]] std::string item_id;
+    [[nodiscard]] tools::NpcToolCall into_call() && {
+        return tools::InspectItem{.item_id = std::move(item_id)};
+    }
+};
+
+} // namespace reflected
+
+template <typename Arguments> struct ToolBinding {
+    using arguments_type = Arguments;
+    std::string_view name;
+    std::string_view description;
+};
+
+template <typename Arguments>
+constexpr ToolBinding<Arguments> bind(const std::string_view name,
+                                      const std::string_view description) {
+    return {.name = name, .description = description};
+}
+
+constexpr auto TOOL_BINDINGS = std::tuple{
+    bind<reflected::Say>("say", "Speak aloud to the player."),
+    bind<reflected::GiveItem>("give_item", "Give an item you hold to the player."),
+    bind<reflected::TakeItem>("take_item", "Take an item from the player."),
+    bind<reflected::UpdateMood>("update_mood", "Change your mood."),
+    bind<reflected::UpdateTrust>("update_trust", "Adjust trust toward the player."),
+    bind<reflected::MoveSelf>("move_self", "Move to another allowed location."),
+    bind<reflected::RevealKnowledge>("reveal_knowledge", "Reveal an authored fact you know."),
+    bind<reflected::Remember>("remember", "Store a short memory about this conversation."),
+    bind<reflected::SetFlag>("set_flag", "Set an authored narrative flag."),
+    bind<reflected::InspectItem>("inspect_item", "Inspect an item without changing the world."),
+};
+
+template <typename Function> void for_each_tool_binding(Function &&function) {
+    std::apply([&](const auto &...binding) { (function(binding), ...); }, TOOL_BINDINGS);
+}
+
+constexpr std::size_t MAX_LIVE_NPC_SESSIONS = 16;
 
 class SessionError : public std::runtime_error {
   public:
@@ -41,6 +163,57 @@ std::string env_text(const char *name) {
 bool env_truthy(const char *name) {
     const std::string value = env_text(name);
     return value == "1" || value == "true" || value == "yes";
+}
+
+bool closes_committed_turn(const nlohmann::json &message) {
+    if (!message.is_object() || message.value("role", "") != "assistant") {
+        return false;
+    }
+    const auto content = message.find("content");
+    if (content == message.end() || !content->is_array()) {
+        return false;
+    }
+    return std::ranges::none_of(*content, [](const nlohmann::json &block) {
+        return block.is_object() && block.value("type", "") == "tool_call";
+    });
+}
+
+void trim_conversation_history(scry::Conversation &conversation, const int token_budget) {
+    auto encoded = conversation.to_json();
+    if (!encoded) {
+        throw SessionError("Could not inspect conversation history: " + encoded.error().message);
+    }
+    auto document = nlohmann::json::parse(encoded->text, nullptr, false);
+    if (document.is_discarded() || !document.contains("messages") ||
+        !document["messages"].is_array()) {
+        throw SessionError("Could not inspect conversation history: invalid conversation JSON");
+    }
+
+    auto &messages = document["messages"];
+    const auto byte_budget = static_cast<std::size_t>(std::max(1, token_budget)) * 4U;
+    bool changed = false;
+    while (!messages.empty() && messages.dump().size() > byte_budget) {
+        std::size_t erase_count = messages.size();
+        for (std::size_t index = 0; index < messages.size(); ++index) {
+            if (closes_committed_turn(messages[index])) {
+                erase_count = index + 1;
+                break;
+            }
+        }
+        messages.erase(messages.begin(),
+                       messages.begin() +
+                           static_cast<nlohmann::json::difference_type>(erase_count));
+        changed = true;
+    }
+    if (!changed) {
+        return;
+    }
+
+    auto compacted = scry::Conversation::from_json(scry::Json{.text = document.dump()});
+    if (!compacted) {
+        throw SessionError("Could not compact conversation history: " + compacted.error().message);
+    }
+    conversation = std::move(*compacted);
 }
 
 } // namespace
@@ -72,9 +245,23 @@ std::optional<EndpointConfig> resolve_endpoint(const std::optional<std::string> 
     return endpoint;
 }
 
+std::vector<ReflectedToolSchema> npc_tool_schemas() {
+    std::vector<ReflectedToolSchema> schemas;
+    schemas.reserve(std::tuple_size_v<decltype(TOOL_BINDINGS)>);
+    for_each_tool_binding([&]<typename Binding>(const Binding &binding) {
+        using Arguments = typename Binding::arguments_type;
+        schemas.push_back(
+            {.name = std::string(binding.name),
+             .description = std::string(binding.description),
+             .input_schema = std::string(scry::reflection::input_schema_v<Arguments>)});
+    });
+    return schemas;
+}
+
 struct NpcSessionManager::Session {
     scry::Harness harness;
     scry::Conversation conversation;
+    std::uint64_t last_used = 0;
 };
 
 NpcSessionManager::NpcSessionManager(CartridgeGame &game, EndpointConfig endpoint)
@@ -84,6 +271,7 @@ NpcSessionManager::~NpcSessionManager() = default;
 
 NpcSessionManager::Session &NpcSessionManager::get_or_create(const std::string &npc_id) {
     if (const auto it = sessions_.find(npc_id); it != sessions_.end()) {
+        it->second->last_used = ++use_sequence_;
         return *it->second;
     }
 
@@ -104,6 +292,8 @@ NpcSessionManager::Session &NpcSessionManager::get_or_create(const std::string &
         .reasoning_mode = endpoint_.disable_reasoning ? scry::ReasoningMode::disabled
                                                       : scry::ReasoningMode::provider_default,
         .timeouts = {.transfer = std::chrono::milliseconds(std::max(1, endpoint_.timeout_ms))},
+        .limits = {.max_pending_turns = 1, .max_tool_arguments_bytes = std::size_t{64} * 1024},
+        .max_tool_rounds = 8,
     });
     if (!created) {
         throw SessionError(created.error().message);
@@ -112,11 +302,10 @@ NpcSessionManager::Session &NpcSessionManager::get_or_create(const std::string &
 
     // Register exactly the tools this NPC's cartridge policy allows; the
     // schema for each comes from the argument aggregate via reflection.
-    const auto dispatch = [this, npc_id](tools::NpcToolCall call) -> scry::Result<ToolAck> {
+    const auto dispatch = [this, npc_id](tools::NpcToolCall call) -> ToolAck {
         auto outcome = game_.submit_npc_tool(npc_id, call);
         if (!outcome) {
-            return std::unexpected(scry::Error{.category = scry::ErrorCategory::tool,
-                                               .message = outcome.error().reason});
+            return ToolAck{.ok = false, .result = {}, .error = outcome.error().reason};
         }
         std::string ack = "ok";
         for (auto &event : *outcome) {
@@ -128,18 +317,7 @@ NpcSessionManager::Session &NpcSessionManager::get_or_create(const std::string &
             }
             turn_events_.push_back(event);
         }
-        return ToolAck{.result = std::move(ack)};
-    };
-
-    const auto add_tool = [&]<typename Args>(const std::string &name, std::type_identity<Args>) {
-        auto status = scry::reflection::add<Args>(
-            harness.tools(),
-            {.name = name, .description = std::string(tools::tool_description(name))},
-            [dispatch](Args args) { return dispatch(tools::NpcToolCall{std::move(args)}); });
-        if (!status) {
-            throw SessionError("Tool registration failed for '" + name +
-                               "': " + status.error().message);
-        }
+        return ToolAck{.ok = true, .result = std::move(ack), .error = {}};
     };
 
     std::vector<std::string> registered;
@@ -148,28 +326,26 @@ NpcSessionManager::Session &NpcSessionManager::get_or_create(const std::string &
             continue;
         }
         registered.push_back(name);
-        if (name == "say") {
-            add_tool(name, std::type_identity<tools::Say>{});
-        } else if (name == "give_item") {
-            add_tool(name, std::type_identity<tools::GiveItem>{});
-        } else if (name == "take_item") {
-            add_tool(name, std::type_identity<tools::TakeItem>{});
-        } else if (name == "update_mood") {
-            add_tool(name, std::type_identity<tools::UpdateMood>{});
-        } else if (name == "update_trust") {
-            add_tool(name, std::type_identity<tools::UpdateTrust>{});
-        } else if (name == "move_self") {
-            add_tool(name, std::type_identity<tools::MoveSelf>{});
-        } else if (name == "reveal_knowledge") {
-            add_tool(name, std::type_identity<tools::RevealKnowledge>{});
-        } else if (name == "remember") {
-            add_tool(name, std::type_identity<tools::Remember>{});
-        } else if (name == "set_flag") {
-            add_tool(name, std::type_identity<tools::SetFlag>{});
-        } else if (name == "inspect_item") {
-            add_tool(name, std::type_identity<tools::InspectItem>{});
+        bool found = false;
+        for_each_tool_binding([&]<typename Binding>(const Binding &binding) {
+            if (binding.name != name) {
+                return;
+            }
+            found = true;
+            using Arguments = typename Binding::arguments_type;
+            auto status = scry::reflection::add<Arguments>(
+                harness.tools(),
+                {.name = std::string(binding.name),
+                 .description = std::string(binding.description)},
+                [dispatch](Arguments args) { return dispatch(std::move(args).into_call()); });
+            if (!status) {
+                throw SessionError("Tool registration failed for '" + name +
+                                   "': " + status.error().message);
+            }
+        });
+        if (!found) {
+            throw SessionError("Unknown tool in validated policy: " + name);
         }
-        // Unknown names were already flagged by cartridge validation.
     }
 
     // Restore the saved conversation when one is staged; otherwise start
@@ -178,9 +354,11 @@ NpcSessionManager::Session &NpcSessionManager::get_or_create(const std::string &
     if (const auto staged = pending_restore_.find(npc_id); staged != pending_restore_.end()) {
         auto restored = scry::Conversation::from_json(scry::Json{.text = staged->second.dump()});
         pending_restore_.erase(staged);
-        if (restored) {
-            conversation = std::move(*restored);
+        if (!restored) {
+            throw SessionError("Saved conversation for '" + npc_id +
+                               "' is invalid: " + restored.error().message);
         }
+        conversation = std::move(*restored);
     }
     if (!conversation) {
         auto fresh = scry::Conversation::create(
@@ -191,35 +369,56 @@ NpcSessionManager::Session &NpcSessionManager::get_or_create(const std::string &
         conversation = std::move(*fresh);
     }
 
-    auto session = std::make_unique<Session>(std::move(harness), std::move(*conversation));
-    auto [inserted, ok] = sessions_.emplace(npc_id, std::move(session));
+    if (sessions_.size() >= MAX_LIVE_NPC_SESSIONS) {
+        const auto victim = std::ranges::min_element(
+            sessions_, {}, [](const auto &entry) { return entry.second->last_used; });
+        auto document = victim->second->conversation.to_json();
+        if (!document) {
+            throw SessionError("Could not suspend NPC session: " + document.error().message);
+        }
+        auto parsed = nlohmann::json::parse(document->text, nullptr, false);
+        if (parsed.is_discarded()) {
+            throw SessionError("Could not suspend NPC session: invalid conversation JSON");
+        }
+        pending_restore_[victim->first] = std::move(parsed);
+        sessions_.erase(victim);
+    }
+
+    auto session =
+        std::make_unique<Session>(std::move(harness), std::move(*conversation), ++use_sequence_);
+    auto inserted = sessions_.emplace(npc_id, std::move(session)).first;
     return *inserted->second;
 }
 
-GameEvents NpcSessionManager::run_turn(const std::string &npc_id, const std::string &player_text) {
+NpcTurnResult NpcSessionManager::run_turn(const std::string &npc_id,
+                                          const std::string &player_text) {
     turn_events_.clear();
     turn_had_dialogue_ = false;
-
-    const auto degrade = [](const std::string &message) -> GameEvents {
-        return {{EventKind::warning, "Inference failed (" + message +
-                                         "). The conversation falters, but the world remains."}};
-    };
 
     Session *session = nullptr;
     try {
         session = &get_or_create(npc_id);
+        trim_conversation_history(session->conversation, game_.world().config.max_history_tokens);
     } catch (const std::exception &exc) {
-        return degrade(exc.what());
+        return std::unexpected(NpcTurnFailure{.message = exc.what(), .world_rolled_back = true});
     }
 
     const std::string message = build_npc_turn_message(game_.world(), npc_id, player_text);
+    auto checkpoint = game_.checkpoint_runtime();
     auto result = session->harness.send_and_wait(session->conversation, message);
 
     GameEvents events = std::move(turn_events_);
     turn_events_.clear();
     if (!result) {
-        events.push_back(degrade(result.error().message).front());
-        return events;
+        events.clear();
+        auto restored = game_.restore_runtime(std::move(checkpoint));
+        std::string message_text = result.error().message;
+        const bool rolled_back = restored.has_value();
+        if (!rolled_back) {
+            message_text += "; rollback failed: " + restored.error().reason;
+        }
+        return std::unexpected(
+            NpcTurnFailure{.message = std::move(message_text), .world_rolled_back = rolled_back});
     }
 
     const std::string final_text = strip_copy(result->text);
@@ -232,6 +431,9 @@ GameEvents NpcSessionManager::run_turn(const std::string &npc_id, const std::str
 
 nlohmann::json NpcSessionManager::snapshot_conversations() {
     nlohmann::json snapshot = nlohmann::json::object();
+    for (const auto &[npc_id, document] : pending_restore_) {
+        snapshot[npc_id] = document;
+    }
     for (auto &[npc_id, session] : sessions_) {
         auto doc = session->conversation.to_json();
         if (!doc) {

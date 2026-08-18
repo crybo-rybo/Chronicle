@@ -53,6 +53,25 @@ TEST_F(StubRuntimeTest, SaylessNpcFallsBackToPlainDialogue) {
     EXPECT_NE(events.front().text.find(STUB_REPLY), std::string::npos);
 }
 
+TEST_F(StubRuntimeTest, ProviderFailureRollsBackAndUsesDeterministicDialogue) {
+    EndpointConfig unavailable{
+        .base_url = "http://127.0.0.1:1/v1",
+        .model = "unavailable",
+        .timeout_ms = 100,
+    };
+    ConsoleRuntime runtime(game_, unavailable);
+    (void)runtime.handle_line("talk keeper");
+    const nlohmann::json before = game_.world();
+
+    const auto events = runtime.handle_line("hello?");
+    ASSERT_GE(events.size(), 2U);
+    EXPECT_EQ(events[0].kind, EventKind::warning);
+    EXPECT_NE(events[0].text.find("world remained unchanged"), std::string::npos);
+    EXPECT_EQ(events[1].kind, EventKind::dialogue);
+    EXPECT_NE(events[1].text.find(STUB_REPLY), std::string::npos);
+    EXPECT_EQ(nlohmann::json(game_.world()), before);
+}
+
 TEST_F(StubRuntimeTest, EmptyLineProducesNothing) {
     EXPECT_TRUE(runtime_.handle_line("   ").empty());
 }

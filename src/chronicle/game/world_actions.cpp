@@ -20,8 +20,8 @@ bool nonblank(const std::string &text) {
 
 } // namespace
 
-ActionGate::ActionGate(WorldState &world, GamePhase &phase,
-                       std::optional<std::string> &active_npc, bool &significant)
+ActionGate::ActionGate(WorldState &world, GamePhase &phase, std::optional<std::string> &active_npc,
+                       bool &significant)
     : world_(world), phase_(phase), active_npc_(active_npc), significant_(significant) {}
 
 ActionOutcome ActionGate::submit(WorldAction action) {
@@ -77,10 +77,10 @@ ActionOutcome ActionGate::submit(WorldAction action) {
                 !location->second.exits.contains(unlock.direction)) {
                 return reject("Unknown exit");
             }
-            const auto removed = std::erase_if(location->second.locked_exits,
-                                               [&](const LockedExitEntry &entry) {
-                                                   return entry.direction == unlock.direction;
-                                               });
+            const auto removed =
+                std::erase_if(location->second.locked_exits, [&](const LockedExitEntry &entry) {
+                    return entry.direction == unlock.direction;
+                });
             if (removed == 0) {
                 return reject("Exit is not locked");
             }
@@ -121,8 +121,7 @@ ActionOutcome ActionGate::submit(WorldAction action) {
 
         ActionOutcome operator()(const AdvanceClock &advance) const {
             if (advance.turns < 0 ||
-                gate.world_.clock.turns_elapsed >
-                    std::numeric_limits<int>::max() - advance.turns) {
+                gate.world_.clock.turns_elapsed > std::numeric_limits<int>::max() - advance.turns) {
                 return reject("Invalid clock advance");
             }
             gate.world_.clock.turns_elapsed += advance.turns;
@@ -141,7 +140,8 @@ ActionOutcome ActionGate::submit(WorldAction action) {
 
         ActionOutcome operator()(const MoveNpc &move) const {
             const auto npc = gate.world_.npcs.find(move.npc_id);
-            if (npc == gate.world_.npcs.end() || !gate.world_.locations.contains(move.destination)) {
+            if (npc == gate.world_.npcs.end() ||
+                !gate.world_.locations.contains(move.destination)) {
                 return reject("Unknown NPC destination");
             }
             npc->second.state.current_location = move.destination;
@@ -226,7 +226,7 @@ ActionOutcome ActionGate::submit(WorldAction action) {
             gate.world_ = std::move(restore.world);
             gate.phase_ = restore.phase;
             gate.active_npc_ = std::move(restore.active_npc);
-            gate.significant_ = false;
+            gate.significant_ = restore.significant;
             return {};
         }
     };

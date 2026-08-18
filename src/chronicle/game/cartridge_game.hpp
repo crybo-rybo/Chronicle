@@ -34,6 +34,14 @@ struct PlayerDispatch {
     std::optional<NpcTurnRequest> npc_turn;
 };
 
+// Complete deterministic runtime checkpoint used to make a model turn atomic.
+struct RuntimeCheckpoint {
+    WorldState world;
+    GamePhase phase = GamePhase::playing;
+    std::optional<std::string> active_npc;
+    bool significant = false;
+};
+
 class CartridgeGame {
   public:
     // Extra payload persisted alongside the world (NPC conversation history).
@@ -59,6 +67,9 @@ class CartridgeGame {
     // The only accepted path for runtime world writes. Public so an optional
     // GameBackend and deterministic tests can submit the same typed actions.
     [[nodiscard]] actions::ActionOutcome submit_world_action(actions::WorldAction action);
+
+    [[nodiscard]] RuntimeCheckpoint checkpoint_runtime() const;
+    [[nodiscard]] actions::ActionOutcome restore_runtime(RuntimeCheckpoint checkpoint);
 
     // NPC authorization boundary: validate policy, then translate the tool to
     // typed world actions handled by the single mutation gate.

@@ -143,7 +143,7 @@ TEST(LlmPlaythrough, ExplicitToolInstructionRevealsKnowledge) {
     EXPECT_TRUE(game.world().revealed_facts.contains("fact_guest_arrived"));
 }
 
-TEST(LlmPlaythrough, GateRejectionDegradesGracefully) {
+TEST(LlmPlaythrough, GateRejectionLeavesWorldUnchanged) {
     SKIP_WITHOUT_MODEL();
     ct::TempDir saves("it_reject");
     CartridgeGame game(ct::minimal_example(), saves.path());
@@ -151,7 +151,7 @@ TEST(LlmPlaythrough, GateRejectionDegradesGracefully) {
 
     (void)runtime.handle_line("talk warden");
     // The warden knows no fact with this id; a compliant model will try the
-    // tool and the gate must reject it as a model-visible error without
+    // tool and the gate must reject it as a model-visible structured result without
     // corrupting the turn or the world.
     const auto events = runtime.handle_line(
         "Use your reveal_knowledge tool with fact id fact_hidden_treasure right now.");

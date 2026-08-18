@@ -181,6 +181,22 @@ TEST_F(GameTest, TimeExpiryEndsGame) {
     EXPECT_NE(events.back().text.find("Time has run out"), std::string::npos);
 }
 
+TEST_F(GameTest, RuntimeCheckpointRestoresWorldPhaseAndPendingClockAdvance) {
+    auto checkpoint = game_.checkpoint_runtime();
+    ASSERT_TRUE(game_.submit_world_action(actions::RelocateItem{
+        .item_id = "old_coin",
+        .destination = ItemPosition{.holder = ItemHolder::player, .id = {}},
+    }));
+    ASSERT_TRUE(game_.submit_world_action(actions::BeginConversation{.npc_id = "keeper"}));
+
+    ASSERT_TRUE(game_.restore_runtime(std::move(checkpoint)));
+    EXPECT_EQ(game_.phase(), GamePhase::playing);
+    EXPECT_FALSE(game_.active_npc_id());
+    EXPECT_TRUE(item_is_at(game_.world(), "old_coin", ItemHolder::location, "hall"));
+    EXPECT_TRUE(game_.after_turn().empty());
+    EXPECT_EQ(game_.world().clock.turns_elapsed, 0);
+}
+
 TEST_F(GameTest, SaveAndLoadRoundTrip) {
     (void)command("take old coin");
     (void)command("talk keeper");

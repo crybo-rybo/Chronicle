@@ -2,19 +2,32 @@
 
 #include <algorithm>
 #include <sstream>
+#include <string_view>
 
 namespace chronicle {
 
 namespace {
 
-int word_count(const std::string &text) {
-    std::istringstream stream(text);
-    std::string word;
-    int count = 0;
-    while (stream >> word) {
-        ++count;
+std::size_t utf8_prefix(const std::string &text, std::size_t bytes) {
+    bytes = std::min(bytes, text.size());
+    while (bytes > 0 && bytes < text.size() &&
+           (static_cast<unsigned char>(text[bytes]) & 0xC0U) == 0x80U) {
+        --bytes;
     }
-    return count;
+    return bytes;
+}
+
+std::string bounded_prompt_text(const std::string &text, const int token_budget) {
+    const auto byte_budget = static_cast<std::size_t>(std::max(1, token_budget)) * 4U;
+    if (text.size() <= byte_budget) {
+        return text;
+    }
+    constexpr std::string_view marker = "\n[truncated]";
+    if (byte_budget <= marker.size()) {
+        return text.substr(0, utf8_prefix(text, byte_budget));
+    }
+    const auto prefix = utf8_prefix(text, byte_budget - marker.size());
+    return text.substr(0, prefix) + std::string(marker);
 }
 
 } // namespace
@@ -46,6 +59,7 @@ std::string build_npc_system_prompt(const WorldState &world, const std::string &
     out << "Rules:\n"
         << "- Stay in character.\n"
         << "- Use tools to act; do not invent facts that are not in your knowledge list.\n"
+        << "- Check each tool result's ok field; when false, use error to choose another action.\n"
         << "- Only reveal secrets when trust is high enough and the secret is authored.\n"
         << "- Prefer the say tool for spoken dialogue.";
     return out.str();
@@ -58,35 +72,23 @@ std::string build_npc_turn_message(const WorldState &world, const std::string &n
     const auto &identity = npc.identity;
     const auto &loc = world.locations.at(state.current_location);
 
-    std::ostringstream out;
-    out << "[Context]\n";
-    out << "Time: " << world.clock.period_name() << " (turn " << world.clock.turns_elapsed << ")\n";
-    out << "Your location: " << loc.name << " — " << loc.base_description << "\n";
-    out << "Mood: " << state.mood << "\n";
-    out << "Trust toward player: " << state.trust_toward_player << "\n";
-    if (!identity.secret.empty() && state.trust_toward_player >= identity.trust_reveal_threshold) {
-        out << "Secret you may reveal carefully: " << identity.secret << "\n";
-    }
+    std::ostringstream context;
+    context << "Time: " << world.clock.period_name() << " (turn " << world.clock.turns_elapsed
+            << ")\n";
+    context << "Your location: " << loc.name << "\n";
+    context << "Mood: " << state.mood << "\n";
+    context << "Trust toward player: " << state.trust_toward_player << "\n";
 
-    out << "Memories:\n";
+    std::ostringstream memory_text;
     auto memories = state.memories;
     std::ranges::stable_sort(memories, [](const MemoryEntry &a, const MemoryEntry &b) {
         return a.importance > b.importance;
     });
-    const int budget = world.config.max_memory_tokens / 4; // rough token proxy
-    int used = 0;
-    bool any_memory = false;
     for (const auto &memory : memories) {
-        const std::string line = "- (" + std::to_string(memory.importance) + ") " + memory.summary;
-        used += word_count(line);
-        if (used > budget) {
-            break;
-        }
-        out << line << "\n";
-        any_memory = true;
+        memory_text << "- (" << memory.importance << ") " << memory.summary << "\n";
     }
-    if (!any_memory) {
-        out << "- (none)\n";
+    if (memories.empty()) {
+        memory_text << "- (none)\n";
     }
 
     std::vector<std::string> visible_npcs;
@@ -95,15 +97,15 @@ std::string build_npc_turn_message(const WorldState &world, const std::string &n
             visible_npcs.push_back(other.identity.name);
         }
     }
-    out << "Also here: ";
+    context << "Also here: ";
     if (visible_npcs.empty()) {
-        out << "no one";
+        context << "no one";
     } else {
         for (std::size_t i = 0; i < visible_npcs.size(); ++i) {
-            out << (i == 0 ? "" : ", ") << visible_npcs[i];
+            context << (i == 0 ? "" : ", ") << visible_npcs[i];
         }
     }
-    out << "\n";
+    context << "\n";
 
     std::vector<std::string> visible_items;
     for (const auto &[iid, position] : world.item_positions) {
@@ -113,25 +115,44 @@ std::string build_npc_turn_message(const WorldState &world, const std::string &n
             visible_items.push_back(item_it->second.name);
         }
     }
-    out << "Visible items: ";
+    context << "Visible items: ";
     if (visible_items.empty()) {
-        out << "none";
+        context << "none";
     } else {
         for (std::size_t i = 0; i < visible_items.size(); ++i) {
-            out << (i == 0 ? "" : ", ") << visible_items[i];
+            context << (i == 0 ? "" : ", ") << visible_items[i];
         }
     }
-    out << "\n\n[Player]\n";
+    context << "\n";
 
-    nlohmann::json inventory_names = nlohmann::json::array();
+    std::vector<std::string> inventory_names;
     for (const auto &iid : items_at(world, ItemHolder::player)) {
         const auto item = world.items.find(iid);
         if (item != world.items.end()) {
             inventory_names.push_back(item->second.name);
         }
     }
-    const nlohmann::json payload{{"player_said", player_text},
-                                 {"player_inventory", inventory_names}};
+    context << "Player carries: ";
+    if (inventory_names.empty()) {
+        context << "nothing";
+    } else {
+        for (std::size_t i = 0; i < inventory_names.size(); ++i) {
+            context << (i == 0 ? "" : ", ") << inventory_names[i];
+        }
+    }
+    context << "\n";
+
+    if (!identity.secret.empty() && state.trust_toward_player >= identity.trust_reveal_threshold) {
+        context << "Secret you may reveal carefully: " << identity.secret << "\n";
+    }
+    context << "Location description: " << loc.base_description << "\n";
+
+    std::ostringstream out;
+    out << "[Context]\n"
+        << bounded_prompt_text(context.str(), world.config.max_world_tokens) << "\nMemories:\n"
+        << bounded_prompt_text(memory_text.str(), world.config.max_memory_tokens) << "\n[Player]\n";
+    const nlohmann::json payload{
+        {"player_said", bounded_prompt_text(player_text, world.config.max_history_tokens)}};
     out << payload.dump();
     return out.str();
 }

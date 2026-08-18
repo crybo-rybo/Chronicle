@@ -1,17 +1,20 @@
 // Per-NPC scry sessions.
 //
 // Each NPC that the player talks to gets its own scry::Harness (registering
-// exactly the tools its cartridge policy allows, schemas derived from the
-// npc_tools.hpp aggregates via C++26 reflection) and its own persistent
-// scry::Conversation. Tool handlers run on this thread inside the harness
-// turn and route through the game's action gate; a gate rejection is returned
-// to the model as a tool error it can react to.
+// exactly the tools its cartridge policy allows, with schemas derived from
+// annotated adapter aggregates via C++26 reflection) and its own persistent
+// scry::Conversation. Tool handlers run on this thread inside the harness turn
+// and route through the game's action gate. The entire world turn commits only
+// if Scry commits the matching conversation turn.
 #pragma once
 
+#include <cstdint>
+#include <expected>
 #include <map>
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "chronicle/cartridge/models.hpp"
 #include "chronicle/game/cartridge_game.hpp"
@@ -40,6 +43,22 @@ struct EndpointConfig {
 resolve_endpoint(const std::optional<std::string> &base_url_flag,
                  const std::optional<std::string> &model_flag, const ConfigData *cartridge_config);
 
+struct ReflectedToolSchema {
+    std::string name;
+    std::string description;
+    std::string input_schema;
+};
+
+// Exposes the actual reflected schemas for contract tests and diagnostics.
+[[nodiscard]] std::vector<ReflectedToolSchema> npc_tool_schemas();
+
+struct NpcTurnFailure {
+    std::string message;
+    bool world_rolled_back = true;
+};
+
+using NpcTurnResult = std::expected<GameEvents, NpcTurnFailure>;
+
 class NpcSessionManager {
   public:
     NpcSessionManager(CartridgeGame &game, EndpointConfig endpoint);
@@ -48,10 +67,10 @@ class NpcSessionManager {
     NpcSessionManager(const NpcSessionManager &) = delete;
     NpcSessionManager &operator=(const NpcSessionManager &) = delete;
 
-    // Run one blocking conversation turn with the active NPC. World changes
-    // applied by tool calls are returned as events; provider failures come
-    // back as a warning event, never an exception.
-    [[nodiscard]] GameEvents run_turn(const std::string &npc_id, const std::string &player_text);
+    // Run one blocking conversation turn with the active NPC. Provider failure
+    // rolls back every tool mutation and returns an error so the console can
+    // provide deterministic stub dialogue.
+    [[nodiscard]] NpcTurnResult run_turn(const std::string &npc_id, const std::string &player_text);
 
     // npc_id -> serialized scry conversation document, for save files.
     [[nodiscard]] nlohmann::json snapshot_conversations();
@@ -73,6 +92,7 @@ class NpcSessionManager {
     // Buffered gate output for the in-flight turn (filled by tool handlers).
     GameEvents turn_events_;
     bool turn_had_dialogue_ = false;
+    std::uint64_t use_sequence_ = 0;
 };
 
 } // namespace chronicle

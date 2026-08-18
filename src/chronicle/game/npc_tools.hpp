@@ -1,8 +1,6 @@
-// The NPC tool palette. These plain aggregates are the single source of truth
-// for tool arguments: the game gate consumes them directly, and the LLM layer
-// derives each tool's JSON schema from them via C++26 reflection (scry).
-// Member names and defaults are therefore part of the cartridge-facing
-// contract — see docs/console-api.md.
+// Typed domain calls accepted by Chronicle's NPC policy gate. The LLM adapter
+// has reflected argument aggregates and converts them into these dependency-free
+// domain values at the boundary.
 #pragma once
 
 #include <optional>
@@ -52,7 +50,7 @@ struct Remember {
 
 struct SetFlag {
     std::string flag_id;
-    bool value = true;
+    bool value;
 };
 
 struct InspectItem {
@@ -64,9 +62,6 @@ using NpcToolCall = std::variant<Say, GiveItem, TakeItem, UpdateMood, UpdateTrus
 
 // Registration name of the tool a call belongs to (e.g. "give_item").
 [[nodiscard]] std::string_view tool_name(const NpcToolCall &call);
-
-// Model-facing description for a tool name; empty view when unknown.
-[[nodiscard]] std::string_view tool_description(std::string_view name);
 
 inline std::string to_string(const Mood mood) {
     switch (mood) {
@@ -122,40 +117,6 @@ inline std::string_view tool_name(const NpcToolCall &call) {
         std::string_view operator()(const InspectItem &) const { return "inspect_item"; }
     };
     return std::visit(Visitor{}, call);
-}
-
-inline std::string_view tool_description(const std::string_view name) {
-    if (name == "say") {
-        return "Speak aloud to the player.";
-    }
-    if (name == "give_item") {
-        return "Give an item you hold to the player.";
-    }
-    if (name == "take_item") {
-        return "Take an item from the player.";
-    }
-    if (name == "update_mood") {
-        return "Change your mood.";
-    }
-    if (name == "update_trust") {
-        return "Adjust trust toward the player by a signed delta.";
-    }
-    if (name == "move_self") {
-        return "Move to another allowed location.";
-    }
-    if (name == "reveal_knowledge") {
-        return "Reveal an authored fact you know.";
-    }
-    if (name == "remember") {
-        return "Store a short memory about this conversation.";
-    }
-    if (name == "set_flag") {
-        return "Set an authored narrative flag.";
-    }
-    if (name == "inspect_item") {
-        return "Inspect an item and learn its description (no world change).";
-    }
-    return {};
 }
 
 } // namespace chronicle::tools

@@ -76,10 +76,23 @@ TEST(Prompt, MemoriesSortedByImportanceAndBudgeted) {
     EXPECT_LT(crucial, minor);
 
     // A tiny budget keeps the important memory and drops the minor one.
-    world.config.max_memory_tokens = 20; // word budget of 5 fits only the first line
+    world.config.max_memory_tokens = 10; // Approx. 40 bytes fits only the first line.
     const std::string tight = build_npc_turn_message(world, "keeper", "hi");
     EXPECT_NE(tight.find("crucial secret meeting"), std::string::npos);
     EXPECT_EQ(tight.find("minor detail"), std::string::npos);
+}
+
+TEST(Prompt, WorldAndPlayerTextBudgetsAreEnforced) {
+    WorldState world = ct::make_test_world();
+    world.locations.at("hall").base_description = std::string(500, 'w');
+    world.config.max_world_tokens = 20;
+    world.config.max_history_tokens = 8;
+
+    const std::string message = build_npc_turn_message(world, "keeper", std::string(500, 'p'));
+    EXPECT_NE(message.find("[truncated]"), std::string::npos);
+    EXPECT_EQ(message.find(std::string(100, 'w')), std::string::npos);
+    EXPECT_EQ(message.find(std::string(100, 'p')), std::string::npos);
+    EXPECT_NE(message.find("[Player]"), std::string::npos);
 }
 
 } // namespace
