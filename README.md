@@ -1,49 +1,73 @@
 # Chronicle
 
 Chronicle is an offline console for LLM-driven NPC mystery and social-sim text
-adventures. Creators author JSON **cartridges**; Chronicle supplies the runtime,
-local OpenAI-compatible LLM integration, validation, prompt assembly, save/load,
-and a strict tool/action gate.
+adventures, written in C++26. Creators author JSON **cartridges**; Chronicle
+supplies the runtime, local LLM integration via
+[scry](https://github.com/crybo-rybo/scry), validation, prompt assembly,
+save/load, and a strict tool/action gate. NPC tool schemas are derived from
+plain C++ structs at compile time with C++26 reflection (P2996).
 
-The stable public contract is the CLI plus the JSON cartridge schema — not
-Python internals.
+The stable public contract is the CLI plus the JSON cartridge schema — not C++
+internals.
 
-## Install
+## Requirements
+
+- **GCC 16+** (the reflection component needs `-std=c++26 -freflection`)
+- CMake ≥ 3.28, libcurl development headers
+- Linux or macOS (macOS via Homebrew GCC 16)
+
+Dependencies (scry, nlohmann/json, miniz, GoogleTest) are fetched at pinned
+commits or content hashes by CMake.
+
+## Build
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e ".[dev]"
+cmake --preset dev
+cmake --build --preset dev -j
 ```
 
-Requires Python 3.12+.
+Or, with [`just`](https://github.com/casey/just): `just build`.
+
+Install a release build (the executable, bundled examples, and documentation):
+
+```bash
+cmake --preset release
+cmake --build --preset release -j
+cmake --install build-release --prefix /your/prefix
+```
 
 ## Run
 
 ```bash
-chronicle --scenario examples/minimal
-chronicle validate --scenario examples/minimal
-chronicle inspect --scenario examples/minimal
+./build/src/chronicle --scenario examples/minimal
+./build/src/chronicle validate --scenario examples/minimal
+./build/src/chronicle inspect --scenario examples/minimal
 ```
 
 Without a model endpoint, NPC dialogue uses a deterministic stub so mechanics
 remain playable. Point Chronicle at a local OpenAI-compatible server:
 
 ```bash
-CHRONICLE_BASE_URL=http://localhost:11434/v1 CHRONICLE_MODEL=llama3.2 \
-  chronicle --scenario examples/minimal
+CHRONICLE_BASE_URL=http://localhost:11434/v1 CHRONICLE_MODEL=qwen3:8b \
+  ./build/src/chronicle --scenario examples/minimal
 ```
+
+Environment variables: `CHRONICLE_BASE_URL`, `CHRONICLE_MODEL`,
+`CHRONICLE_API_KEY` (or `OPENAI_API_KEY`), `CHRONICLE_DIALECT=anthropic` for
+the Anthropic Messages API, and `CHRONICLE_DISABLE_REASONING=1` to request
+`reasoning_effort: "none"` from endpoints that support it (recommended for
+qwen3-class models).
 
 Harness smoke demo (no cartridge):
 
 ```bash
-chronicle --tiny
+./build/src/chronicle --tiny
 ```
 
 ## Cartridges
 
-A cartridge is a directory with `scenario.json` plus config, world, NPCs, facts,
-flags, and events. See `examples/minimal` and `examples/broken_wheel`.
+A cartridge is a directory with `scenario.json` plus config, world, NPCs,
+facts, flags, and events. See `examples/minimal` and `examples/broken_wheel`.
 
 Docs:
 
@@ -55,29 +79,30 @@ Docs:
 ## Library commands
 
 ```bash
-chronicle install examples/minimal
-chronicle list
-chronicle run minimal
-chronicle pack --scenario examples/minimal --output /tmp/minimal.chronicle
+./build/src/chronicle install examples/minimal
+./build/src/chronicle list
+./build/src/chronicle run minimal
+./build/src/chronicle pack --scenario examples/minimal --output /tmp/minimal.chronicle
 ```
 
 ## Testing
 
 ```bash
-./scripts/ci.sh            # full local CI (lint + coverage + validate)
-./scripts/test.sh          # unit tests only
-./scripts/integration.sh   # live Ollama playthroughs
+just ci            # format + warning-clean build + tests + example validation
+just test          # unit tests only (no model required)
+just integration   # live Ollama playthrough tests
 ```
 
-`scripts/ci.sh` is the same checklist GitHub Actions runs. Integration tests are
-optional and pick a local model automatically (prefer `ministral-3:3b`, then
-`qwen3:8b` on ~18GB Apple Silicon). Override with:
+Without `just`: `ctest --preset dev` and `ctest --preset integration`.
+
+Integration tests are optional; they auto-detect a local Ollama server and
+prefer `qwen3:8b`, then `qwen3.5:9b`, then `lfm2.5:8b`. Override with:
 
 ```bash
-CHRONICLE_MODEL=qwen3:8b ./scripts/integration.sh
+CHRONICLE_MODEL=qwen3.5:9b just integration
 ```
 
 ## Design in one line
 
-LLM proposes; console decides. All world changes flow through a single validated
-action gate. Cartridges are data, not trusted code.
+LLM proposes; console decides. Every runtime world change flows through a single
+validated action gate. Cartridges are data, not trusted code.

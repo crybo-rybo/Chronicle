@@ -4,35 +4,57 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   ci:
-    name: lint-test-coverage (${{ matrix.os }}, py${{ matrix.python-version }})
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-        python-version: ["3.12", "3.13"]
-    runs-on: ${{ matrix.os }}
+    name: build-test (ubuntu, gcc-16)
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
+    env:
+      CC: gcc-16
+      CXX: g++-16
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-
-      - name: Run CI scripts
+      - name: Install toolchain
         run: |
-          chmod +x scripts/*.sh
-          ./scripts/ci.sh
+          sudo apt-get update
+          sudo apt-get install -y clang-format g++-16 libcurl4-openssl-dev
 
-      - name: Upload coverage XML
-        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-xml
-          path: coverage.xml
-          if-no-files-found: warn
+      - name: Formatting
+        run: |
+          clang-format --dry-run --Werror src/main.cpp src/chronicle/*.hpp src/chronicle/*.cpp \
+            src/chronicle/*/*.hpp src/chronicle/*/*.cpp tests/*.hpp tests/*.cpp \
+            tests/integration/*.cpp
+
+      - name: Configure
+        run: cmake --preset linux-ci
+
+      - name: Build
+        run: cmake --build --preset linux-ci -j "$(nproc)"
+
+      - name: Unit tests
+        run: ctest --preset linux-ci
+
+      - name: Validate bundled examples
+        run: |
+          ./build-linux-ci/src/chronicle validate --scenario examples/minimal
+          ./build-linux-ci/src/chronicle validate --scenario examples/broken_wheel
+          ./build-linux-ci/src/chronicle inspect --scenario examples/minimal > /dev/null
+
+      - name: Release build and relocatable install smoke
+        run: |
+          cmake --preset release
+          cmake --build --preset release -j "$(nproc)"
+          cmake --install build-release --prefix "$RUNNER_TEMP/chronicle"
+          "$RUNNER_TEMP/chronicle/bin/chronicle" --version
+          cd "$RUNNER_TEMP"
+          printf 'quit\n' | "$RUNNER_TEMP/chronicle/bin/chronicle" > /dev/null

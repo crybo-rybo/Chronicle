@@ -7,7 +7,6 @@
   "max_memory_tokens": 800,
   "max_world_tokens": 400,
   "max_history_tokens": 600,
-  "save_directory": "",
   "use_tui": false,
   "use_color": true,
   "mutation_narration_templates": {

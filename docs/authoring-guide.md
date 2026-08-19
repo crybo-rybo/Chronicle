@@ -15,13 +15,8 @@
   model to invent durable lore.
 - Use `tool_policy` to tightly scope what each NPC may touch.
 - Prefer scripted `events.json` for endings and irreversible beats.
-- Leave `llm_*` fields empty in shared cartridges; operators supply endpoints.
-
-## Custom Python games
-
-Implement the `GameBackend` protocol in `chronicle.game.protocol` and pass an
-instance to `ConsoleRuntime`. The TinyRoom demo (`chronicle --tiny`) is the
-smallest example.
+- Model endpoints, credentials, and save locations are operator settings and are not cartridge
+  fields.
 
 ## Local models
 

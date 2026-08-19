@@ -15,8 +15,8 @@ listed here.
 | `use` | `<item> on/with <target>` | Use an item (including unlock targets) |
 | `talk` | `<npc>` | Begin a conversation |
 | `inventory` | — | List carried items |
-| `save` | `[slot]` | Save (default slot 1) |
-| `load` | `[slot]` | Load (default slot 1) |
+| `save` | `[slot]` | Save to slot 1–99 (default 1) |
+| `load` | `[slot]` | Load from slot 1–99 (default 1) |
 | `help` | — | Show help |
 | `quit` | — | Exit |
 
@@ -25,6 +25,16 @@ In conversation, free text goes to the active NPC. Hard commands still available
 (`bye`, `goodbye`, `leave`, `exit conversation`).
 
 Verb aliases may be defined in `config.json`.
+
+## Save Integrity
+
+Save files are versioned and bound to the exact cartridge id and content
+version. They contain only mutable runtime state; authored facts, NPC identities,
+tool policies, event definitions, and prompts are always reconstructed from the
+validated cartridge. Writes use atomic replacement, reads are size-bounded, and
+the complete world plus all Scry conversation documents are validated before a
+load commits. A failed world or conversation restore leaves the current session
+unchanged.
 
 ## NPC Tool Palette
 
@@ -43,7 +53,14 @@ Verb aliases may be defined in `config.json`.
 
 Moods: `fearful`, `friendly`, `grieving`, `hostile`, `neutral`, `suspicious`.
 
-Per-NPC `tool_policy` restricts tools and scoped IDs.
+Per-NPC `tool_policy` restricts tools and scoped IDs. Only allowed tools are
+exposed to the model at all; each conversation turn is an agentic loop of up
+to 8 tool rounds, and a rejected tool call is returned to the model as an
+explicit structured result it can react to (the player sees no rejection).
+Tool arguments are strictly validated against generated JSON schemas — unknown
+fields, wrong types, and out-of-vocabulary moods are rejected before the gate
+runs. A provider failure rolls back the whole tool turn before deterministic
+stub dialogue is shown.
 
 ## Event Conditions (AND)
 

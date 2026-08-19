@@ -6,7 +6,6 @@
       "base_description": "A dimly lit tavern with creaking floorboards and the smell of stale ale. A cracked wagon wheel hangs above the bar as a sign.",
       "exits": { "north": "market_square" },
       "items": ["crumpled_note"],
-      "npcs": [],
       "locked_exits": []
     },
     "market_square": {
@@ -14,7 +13,6 @@
       "base_description": "A wide cobblestone square surrounded by merchant stalls and trade offices. The air buzzes with haggling voices.",
       "exits": { "south": "tavern" },
       "items": [],
-      "npcs": [],
       "locked_exits": []
     }
   },
