@@ -1,7 +1,7 @@
 // Default cartridge-backed mystery/social-sim game.
 //
 // Player commands, scripted events, persistence restores, and model tools all
-// translate into typed world actions applied by one mutation gate.
+// translate into typed world actions applied by one action gate.
 #pragma once
 
 #include <expected>
@@ -64,15 +64,15 @@ class CartridgeGame {
     [[nodiscard]] GameEvents bootstrap();
     [[nodiscard]] PlayerDispatch dispatch_player(const std::string &text);
 
-    // The only accepted path for runtime world writes. Public so an optional
-    // GameBackend and deterministic tests can submit the same typed actions.
+    // The only accepted path for runtime world writes. Public so the LLM
+    // runtime and deterministic tests can submit the same typed actions.
     [[nodiscard]] actions::ActionOutcome submit_world_action(actions::WorldAction action);
 
     [[nodiscard]] RuntimeCheckpoint checkpoint_runtime() const;
     [[nodiscard]] actions::ActionOutcome restore_runtime(RuntimeCheckpoint checkpoint);
 
     // NPC authorization boundary: validate policy, then translate the tool to
-    // typed world actions handled by the single mutation gate.
+    // typed world actions handled by the single action gate.
     [[nodiscard]] ToolOutcome submit_npc_tool(const std::string &npc_id,
                                               const tools::NpcToolCall &call);
 

@@ -105,6 +105,43 @@ TEST(CartridgeLoad, UnknownFieldsAreRejected) {
     EXPECT_THROW((void)load_package(dir.path()), CartridgeError);
 }
 
+TEST(CartridgeLoad, LegacyConfigFieldsAreMappedOrIgnored) {
+    using nlohmann::json;
+    ct::TempDir dir("legacyconfig");
+    ct::write_package(dir.path(),
+                      {{"config",
+                        {{"use_tui", true},
+                         {"use_color", false},
+                         {"mutation_narration_templates",
+                          {{"give_item_to_player", "{npc} slides you the {item}."}}}}}});
+    const WorldState world = load_package(dir.path());
+    EXPECT_EQ(world.config.action_narration_templates.at("give_item"),
+              "{npc} slides you the {item}.");
+    const json dumped = world.config;
+    EXPECT_FALSE(dumped.contains("use_tui"));
+    EXPECT_FALSE(dumped.contains("use_color"));
+    EXPECT_FALSE(dumped.contains("mutation_narration_templates"));
+    EXPECT_EQ(dumped.at("action_narration_templates").at("give_item"),
+              "{npc} slides you the {item}.");
+}
+
+TEST(CartridgeLoad, CanonicalNarrationTemplatesOverlayLegacyKeys) {
+    ct::TempDir dir("narrationoverlay");
+    ct::write_package(dir.path(),
+                      {{"config",
+                        {{"mutation_narration_templates", {{"give_item_to_player", "legacy"}}},
+                         {"action_narration_templates", {{"give_item", "canonical"}}}}}});
+    const WorldState world = load_package(dir.path());
+    EXPECT_EQ(world.config.action_narration_templates.at("give_item"), "canonical");
+}
+
+TEST(CartridgeLoad, UnknownNarrationTemplateIsRejected) {
+    ct::TempDir dir("badnarration");
+    ct::write_package(dir.path(),
+                      {{"config", {{"action_narration_templates", {{"explode", "boom"}}}}}});
+    EXPECT_THROW((void)load_package(dir.path()), CartridgeError);
+}
+
 TEST(CartridgeLoad, CartridgeCannotConfigureNetworkOrCredentials) {
     ct::TempDir dir("networkauthority");
     ct::write_package(

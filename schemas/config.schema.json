@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://chronicle.dev/schemas/config.schema.json",
+  "title": "Chronicle Cartridge Config",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "temperature": { "type": "number", "minimum": 0, "maximum": 2 },
+    "max_response_tokens": { "type": "integer", "minimum": 1, "maximum": 16384 },
+    "inference_timeout_ms": { "type": "integer", "minimum": 100, "maximum": 600000 },
+    "turns_per_period": { "type": "integer", "minimum": 1, "maximum": 1000 },
+    "total_periods": { "type": "integer", "minimum": 1, "maximum": 1000 },
+    "max_memory_tokens": { "type": "integer", "minimum": 1, "maximum": 1000000 },
+    "max_world_tokens": { "type": "integer", "minimum": 1, "maximum": 1000000 },
+    "max_history_tokens": { "type": "integer", "minimum": 1, "maximum": 1000000 },
+    "verb_aliases": {
+      "type": "object",
+      "additionalProperties": { "type": "string", "minLength": 1 }
+    },
+    "action_narration_templates": { "$ref": "#/$defs/narrationTemplates" },
+    "mutation_narration_templates": {
+      "$ref": "#/$defs/narrationTemplates",
+      "deprecated": true,
+      "description": "Legacy alias for action_narration_templates. Still loaded."
+    },
+    "use_tui": {
+      "type": "boolean",
+      "deprecated": true,
+      "description": "Ignored. Chronicle has no TUI in v2."
+    },
+    "use_color": {
+      "type": "boolean",
+      "deprecated": true,
+      "description": "Ignored. The terminal renderer does not use this flag."
+    }
+  },
+  "$defs": {
+    "narrationKey": {
+      "type": "string",
+      "enum": [
+        "give_item",
+        "take_item",
+        "update_mood",
+        "move_self",
+        "reveal_knowledge",
+        "update_trust",
+        "remember",
+        "set_flag",
+        "give_item_to_player",
+        "take_item_from_player",
+        "update_npc_mood",
+        "move_npc",
+        "update_npc_trust",
+        "add_memory"
+      ]
+    },
+    "narrationTemplates": {
+      "type": "object",
+      "additionalProperties": { "type": "string" },
+      "propertyNames": { "$ref": "#/$defs/narrationKey" }
+    }
+  }
+}

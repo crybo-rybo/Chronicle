@@ -229,7 +229,7 @@ TEST_F(GateTest, SetFlagChecksPolicyAndApplies) {
     EXPECT_TRUE(game_.world().flags.at("gate_seen"));
 }
 
-TEST_F(GateTest, InspectItemReadsWithoutMutation) {
+TEST_F(GateTest, InspectItemReadsWithoutWorldWrite) {
     const auto outcome = game_.submit_npc_tool("keeper", tools::InspectItem{.item_id = "old_coin"});
     ASSERT_TRUE(outcome.has_value());
     ASSERT_EQ(outcome->size(), 1u);
@@ -240,7 +240,7 @@ TEST_F(GateTest, InspectItemReadsWithoutMutation) {
 
 TEST_F(GateTest, CustomNarrationTemplateWins) {
     WorldState world = ct::make_test_world();
-    world.config.mutation_narration_templates["give_item_to_player"] =
+    world.config.action_narration_templates["give_item"] =
         "{npc} presses the {item} into your hands.";
     CartridgeGame game(std::move(world), saves_.path());
     const auto outcome = game.submit_npc_tool("keeper", tools::GiveItem{.item_id = "keepsake"});
@@ -250,7 +250,7 @@ TEST_F(GateTest, CustomNarrationTemplateWins) {
 
 TEST_F(GateTest, EmptyNarrationTemplateSuppressesEvent) {
     WorldState world = ct::make_test_world();
-    world.config.mutation_narration_templates["update_npc_mood"] = "";
+    world.config.action_narration_templates["update_mood"] = "";
     CartridgeGame game(std::move(world), saves_.path());
     const auto outcome =
         game.submit_npc_tool("keeper", tools::UpdateMood{.mood = tools::Mood::friendly});

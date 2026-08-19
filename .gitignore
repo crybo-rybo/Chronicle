@@ -9,6 +9,7 @@ compile_commands.json
 
 # Local runtime
 saves/
+# Local model blobs (Chronicle no longer loads GGUF in-process)
 *.gguf
 .DS_Store
 *.swp
@@ -28,3 +29,10 @@ docs/superpowers/
 # Local AI artifacts
 .claude/
 GEMINI.md
+
+# Leftover Python-era local caches (pre-C++26 rewrite)
+.venv/
+.pytest_cache/
+.ruff_cache/
+__pycache__/
+*.pyc

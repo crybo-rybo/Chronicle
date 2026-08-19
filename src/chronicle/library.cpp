@@ -45,7 +45,7 @@ std::optional<fs::path> executable_path() {
     return std::nullopt;
 }
 
-std::optional<fs::path> installed_minimal_scenario() {
+std::optional<fs::path> installed_minimal_example() {
     const auto executable = executable_path();
     if (!executable) {
         return std::nullopt;
@@ -423,12 +423,10 @@ fs::path resolve_scenario(const std::optional<std::string> &scenario,
         }
         throw LibraryError("Scenario not found: " + *scenario);
     }
-    for (const auto *candidate : {"examples/minimal", "examples/minimal_scenario"}) {
-        if (fs::is_directory(candidate)) {
-            return fs::weakly_canonical(candidate);
-        }
+    if (fs::is_directory("examples/minimal")) {
+        return fs::weakly_canonical("examples/minimal");
     }
-    if (const auto installed = installed_minimal_scenario()) {
+    if (const auto installed = installed_minimal_example()) {
         return *installed;
     }
     throw LibraryError("No scenario specified and no examples/minimal found");

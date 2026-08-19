@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://chronicle.dev/schemas/events.schema.json",
+  "title": "Chronicle Cartridge Events",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "events": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/event" }
+    }
+  },
+  "$defs": {
+    "conditionType": {
+      "type": "string",
+      "enum": [
+        "clock_is",
+        "player_at",
+        "flag_set",
+        "npc_trust_ge",
+        "npc_at",
+        "item_in_player_inv",
+        "turn_ge"
+      ]
+    },
+    "actionType": {
+      "type": "string",
+      "enum": ["move_npc", "set_flag", "spawn_item", "narrate", "end_game"]
+    },
+    "condition": {
+      "type": "object",
+      "required": ["type"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "$ref": "#/$defs/conditionType" },
+        "args": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "action": {
+      "type": "object",
+      "required": ["type"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "$ref": "#/$defs/actionType" },
+        "params": { "type": "object" }
+      }
+    },
+    "event": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "conditions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/condition" }
+        },
+        "actions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/action" }
+        },
+        "once": { "type": "boolean" },
+        "fired": { "type": "boolean" }
+      }
+    }
+  }
+}

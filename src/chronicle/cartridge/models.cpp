@@ -50,16 +50,60 @@ const std::vector<std::string> &period_names() {
 
 std::map<std::string, std::string> default_narration_templates() {
     return {
-        {"give_item_to_player", "{npc} hands you the {item}."},
-        {"take_item_from_player", "{npc} takes the {item}."},
-        {"update_npc_mood", "{npc}'s expression shifts - they seem {mood} now."},
-        {"move_npc", "{npc} excuses themselves and leaves."},
+        {"give_item", "{npc} hands you the {item}."},
+        {"take_item", "{npc} takes the {item}."},
+        {"update_mood", "{npc}'s expression shifts - they seem {mood} now."},
+        {"move_self", "{npc} excuses themselves and leaves."},
         {"reveal_knowledge", ""},
-        {"update_npc_trust", ""},
-        {"add_memory", ""},
+        {"update_trust", ""},
+        {"remember", ""},
         {"set_flag", ""},
     };
 }
+
+namespace {
+
+std::string canonical_narration_key(const std::string &key) {
+    if (key == "give_item_to_player") {
+        return "give_item";
+    }
+    if (key == "take_item_from_player") {
+        return "take_item";
+    }
+    if (key == "update_npc_mood") {
+        return "update_mood";
+    }
+    if (key == "move_npc") {
+        return "move_self";
+    }
+    if (key == "update_npc_trust") {
+        return "update_trust";
+    }
+    if (key == "add_memory") {
+        return "remember";
+    }
+    return key;
+}
+
+void apply_narration_templates(std::map<std::string, std::string> &dest, const json &src) {
+    if (!src.is_object()) {
+        throw std::invalid_argument("config.json: narration templates must be an object");
+    }
+    const auto known = default_narration_templates();
+    for (const auto &[key, value] : src.items()) {
+        if (!value.is_string()) {
+            throw std::invalid_argument("config.json: narration template '" + key +
+                                        "' must be a string");
+        }
+        const std::string canonical = canonical_narration_key(key);
+        if (!known.contains(canonical)) {
+            throw std::invalid_argument("config.json: unknown narration template '" + key + "'");
+        }
+        dest[canonical] = value.get<std::string>();
+    }
+}
+
+} // namespace
 
 std::set<std::string> LocationData::locked_directions() const {
     std::set<std::string> locked;
@@ -151,8 +195,9 @@ void from_json(const json &j, ConfigData &v) {
     reject_unknown(j,
                    {"temperature", "max_response_tokens", "inference_timeout_ms",
                     "turns_per_period", "total_periods", "max_memory_tokens", "max_world_tokens",
-                    "max_history_tokens", "use_tui", "use_color", "verb_aliases",
-                    "mutation_narration_templates"},
+                    "max_history_tokens", "verb_aliases", "action_narration_templates",
+                    // Legacy keys: ignored (use_tui/use_color) or mapped (mutation_*).
+                    "use_tui", "use_color", "mutation_narration_templates"},
                    "config.json");
     opt(j, "temperature", v.temperature);
     opt(j, "max_response_tokens", v.max_response_tokens);
@@ -162,11 +207,14 @@ void from_json(const json &j, ConfigData &v) {
     opt(j, "max_memory_tokens", v.max_memory_tokens);
     opt(j, "max_world_tokens", v.max_world_tokens);
     opt(j, "max_history_tokens", v.max_history_tokens);
-    opt(j, "use_tui", v.use_tui);
-    opt(j, "use_color", v.use_color);
     opt(j, "verb_aliases", v.verb_aliases);
-    v.mutation_narration_templates = default_narration_templates();
-    opt(j, "mutation_narration_templates", v.mutation_narration_templates);
+    v.action_narration_templates = default_narration_templates();
+    if (const auto it = j.find("mutation_narration_templates"); it != j.end() && !it->is_null()) {
+        apply_narration_templates(v.action_narration_templates, *it);
+    }
+    if (const auto it = j.find("action_narration_templates"); it != j.end() && !it->is_null()) {
+        apply_narration_templates(v.action_narration_templates, *it);
+    }
 }
 
 void from_json(const json &j, LockedExitEntry &v) {
@@ -436,10 +484,8 @@ void to_json(json &j, const ConfigData &v) {
              {"max_memory_tokens", v.max_memory_tokens},
              {"max_world_tokens", v.max_world_tokens},
              {"max_history_tokens", v.max_history_tokens},
-             {"use_tui", v.use_tui},
-             {"use_color", v.use_color},
              {"verb_aliases", v.verb_aliases},
-             {"mutation_narration_templates", v.mutation_narration_templates}};
+             {"action_narration_templates", v.action_narration_templates}};
 }
 
 void to_json(json &j, const LockedExitEntry &v) {

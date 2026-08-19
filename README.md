@@ -68,6 +68,8 @@ Harness smoke demo (no cartridge):
 
 A cartridge is a directory with `scenario.json` plus config, world, NPCs,
 facts, flags, and events. See `examples/minimal` and `examples/broken_wheel`.
+[`schemas/`](schemas/) holds JSON Schema for the manifest and each data file.
+Those files are editor aids; `chronicle validate` is the authoritative check.
 
 Docs:
 

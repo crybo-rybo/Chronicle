@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://chronicle.dev/schemas/world.schema.json",
+  "title": "Chronicle Cartridge World",
+  "type": "object",
+  "required": ["start_location", "locations"],
+  "additionalProperties": false,
+  "properties": {
+    "start_location": { "type": "string", "minLength": 1 },
+    "locations": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": { "$ref": "#/$defs/location" }
+    },
+    "items": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/item" }
+    }
+  },
+  "$defs": {
+    "lockedExit": {
+      "oneOf": [
+        { "type": "string", "minLength": 1 },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "direction": { "type": "string", "minLength": 1 },
+            "unlocked": { "type": "boolean" }
+          }
+        }
+      ]
+    },
+    "location": {
+      "type": "object",
+      "required": ["name", "base_description"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "base_description": { "type": "string" },
+        "exits": {
+          "type": "object",
+          "additionalProperties": { "type": "string", "minLength": 1 }
+        },
+        "items": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "locked_exits": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/lockedExit" }
+        }
+      }
+    },
+    "item": {
+      "type": "object",
+      "required": ["name", "description"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "description": { "type": "string" },
+        "takeable": { "type": "boolean" },
+        "key_item": { "type": "boolean" },
+        "hidden": { "type": "boolean" },
+        "unlock_target": { "type": "string" },
+        "properties": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        }
+      }
+    }
+  }
+}

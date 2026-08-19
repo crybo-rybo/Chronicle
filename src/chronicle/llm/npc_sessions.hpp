@@ -68,8 +68,8 @@ class NpcSessionManager {
     NpcSessionManager &operator=(const NpcSessionManager &) = delete;
 
     // Run one blocking conversation turn with the active NPC. Provider failure
-    // rolls back every tool mutation and returns an error so the console can
-    // provide deterministic stub dialogue.
+    // rolls back every tool-side world write and returns an error so the
+    // console can provide deterministic stub dialogue.
     [[nodiscard]] NpcTurnResult run_turn(const std::string &npc_id, const std::string &player_text);
 
     // npc_id -> serialized scry conversation document, for save files.

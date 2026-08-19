@@ -3,7 +3,7 @@
 ## Toolchain
 
 GCC 16 or newer (Chronicle uses C++26 reflection via `-freflection`), CMake
-≥ 3.25, and libcurl development headers. All other dependencies are fetched by
+≥ 3.28, and libcurl development headers. All other dependencies are fetched by
 CMake.
 
 ## Local CI (run before opening a PR)

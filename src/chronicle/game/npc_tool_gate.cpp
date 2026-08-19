@@ -128,8 +128,8 @@ std::optional<std::string> CartridgeGame::validate_npc_tool(const std::string &n
 std::optional<GameEvent>
 CartridgeGame::narrate(const std::string &key,
                        const std::map<std::string, std::string> &args) const {
-    const auto it = world_.config.mutation_narration_templates.find(key);
-    if (it == world_.config.mutation_narration_templates.end() || it->second.empty()) {
+    const auto it = world_.config.action_narration_templates.find(key);
+    if (it == world_.config.action_narration_templates.end() || it->second.empty()) {
         return std::nullopt;
     }
     return GameEvent{EventKind::narration, format_template(it->second, args)};
@@ -164,8 +164,8 @@ ToolOutcome CartridgeGame::apply_npc_tool(const std::string &npc_id, const NpcTo
                 })) {
                 return std::unexpected(std::move(*rejected));
             }
-            const auto event = game.narrate("give_item_to_player",
-                                            {{"npc", npc.identity.name}, {"item", item.name}});
+            const auto event =
+                game.narrate("give_item", {{"npc", npc.identity.name}, {"item", item.name}});
             return event ? GameEvents{*event}
                          : GameEvents{{EventKind::narration,
                                        npc.identity.name + " gives you the " + item.name + "."}};
@@ -178,8 +178,8 @@ ToolOutcome CartridgeGame::apply_npc_tool(const std::string &npc_id, const NpcTo
                 })) {
                 return std::unexpected(std::move(*rejected));
             }
-            const auto event = game.narrate("take_item_from_player",
-                                            {{"npc", npc.identity.name}, {"item", item.name}});
+            const auto event =
+                game.narrate("take_item", {{"npc", npc.identity.name}, {"item", item.name}});
             return event ? GameEvents{*event}
                          : GameEvents{{EventKind::narration,
                                        npc.identity.name + " takes the " + item.name + "."}};
@@ -191,7 +191,7 @@ ToolOutcome CartridgeGame::apply_npc_tool(const std::string &npc_id, const NpcTo
                 return std::unexpected(std::move(*rejected));
             }
             const auto event =
-                game.narrate("update_npc_mood", {{"npc", npc.identity.name}, {"mood", mood}});
+                game.narrate("update_mood", {{"npc", npc.identity.name}, {"mood", mood}});
             return event ? GameEvents{*event} : GameEvents{};
         }
         ToolOutcome operator()(const tools::UpdateTrust &args) const {
@@ -199,7 +199,7 @@ ToolOutcome CartridgeGame::apply_npc_tool(const std::string &npc_id, const NpcTo
                     submit_action(actions::AdjustNpcTrust{.npc_id = npc_id, .delta = args.delta})) {
                 return std::unexpected(std::move(*rejected));
             }
-            const auto event = game.narrate("update_npc_trust", {{"npc", npc.identity.name}});
+            const auto event = game.narrate("update_trust", {{"npc", npc.identity.name}});
             return event ? GameEvents{*event} : GameEvents{};
         }
         ToolOutcome operator()(const tools::MoveSelf &args) const {
@@ -208,8 +208,8 @@ ToolOutcome CartridgeGame::apply_npc_tool(const std::string &npc_id, const NpcTo
                     .npc_id = npc_id, .destination = args.location_id, .significant = true})) {
                 return std::unexpected(std::move(*rejected));
             }
-            const auto event =
-                game.narrate("move_npc", {{"npc", npc.identity.name}, {"location", location_name}});
+            const auto event = game.narrate(
+                "move_self", {{"npc", npc.identity.name}, {"location", location_name}});
             return event ? GameEvents{*event} : GameEvents{};
         }
         ToolOutcome operator()(const tools::RevealKnowledge &args) const {
@@ -239,7 +239,7 @@ ToolOutcome CartridgeGame::apply_npc_tool(const std::string &npc_id, const NpcTo
                 })) {
                 return std::unexpected(std::move(*rejected));
             }
-            const auto event = game.narrate("add_memory", {});
+            const auto event = game.narrate("remember", {});
             return event ? GameEvents{*event} : GameEvents{};
         }
         ToolOutcome operator()(const tools::SetFlag &args) const {

@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://chronicle.dev/schemas/npcs.schema.json",
+  "title": "Chronicle Cartridge NPCs",
+  "type": "object",
+  "required": ["npcs"],
+  "additionalProperties": false,
+  "properties": {
+    "npcs": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/npc" }
+    }
+  },
+  "$defs": {
+    "mood": {
+      "type": "string",
+      "enum": ["fearful", "friendly", "grieving", "hostile", "neutral", "suspicious"]
+    },
+    "toolName": {
+      "type": "string",
+      "enum": [
+        "say",
+        "give_item",
+        "take_item",
+        "update_mood",
+        "update_trust",
+        "move_self",
+        "reveal_knowledge",
+        "remember",
+        "set_flag",
+        "inspect_item"
+      ]
+    },
+    "memory": {
+      "type": "object",
+      "required": ["summary"],
+      "additionalProperties": false,
+      "properties": {
+        "timestamp": { "type": "string" },
+        "type": { "type": "string" },
+        "summary": { "type": "string", "minLength": 1 },
+        "importance": { "type": "integer", "minimum": 1, "maximum": 10 },
+        "related_npc": { "type": "string" },
+        "related_item": { "type": "string" }
+      }
+    },
+    "toolPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "allowed_tools": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/toolName" }
+        },
+        "allowed_items": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "allowed_facts": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "allowed_flags": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "allowed_locations": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+      }
+    },
+    "identity": {
+      "type": "object",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "role": { "type": "string" },
+        "personality_summary": { "type": "string" },
+        "backstory": { "type": "string" },
+        "secret": { "type": "string" },
+        "goals": { "type": "array", "items": { "type": "string" } },
+        "knowledge": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "trust_reveal_threshold": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "tool_policy": { "$ref": "#/$defs/toolPolicy" }
+      }
+    },
+    "state": {
+      "type": "object",
+      "required": ["current_location"],
+      "additionalProperties": false,
+      "properties": {
+        "current_location": { "type": "string", "minLength": 1 },
+        "mood": { "$ref": "#/$defs/mood" },
+        "trust_toward_player": { "type": "integer", "minimum": -100, "maximum": 100 },
+        "inventory": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "memories": { "type": "array", "items": { "$ref": "#/$defs/memory" } },
+        "has_met_player": { "type": "boolean" },
+        "secret_revealed": { "type": "boolean" }
+      }
+    },
+    "npc": {
+      "type": "object",
+      "required": ["identity", "state"],
+      "additionalProperties": false,
+      "properties": {
+        "identity": { "$ref": "#/$defs/identity" },
+        "state": { "$ref": "#/$defs/state" }
+      }
+    }
+  }
+}

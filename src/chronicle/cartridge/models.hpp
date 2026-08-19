@@ -47,10 +47,11 @@ struct ConfigData {
     int max_memory_tokens = 800;
     int max_world_tokens = 400;
     int max_history_tokens = 600;
-    bool use_tui = false;
-    bool use_color = true;
     std::map<std::string, std::string> verb_aliases;
-    std::map<std::string, std::string> mutation_narration_templates;
+    /// Player-facing text after an accepted NPC world write. Keys match public
+    /// tool names (`give_item`, `remember`, …). Empty string suppresses
+    /// narration. Legacy `mutation_narration_templates` / old keys still load.
+    std::map<std::string, std::string> action_narration_templates;
 };
 
 [[nodiscard]] std::map<std::string, std::string> default_narration_templates();
