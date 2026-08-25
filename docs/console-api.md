@@ -49,7 +49,7 @@ unchanged.
 | `reveal_knowledge` | `fact_id` | Reveal authored fact |
 | `remember` | `summary`, `importance` | Store memory |
 | `set_flag` | `flag_id`, `value` | Set narrative flag |
-| `inspect_item` | `item_id` | Read item text (no mutation) |
+| `inspect_item` | `item_id` | Read item text (no world write) |
 
 Moods: `fearful`, `friendly`, `grieving`, `hostile`, `neutral`, `suspicious`.
 

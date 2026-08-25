@@ -24,6 +24,7 @@ When starting a new session, read `README.md` first, then `docs/invariants.md`,
 - `src/chronicle/` — runtime (cartridge/, game/, llm/ subsystems)
 - `examples/` — sample cartridges
 - `docs/` — creator and design docs
+- `schemas/` — JSON Schema for each cartridge file (editor aids)
 - `tests/` — GoogleTest unit tests (no model) + `tests/integration/` (live Ollama)
 
 ## Toolchain

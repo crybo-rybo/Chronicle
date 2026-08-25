@@ -1,4 +1,4 @@
-// Typed domain actions and the single runtime mutation boundary.
+// Typed domain actions and the single runtime action boundary.
 #pragma once
 
 #include <expected>

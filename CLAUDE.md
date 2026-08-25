@@ -70,8 +70,10 @@ Key couplings to keep in sync:
   `llm/npc_sessions.cpp` are the schema source of truth; they convert into the
   named domain calls in `game/npc_tools.hpp`, which feed the authorization
   gate. A compile-time assertion keeps both catalogs exact. Adding a tool
-  touches those files, the gate visitors in `npc_tool_gate.cpp`,
-  `docs/console-api.md`, and `schemas/scenario.schema.json`.
+  touches those files, the gate visitors in `npc_tool_gate.cpp`, and
+  `docs/console-api.md`. Editor JSON Schema lives under `schemas/`; adding a
+  narrating tool also updates `default_narration_templates()` and
+  `schemas/config.schema.json`.
 - The static NPC system prompt (identity/knowledge/rules) is fixed at
   `Conversation` creation; **dynamic state (time, mood, trust, secret,
   memories) must go in the per-turn user message** (`prompt.cpp`), never the

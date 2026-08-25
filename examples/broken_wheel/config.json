@@ -7,16 +7,14 @@
   "max_memory_tokens": 800,
   "max_world_tokens": 400,
   "max_history_tokens": 600,
-  "use_tui": false,
-  "use_color": true,
-  "mutation_narration_templates": {
-    "give_item_to_player": "{npc} hands you the {item}.",
-    "take_item_from_player": "{npc} takes the {item}.",
-    "update_npc_mood": "{npc}'s expression shifts - they seem {mood} now.",
-    "move_npc": "{npc} excuses themselves and leaves.",
+  "action_narration_templates": {
+    "give_item": "{npc} hands you the {item}.",
+    "take_item": "{npc} takes the {item}.",
+    "update_mood": "{npc}'s expression shifts - they seem {mood} now.",
+    "move_self": "{npc} excuses themselves and leaves.",
     "reveal_knowledge": "",
-    "update_npc_trust": "",
-    "add_memory": "",
+    "update_trust": "",
+    "remember": "",
     "set_flag": ""
   }
 }
