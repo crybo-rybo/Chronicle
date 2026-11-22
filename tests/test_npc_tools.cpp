@@ -1,5 +1,6 @@
 // NPC policy validation and translation into the single world-action gate.
 #include <algorithm>
+#include <fstream>
 #include <gtest/gtest.h>
 #include <limits>
 #include <ranges>
@@ -41,6 +42,20 @@ TEST(ReflectedToolContracts, SchemasCarryDescriptionsEnumsAndRequiredValues) {
     }));
     EXPECT_EQ(set_flag["properties"]["value"]["description"],
               "Explicit value to store in the flag");
+}
+
+// The exact schemas every model request carries. A dependency update that changes
+// one changes what models are told, so the change must be deliberate.
+TEST(ReflectedToolContracts, SchemasMatchThePinnedContract) {
+    std::ifstream stream(ct::repo_dir() / "tests" / "fixtures" / "npc_tool_schemas.json");
+    const auto pinned = nlohmann::json::parse(stream);
+    const auto schemas = npc_tool_schemas();
+    ASSERT_EQ(schemas.size(), pinned.size());
+    for (const auto &schema : schemas) {
+        ASSERT_TRUE(pinned.contains(schema.name)) << schema.name;
+        // The generated text is canonical: sorted keys and no whitespace.
+        EXPECT_EQ(schema.input_schema, pinned[schema.name].dump());
+    }
 }
 
 class GateTest : public ::testing::Test {

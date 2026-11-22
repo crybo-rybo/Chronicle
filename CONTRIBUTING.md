@@ -2,8 +2,8 @@
 
 ## Toolchain
 
-GCC 16 or newer (Chronicle uses C++26 reflection via `-freflection`), CMake
-≥ 3.28, and libcurl development headers. All other dependencies are fetched by
+GCC 16.2 or newer (Chronicle uses C++26 reflection via `-freflection`), CMake
+≥ 3.30, and libcurl development headers. All other dependencies are fetched by
 CMake.
 
 ## Local CI (run before opening a PR)
@@ -31,9 +31,11 @@ ctest --preset ci`.
 
 ## Tests
 
-Every mechanic change lands with unit tests (`tests/`); anything touching the
-scry integration should also keep `tests/integration/` passing against a local
-Ollama model (`just integration`, override the model with `CHRONICLE_MODEL`).
+Every mechanic change lands with unit tests (`tests/`). Cover the scry
+integration in `tests/test_npc_sessions.cpp`, which scripts the model with
+scry's loopback `ScriptedServer`, and keep `tests/integration/` passing against
+a local Ollama model (`just integration`, override the model with
+`CHRONICLE_MODEL`).
 
 ## Branching
 

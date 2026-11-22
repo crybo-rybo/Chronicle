@@ -5,19 +5,21 @@ adventures, written in C++26. Creators author JSON **cartridges**; Chronicle
 supplies the runtime, local LLM integration via
 [scry](https://github.com/crybo-rybo/scry), validation, prompt assembly,
 save/load, and a strict tool/action gate. NPC tool schemas are derived from
-plain C++ structs at compile time with C++26 reflection (P2996).
+plain C++ structs at compile time with C++26 reflection (P2996), through scry's
+[Scrydantic](https://github.com/crybo-rybo/scrydantic) library.
 
 The stable public contract is the CLI plus the JSON cartridge schema — not C++
 internals.
 
 ## Requirements
 
-- **GCC 16+** (the reflection component needs `-std=c++26 -freflection`)
-- CMake ≥ 3.28, libcurl development headers
+- **GCC 16.2+** (scry and Scrydantic need `-std=c++26 -freflection`, and earlier
+  GCC 16 releases have reflection bugs)
+- CMake ≥ 3.30, libcurl development headers
 - Linux or macOS (macOS via Homebrew GCC 16)
 
-Dependencies (scry, nlohmann/json, miniz, GoogleTest) are fetched at pinned
-commits or content hashes by CMake.
+Dependencies (scry v0.8.0 with the Scrydantic commit it pins, nlohmann/json,
+miniz, GoogleTest) are fetched at pinned commits or content hashes by CMake.
 
 ## Build
 

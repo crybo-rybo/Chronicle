@@ -21,7 +21,8 @@ struct SavePayload {
     WorldState world;
     GamePhase phase = GamePhase::playing;
     std::optional<std::string> active_npc;
-    // Serialized scry conversations, npc_id -> conversation document.
+    // Serialized scry conversations, npc_id -> conversation document (scry's
+    // version 1 format, which v0.1.0 wrote and v0.8.0 still reads and writes).
     nlohmann::json conversations = nlohmann::json::object();
 };
 

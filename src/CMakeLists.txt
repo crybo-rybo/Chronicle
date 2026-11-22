@@ -43,7 +43,7 @@ target_compile_options(chronicle_llm PRIVATE
     -freflection
 )
 target_link_options(chronicle_llm PRIVATE ${CHRONICLE_SANITIZER_FLAGS})
-target_link_libraries(chronicle_llm PUBLIC chronicle_core scry::scry scry::reflection)
+target_link_libraries(chronicle_llm PUBLIC chronicle_core scry::scry)
 
 add_executable(chronicle main.cpp)
 target_compile_options(chronicle PRIVATE ${CHRONICLE_WARNING_FLAGS} ${CHRONICLE_SANITIZER_FLAGS})

@@ -34,7 +34,8 @@ tool policies, event definitions, and prompts are always reconstructed from the
 validated cartridge. Writes use atomic replacement, reads are size-bounded, and
 the complete world plus all Scry conversation documents are validated before a
 load commits. A failed world or conversation restore leaves the current session
-unchanged.
+unchanged. Saves written on scry v0.1.0 load unchanged: scry v0.8.0 reads and
+writes the same version 1 conversation documents.
 
 ## NPC Tool Palette
 
@@ -59,8 +60,11 @@ to 8 tool rounds, and a rejected tool call is returned to the model as an
 explicit structured result it can react to (the player sees no rejection).
 Tool arguments are strictly validated against generated JSON schemas — unknown
 fields, wrong types, and out-of-vocabulary moods are rejected before the gate
-runs. A provider failure rolls back the whole tool turn before deterministic
-stub dialogue is shown.
+runs, and the model is told the JSON path and the reason for each. A failed turn
+rolls back every world write it made before deterministic stub dialogue is
+shown. A turn fails when the provider fails, when the model uses up its tool
+rounds, when a tool handler throws, or when the model ends without any text and
+its tools gave the player nothing to see. A model may speak through `say` alone.
 
 ## Event Conditions (AND)
 

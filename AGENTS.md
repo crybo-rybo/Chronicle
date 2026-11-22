@@ -29,7 +29,7 @@ When starting a new session, read `README.md` first, then `docs/invariants.md`,
 
 ## Toolchain
 
-GCC 16+ only (`-std=c++26 -freflection`). Build with `cmake --preset dev`,
+GCC 16.2+ only (`-std=c++26 -freflection`). Build with `cmake --preset dev`,
 test with `ctest --preset dev`, or use the `justfile` recipes.
 
 ## Session cleanup

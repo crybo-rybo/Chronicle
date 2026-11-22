@@ -5,7 +5,7 @@
 // annotated adapter aggregates via C++26 reflection) and its own persistent
 // scry::Conversation. Tool handlers run on this thread inside the harness turn
 // and route through the game's action gate. The entire world turn commits only
-// if Scry commits the matching conversation turn.
+// together with the matching conversation turn.
 #pragma once
 
 #include <cstdint>
@@ -62,14 +62,15 @@ using NpcTurnResult = std::expected<GameEvents, NpcTurnFailure>;
 class NpcSessionManager {
   public:
     NpcSessionManager(CartridgeGame &game, EndpointConfig endpoint);
-    ~NpcSessionManager();
+    virtual ~NpcSessionManager();
 
     NpcSessionManager(const NpcSessionManager &) = delete;
     NpcSessionManager &operator=(const NpcSessionManager &) = delete;
 
-    // Run one blocking conversation turn with the active NPC. Provider failure
+    // Run one blocking conversation turn with the active NPC. A failed turn
     // rolls back every tool-side world write and returns an error so the
-    // console can provide deterministic stub dialogue.
+    // console can provide deterministic stub dialogue. A turn that acted through
+    // its tools and then ended without a word is complete, not failed.
     [[nodiscard]] NpcTurnResult run_turn(const std::string &npc_id, const std::string &player_text);
 
     // npc_id -> serialized scry conversation document, for save files.
@@ -80,6 +81,12 @@ class NpcSessionManager {
     // player next talks to that NPC.
     [[nodiscard]] std::expected<void, std::string>
     restore_conversations(const nlohmann::json &conversations);
+
+  protected:
+    // The one call a model tool makes into the game. Virtual only so that tests
+    // can make it throw mid-turn.
+    [[nodiscard]] virtual ToolOutcome submit_tool(const std::string &npc_id,
+                                                  const tools::NpcToolCall &call);
 
   private:
     struct Session;
@@ -94,6 +101,8 @@ class NpcSessionManager {
     // Buffered gate output for the in-flight turn (filled by tool handlers).
     GameEvents turn_events_;
     bool turn_had_dialogue_ = false;
+    // Why a throwing tool handler cancelled the in-flight turn.
+    std::optional<std::string> turn_fault_;
     std::uint64_t use_sequence_ = 0;
 };
 

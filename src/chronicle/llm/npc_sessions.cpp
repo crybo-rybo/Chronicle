@@ -2,14 +2,21 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cstdint>
 #include <cstdlib>
 #include <scry/config.hpp>
 #include <scry/conversation.hpp>
+#include <scry/events.hpp>
 #include <scry/harness.hpp>
-#include <scry/reflection.hpp>
+#include <scry/message.hpp>
+#include <scry/tool_registry.hpp>
+#include <scrydantic/annotations.hpp>
+#include <scrydantic/codec.hpp>
+#include <scrydantic/json.hpp>
 #include <stdexcept>
 #include <string_view>
+#include <thread>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -20,63 +27,59 @@ namespace chronicle {
 
 namespace {
 
-// Reflected tool results deliberately use a successful transport result for
-// policy rejections. That makes the exact rejection visible to the model so it
-// can choose another action instead of seeing Scry's generic handler failure.
+// A policy rejection is deliberately a successful tool result: the NPC system
+// prompt tells the model to read `ok`, and saved conversations pin that prompt.
+// Arguments that do not match the generated schema never get this far; Scry
+// answers the model with the JSON path and the reason.
 struct ToolAck {
-    [[= scry::reflection::description{"Whether Chronicle accepted the action"}]] bool ok;
-    [[= scry::reflection::description{"Action result when ok is true"}]] std::string result;
-    [[= scry::reflection::description{
-        "Exact rejection reason when ok is false"}]] std::string error;
+    [[= scrydantic::description{"Whether Chronicle accepted the action"}]] bool ok;
+    [[= scrydantic::description{"Action result when ok is true"}]] std::string result;
+    [[= scrydantic::description{"Exact rejection reason when ok is false"}]] std::string error;
 };
 
 namespace reflected {
 
 struct Say {
-    [[= scry::reflection::description{"Dialogue to speak aloud to the player"}]] std::string text;
+    [[= scrydantic::description{"Dialogue to speak aloud to the player"}]] std::string text;
     [[nodiscard]] tools::Say into_call() && { return {.text = std::move(text)}; }
 };
 
 struct GiveItem {
-    [[= scry::reflection::description{
-        "Authored id of an item you currently hold"}]] std::string item_id;
+    [[= scrydantic::description{"Authored id of an item you currently hold"}]] std::string item_id;
     [[nodiscard]] tools::GiveItem into_call() && { return {.item_id = std::move(item_id)}; }
 };
 
 struct TakeItem {
-    [[= scry::reflection::description{
+    [[= scrydantic::description{
         "Authored id of an item the player currently holds"}]] std::string item_id;
     [[nodiscard]] tools::TakeItem into_call() && { return {.item_id = std::move(item_id)}; }
 };
 
 struct UpdateMood {
-    [[= scry::reflection::description{
-        "Your new mood from the fixed mood vocabulary"}]] tools::Mood mood;
+    [[= scrydantic::description{"Your new mood from the fixed mood vocabulary"}]] tools::Mood mood;
     [[nodiscard]] tools::UpdateMood into_call() && { return {.mood = mood}; }
 };
 
 struct UpdateTrust {
-    [[= scry::reflection::description{
-        "Signed trust adjustment from -100 to 100"}]] std::int16_t delta;
+    [[= scrydantic::description{"Signed trust adjustment from -100 to 100"}]] std::int16_t delta;
     [[nodiscard]] tools::UpdateTrust into_call() && { return {.delta = static_cast<int>(delta)}; }
 };
 
 struct MoveSelf {
-    [[= scry::reflection::description{
+    [[= scrydantic::description{
         "Authored id of an allowed destination location"}]] std::string location_id;
     [[nodiscard]] tools::MoveSelf into_call() && { return {.location_id = std::move(location_id)}; }
 };
 
 struct RevealKnowledge {
-    [[= scry::reflection::description{
+    [[= scrydantic::description{
         "Authored id of a fact you know and may reveal"}]] std::string fact_id;
     [[nodiscard]] tools::RevealKnowledge into_call() && { return {.fact_id = std::move(fact_id)}; }
 };
 
 struct Remember {
-    [[= scry::reflection::description{
-        "Short factual memory of this conversation"}]] std::string summary;
-    [[= scry::reflection::description{
+    [[= scrydantic::description{"Short factual memory of this conversation"}]] std::string summary;
+    [[= scrydantic::description{
         "Importance from 1 (minor) to 10 (critical)"}]] std::uint16_t importance{5};
     [[nodiscard]] tools::Remember into_call() && {
         return {.summary = std::move(summary), .importance = static_cast<int>(importance)};
@@ -84,16 +87,16 @@ struct Remember {
 };
 
 struct SetFlag {
-    [[= scry::reflection::description{
+    [[= scrydantic::description{
         "Authored id of a flag allowed by your policy"}]] std::string flag_id;
-    [[= scry::reflection::description{"Explicit value to store in the flag"}]] bool value;
+    [[= scrydantic::description{"Explicit value to store in the flag"}]] bool value;
     [[nodiscard]] tools::SetFlag into_call() && {
         return {.flag_id = std::move(flag_id), .value = value};
     }
 };
 
 struct InspectItem {
-    [[= scry::reflection::description{
+    [[= scrydantic::description{
         "Authored id of an item you are allowed to inspect"}]] std::string item_id;
     [[nodiscard]] tools::InspectItem into_call() && { return {.item_id = std::move(item_id)}; }
 };
@@ -170,20 +173,7 @@ bool env_truthy(const char *name) {
     return value == "1" || value == "true" || value == "yes";
 }
 
-bool closes_committed_turn(const nlohmann::json &message) {
-    if (!message.is_object() || message.value("role", "") != "assistant") {
-        return false;
-    }
-    const auto content = message.find("content");
-    if (content == message.end() || !content->is_array()) {
-        return false;
-    }
-    return std::ranges::none_of(*content, [](const nlohmann::json &block) {
-        return block.is_object() && block.value("type", "") == "tool_call";
-    });
-}
-
-void trim_conversation_history(scry::Conversation &conversation, const int token_budget) {
+nlohmann::json inspect_conversation(const scry::Conversation &conversation) {
     auto encoded = conversation.to_json();
     if (!encoded) {
         throw SessionError("Could not inspect conversation history: " + encoded.error().message);
@@ -193,17 +183,32 @@ void trim_conversation_history(scry::Conversation &conversation, const int token
         !document["messages"].is_array()) {
         throw SessionError("Could not inspect conversation history: invalid conversation JSON");
     }
+    return document;
+}
 
+// A turn starts with the player's text. Every other user message carries tool
+// results, and a turn may end on one (see ObservedTurn).
+bool opens_turn(const nlohmann::json &message) {
+    if (!message.is_object() || message.value("role", "") != "user") {
+        return false;
+    }
+    const auto content = message.find("content");
+    return content != message.end() && content->is_array() &&
+           std::ranges::any_of(*content, [](const nlohmann::json &block) {
+               return block.is_object() && block.value("type", "") == "text";
+           });
+}
+
+void trim_conversation_history(scry::Conversation &conversation, const int token_budget) {
+    auto document = inspect_conversation(conversation);
     auto &messages = document["messages"];
     const auto byte_budget = static_cast<std::size_t>(std::max(1, token_budget)) * 4U;
     bool changed = false;
     while (!messages.empty() && messages.dump().size() > byte_budget) {
-        std::size_t erase_count = messages.size();
-        for (std::size_t index = 0; index < messages.size(); ++index) {
-            if (closes_committed_turn(messages[index])) {
-                erase_count = index + 1;
-                break;
-            }
+        // Drop the oldest turn: everything before the next one opens.
+        std::size_t erase_count = 1;
+        while (erase_count < messages.size() && !opens_turn(messages[erase_count])) {
+            ++erase_count;
         }
         messages.erase(messages.begin(),
                        messages.begin() +
@@ -214,11 +219,99 @@ void trim_conversation_history(scry::Conversation &conversation, const int token
         return;
     }
 
-    auto compacted = scry::Conversation::from_json(scry::Json{.text = document.dump()});
+    auto compacted = scry::Conversation::from_json(scrydantic::Json{.text = document.dump()});
     if (!compacted) {
         throw SessionError("Could not compact conversation history: " + compacted.error().message);
     }
     conversation = std::move(*compacted);
+}
+
+// What Scry has finished so far of the turn in flight: the player's message and
+// each answered tool round, in the form Scry commits them.
+class ObservedTurn {
+  public:
+    explicit ObservedTurn(std::string player_message) {
+        messages_.push_back({.role = scry::Role::user,
+                             .content = {scry::TextBlock{.text = std::move(player_message)}}});
+    }
+
+    void on_text(const std::string_view delta) { text_ += delta; }
+
+    void on_tool_call(const scry::ToolCall &call) {
+        if (call.round != round_) {
+            round_ = call.round;
+            messages_.push_back({.role = scry::Role::assistant, .content = {}});
+            if (!text_.empty()) {
+                messages_.back().content.emplace_back(
+                    scry::TextBlock{.text = std::exchange(text_, {})});
+            }
+            messages_.push_back({.role = scry::Role::user, .content = {}});
+        }
+        messages_[messages_.size() - 2].content.emplace_back(
+            scry::ToolCallBlock{.id = call.id, .name = call.name, .arguments = call.arguments});
+        messages_.back().content.emplace_back(scry::ToolResultBlock{
+            .tool_call_id = call.id, .result = call.result, .is_error = call.is_error});
+    }
+
+    // The committed history with this turn appended.
+    [[nodiscard]] scry::Conversation append_to(const scry::Conversation &committed) const {
+        auto document = inspect_conversation(committed);
+        const auto encoded = scrydantic::encode(messages_);
+        if (!encoded) {
+            throw SessionError("Could not record tool rounds: " + encoded.error().message);
+        }
+        for (auto &message : nlohmann::json::parse(encoded->text)) {
+            document["messages"].push_back(std::move(message));
+        }
+        auto extended = scry::Conversation::from_json(scrydantic::Json{.text = document.dump()});
+        if (!extended) {
+            throw SessionError("Could not record tool rounds: " + extended.error().message);
+        }
+        return std::move(*extended);
+    }
+
+  private:
+    std::vector<scry::Message> messages_;
+    std::string text_;
+    std::uint32_t round_ = 0;
+};
+
+// Scry fails a turn whose last response is empty, because it commits no empty
+// message. Models that speak through the say tool often stop exactly that way,
+// and Scry reports it under no category of its own.
+bool ended_without_text(const scry::Error &error) {
+    return error.category == scry::ErrorCategory::protocol &&
+           error.message == "model response contained no content";
+}
+
+// Harness::send_and_wait, with the turn observed as it runs.
+scry::Result<scry::Completion> run_observed_turn(scry::Harness &harness,
+                                                 scry::Conversation &conversation,
+                                                 std::string message, ObservedTurn &observed) {
+    std::optional<scry::Result<scry::Completion>> outcome;
+    auto turn = harness.send(
+        conversation, std::move(message),
+        {
+            .on_text_delta = [&observed](const std::string_view text) { observed.on_text(text); },
+            .on_tool_call =
+                [&observed](const scry::ToolCall &call) { observed.on_tool_call(call); },
+            .on_finished =
+                [&outcome](scry::Result<scry::Completion> result) { outcome = std::move(result); },
+        });
+    if (!turn) {
+        return std::unexpected(std::move(turn.error()));
+    }
+    try {
+        while (!outcome) {
+            if (harness.update().callbacks_delivered == 0) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+        }
+    } catch (...) {
+        (void)turn->disconnect(); // The callbacks refer to this frame.
+        throw;
+    }
+    return std::move(*outcome);
 }
 
 } // namespace
@@ -255,10 +348,9 @@ std::vector<ReflectedToolSchema> npc_tool_schemas() {
     schemas.reserve(std::tuple_size_v<decltype(TOOL_BINDINGS)>);
     for_each_tool_binding([&]<typename Binding>(const Binding &binding) {
         using Arguments = typename Binding::arguments_type;
-        schemas.push_back(
-            {.name = std::string(binding.name),
-             .description = std::string(binding.description),
-             .input_schema = std::string(scry::reflection::input_schema_v<Arguments>)});
+        schemas.push_back({.name = std::string(binding.name),
+                           .description = std::string(binding.description),
+                           .input_schema = std::string(scrydantic::input_schema_v<Arguments>)});
     });
     return schemas;
 }
@@ -285,6 +377,10 @@ NpcSessionManager::Session &NpcSessionManager::get_or_create(const std::string &
         throw SessionError("Unknown NPC: " + npc_id);
     }
 
+    // The host timeout is a hard bound on one model request. Scry also fails a
+    // response that stays silent past `idle`, whose 120 s default would undercut
+    // a longer host timeout, so both bounds take the same value.
+    const auto request_timeout = std::chrono::milliseconds(std::max(1, endpoint_.timeout_ms));
     auto created = scry::Harness::create(scry::Config{
         .base_url = endpoint_.base_url,
         .api_key = endpoint_.api_key,
@@ -296,9 +392,12 @@ NpcSessionManager::Session &NpcSessionManager::get_or_create(const std::string &
                      .max_tokens = static_cast<std::uint32_t>(std::max(1, endpoint_.max_tokens))},
         .reasoning_mode = endpoint_.disable_reasoning ? scry::ReasoningMode::disabled
                                                       : scry::ReasoningMode::provider_default,
-        .timeouts = {.transfer = std::chrono::milliseconds(std::max(1, endpoint_.timeout_ms))},
+        .timeouts = {.idle = request_timeout, .transfer = request_timeout},
         .limits = {.max_pending_turns = 1, .max_tool_arguments_bytes = std::size_t{64} * 1024},
         .max_tool_rounds = 8,
+        // Running out of rounds must fail the turn, so that the world rolls back
+        // together with the history.
+        .tool_round_limit = scry::ToolRoundLimitPolicy::fail,
     });
     if (!created) {
         throw SessionError(created.error().message);
@@ -307,22 +406,32 @@ NpcSessionManager::Session &NpcSessionManager::get_or_create(const std::string &
 
     // Register exactly the tools this NPC's cartridge policy allows; the
     // schema for each comes from the argument aggregate via reflection.
-    const auto dispatch = [this, npc_id](tools::NpcToolCall call) -> ToolAck {
-        auto outcome = game_.submit_npc_tool(npc_id, call);
-        if (!outcome) {
-            return ToolAck{.ok = false, .result = {}, .error = outcome.error().reason};
-        }
-        std::string ack = "ok";
-        for (auto &event : *outcome) {
-            if (event.kind == EventKind::dialogue) {
-                turn_had_dialogue_ = true;
+    const auto dispatch = [this, npc_id](const scry::ToolCallContext &context,
+                                         const tools::NpcToolCall &call) -> ToolAck {
+        try {
+            auto outcome = submit_tool(npc_id, call);
+            if (!outcome) {
+                return ToolAck{.ok = false, .result = {}, .error = outcome.error().reason};
             }
-            if (event.kind == EventKind::tool_result) {
-                ack = event.text;
+            std::string ack = "ok";
+            for (auto &event : *outcome) {
+                if (event.kind == EventKind::dialogue) {
+                    turn_had_dialogue_ = true;
+                }
+                if (event.kind == EventKind::tool_result) {
+                    ack = event.text;
+                }
+                turn_events_.push_back(event);
             }
-            turn_events_.push_back(event);
+            return ToolAck{.ok = true, .result = std::move(ack), .error = {}};
+        } catch (const std::exception &exc) {
+            // Scry would report the throw to the model and commit the turn, along
+            // with anything the gate wrote before it threw. Cancelling fails the
+            // turn instead, so run_turn restores the checkpoint.
+            turn_fault_ = exc.what();
+            (void)sessions_.at(npc_id)->harness.cancel(context.turn_id);
+            return ToolAck{.ok = false, .result = {}, .error = "turn cancelled"};
         }
-        return ToolAck{.ok = true, .result = std::move(ack), .error = {}};
     };
 
     std::vector<std::string> registered;
@@ -341,11 +450,12 @@ NpcSessionManager::Session &NpcSessionManager::get_or_create(const std::string &
             using DomainCall = typename Binding::domain_call_type;
             static_assert(
                 std::is_same_v<decltype(std::declval<Arguments &&>().into_call()), DomainCall>);
-            auto status = scry::reflection::add<Arguments>(
-                harness.tools(),
+            auto status = harness.tools().add<Arguments>(
                 {.name = std::string(binding.name),
                  .description = std::string(binding.description)},
-                [dispatch](Arguments args) { return dispatch(std::move(args).into_call()); });
+                [dispatch](const scry::ToolCallContext &context, Arguments args) {
+                    return dispatch(context, std::move(args).into_call());
+                });
             if (!status) {
                 throw SessionError("Tool registration failed for '" + name +
                                    "': " + status.error().message);
@@ -360,7 +470,8 @@ NpcSessionManager::Session &NpcSessionManager::get_or_create(const std::string &
     // fresh with the NPC's static system prompt.
     std::optional<scry::Conversation> conversation;
     if (const auto staged = pending_restore_.find(npc_id); staged != pending_restore_.end()) {
-        auto restored = scry::Conversation::from_json(scry::Json{.text = staged->second.dump()});
+        auto restored =
+            scry::Conversation::from_json(scrydantic::Json{.text = staged->second.dump()});
         pending_restore_.erase(staged);
         if (!restored) {
             throw SessionError("Saved conversation for '" + npc_id +
@@ -398,29 +509,56 @@ NpcSessionManager::Session &NpcSessionManager::get_or_create(const std::string &
     return *inserted->second;
 }
 
+ToolOutcome NpcSessionManager::submit_tool(const std::string &npc_id,
+                                           const tools::NpcToolCall &call) {
+    return game_.submit_npc_tool(npc_id, call);
+}
+
 NpcTurnResult NpcSessionManager::run_turn(const std::string &npc_id,
                                           const std::string &player_text) {
     turn_events_.clear();
     turn_had_dialogue_ = false;
+    turn_fault_.reset();
 
     Session *session = nullptr;
+    std::string message;
     try {
         session = &get_or_create(npc_id);
         trim_conversation_history(session->conversation, game_.world().config.max_history_tokens);
+        // Throws for player text that is not UTF-8, which no request could carry.
+        message = build_npc_turn_message(game_.world(), npc_id, player_text);
     } catch (const std::exception &exc) {
         return std::unexpected(NpcTurnFailure{.message = exc.what(), .world_rolled_back = true});
     }
 
-    const std::string message = build_npc_turn_message(game_.world(), npc_id, player_text);
     auto checkpoint = game_.checkpoint_runtime();
-    auto result = session->harness.send_and_wait(session->conversation, message);
+    std::optional<std::string> final_text; // Engaged once the history is committed.
+    std::string failure;
+    try {
+        ObservedTurn observed(message);
+        auto result = run_observed_turn(session->harness, session->conversation, std::move(message),
+                                        observed);
+        if (result) {
+            final_text = strip_copy(result->text);
+        } else if (ended_without_text(result.error()) && !turn_events_.empty()) {
+            // The NPC already acted or spoke through its tools and had nothing to
+            // add. Commit those rounds, as Scry does when a turn stops at its
+            // round limit, so the world and the history still agree.
+            session->conversation = observed.append_to(session->conversation);
+            final_text.emplace();
+        } else {
+            failure = turn_fault_.value_or(result.error().message);
+        }
+    } catch (const std::exception &exc) {
+        failure = exc.what();
+    }
 
     GameEvents events = std::move(turn_events_);
     turn_events_.clear();
-    if (!result) {
+    if (!final_text) {
         events.clear();
         auto restored = game_.restore_runtime(std::move(checkpoint));
-        std::string message_text = result.error().message;
+        std::string message_text = std::move(failure);
         const bool rolled_back = restored.has_value();
         if (!rolled_back) {
             message_text += "; rollback failed: " + restored.error().reason;
@@ -429,10 +567,9 @@ NpcTurnResult NpcSessionManager::run_turn(const std::string &npc_id,
             NpcTurnFailure{.message = std::move(message_text), .world_rolled_back = rolled_back});
     }
 
-    const std::string final_text = strip_copy(result->text);
-    if (!final_text.empty() && !turn_had_dialogue_) {
+    if (!final_text->empty() && !turn_had_dialogue_) {
         const auto &npc = game_.world().npcs.at(npc_id);
-        events.push_back({EventKind::dialogue, npc.identity.name + ": \"" + final_text + "\""});
+        events.push_back({EventKind::dialogue, npc.identity.name + ": \"" + *final_text + "\""});
     }
     return events;
 }
@@ -481,7 +618,7 @@ NpcSessionManager::restore_conversations(const nlohmann::json &conversations) {
                                    "' has a non-canonical system prompt");
         }
 
-        auto restored = scry::Conversation::from_json(scry::Json{.text = doc.dump()});
+        auto restored = scry::Conversation::from_json(scrydantic::Json{.text = doc.dump()});
         if (!restored) {
             return std::unexpected("conversation for '" + npc_id +
                                    "' is invalid: " + restored.error().message);

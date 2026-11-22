@@ -1,0 +1,153 @@
+{
+  "say": {
+    "additionalProperties": false,
+    "properties": {
+      "text": {
+        "description": "Dialogue to speak aloud to the player",
+        "type": "string"
+      }
+    },
+    "required": [
+      "text"
+    ],
+    "type": "object"
+  },
+  "give_item": {
+    "additionalProperties": false,
+    "properties": {
+      "item_id": {
+        "description": "Authored id of an item you currently hold",
+        "type": "string"
+      }
+    },
+    "required": [
+      "item_id"
+    ],
+    "type": "object"
+  },
+  "take_item": {
+    "additionalProperties": false,
+    "properties": {
+      "item_id": {
+        "description": "Authored id of an item the player currently holds",
+        "type": "string"
+      }
+    },
+    "required": [
+      "item_id"
+    ],
+    "type": "object"
+  },
+  "update_mood": {
+    "additionalProperties": false,
+    "properties": {
+      "mood": {
+        "description": "Your new mood from the fixed mood vocabulary",
+        "enum": [
+          "fearful",
+          "friendly",
+          "grieving",
+          "hostile",
+          "neutral",
+          "suspicious"
+        ],
+        "type": "string"
+      }
+    },
+    "required": [
+      "mood"
+    ],
+    "type": "object"
+  },
+  "update_trust": {
+    "additionalProperties": false,
+    "properties": {
+      "delta": {
+        "description": "Signed trust adjustment from -100 to 100",
+        "maximum": 32767,
+        "minimum": -32768,
+        "type": "integer"
+      }
+    },
+    "required": [
+      "delta"
+    ],
+    "type": "object"
+  },
+  "move_self": {
+    "additionalProperties": false,
+    "properties": {
+      "location_id": {
+        "description": "Authored id of an allowed destination location",
+        "type": "string"
+      }
+    },
+    "required": [
+      "location_id"
+    ],
+    "type": "object"
+  },
+  "reveal_knowledge": {
+    "additionalProperties": false,
+    "properties": {
+      "fact_id": {
+        "description": "Authored id of a fact you know and may reveal",
+        "type": "string"
+      }
+    },
+    "required": [
+      "fact_id"
+    ],
+    "type": "object"
+  },
+  "remember": {
+    "additionalProperties": false,
+    "properties": {
+      "importance": {
+        "description": "Importance from 1 (minor) to 10 (critical)",
+        "maximum": 65535,
+        "minimum": 0,
+        "type": "integer"
+      },
+      "summary": {
+        "description": "Short factual memory of this conversation",
+        "type": "string"
+      }
+    },
+    "required": [
+      "summary"
+    ],
+    "type": "object"
+  },
+  "set_flag": {
+    "additionalProperties": false,
+    "properties": {
+      "flag_id": {
+        "description": "Authored id of a flag allowed by your policy",
+        "type": "string"
+      },
+      "value": {
+        "description": "Explicit value to store in the flag",
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "flag_id",
+      "value"
+    ],
+    "type": "object"
+  },
+  "inspect_item": {
+    "additionalProperties": false,
+    "properties": {
+      "item_id": {
+        "description": "Authored id of an item you are allowed to inspect",
+        "type": "string"
+      }
+    },
+    "required": [
+      "item_id"
+    ],
+    "type": "object"
+  }
+}

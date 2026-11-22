@@ -35,7 +35,7 @@ Optional; `{}` is valid. Accepted fields:
 | `action_narration_templates` | built-in defaults | Player-facing text after an accepted NPC world write |
 | `temperature` | `0.7` | Sampling hint used when a host endpoint is configured |
 | `max_response_tokens` | `512` | Output token cap sent to the host endpoint |
-| `inference_timeout_ms` | `120000` | Per-turn transfer timeout in milliseconds |
+| `inference_timeout_ms` | `120000` | Timeout for each model request of a turn, in milliseconds |
 
 Network endpoints, API credentials, and save locations are host policy. Cartridges
 cannot set them; use the CLI or `CHRONICLE_*` environment variables for model
