@@ -71,6 +71,23 @@ void validate_alias(const std::string &alias, const std::string &expansion,
     }
 }
 
+void validate_unlock_targets(const WorldState &world, std::vector<ValidationIssue> &issues) {
+    std::set<std::string> openable; // Every exit's direction and destination.
+    for (const auto &[loc_id, loc] : world.locations) {
+        for (const auto &[direction, dest] : loc.exits) {
+            openable.insert(game_detail::lower(direction));
+            openable.insert(game_detail::lower(dest));
+        }
+    }
+    for (const auto &[item_id, item] : world.items) {
+        if (!item.unlock_target.empty() &&
+            !openable.contains(game_detail::strip(game_detail::lower(item.unlock_target)))) {
+            warning(issues, "item " + item_id + ": unlock_target " + item.unlock_target +
+                                " is neither an exit direction nor where one leads");
+        }
+    }
+}
+
 // An empty scope list allows nothing, so a tool that needs one can only be refused.
 void validate_policy_scopes(const std::string &npc_id, const NpcIdentity &identity,
                             std::vector<ValidationIssue> &issues) {
@@ -277,6 +294,17 @@ std::vector<ValidationIssue> validate_world(const WorldState &world) {
                 error(issues, "location " + loc_id + ": exit " + direction + " -> unknown " + dest);
             }
         }
+        std::set<std::string> spoken_directions;
+        for (const auto &[direction, dest] : loc.exits) {
+            if (!nonblank(direction)) {
+                warning(issues, "location " + loc_id +
+                                    ": an exit with a blank direction cannot "
+                                    "be named");
+            } else if (!spoken_directions.insert(game_detail::lower(direction)).second) {
+                warning(issues, "location " + loc_id + ": exit directions " + direction +
+                                    " differ only in case, and only one can be named");
+            }
+        }
         std::set<std::string> locked_directions;
         for (const auto &entry : loc.locked_exits) {
             if (entry.direction.empty() || !loc.exits.contains(entry.direction)) {
@@ -287,6 +315,7 @@ std::vector<ValidationIssue> validate_world(const WorldState &world) {
         }
     }
 
+    validate_unlock_targets(world, issues);
     for (const auto &[item_id, item] : world.items) {
         if (!world.item_positions.contains(item_id)) {
             warning(issues, "item " + item_id + " is not placed anywhere");
@@ -400,8 +429,19 @@ std::vector<ValidationIssue> validate_world(const WorldState &world) {
         for (const auto &cond : event.conditions) {
             validate_condition(world, event_id, cond, issues);
         }
-        for (const auto &action : event.actions) {
+        for (std::size_t index = 0; index < event.actions.size(); ++index) {
+            const auto &action = event.actions[index];
             validate_event_action(world, event_id, action, issues);
+            if (action.type == "end_game" && index + 1 < event.actions.size()) {
+                warning(issues, "event " + event_id + ": nothing happens after end_game");
+            }
+            if (action.type == "spawn_item") {
+                const auto item = world.items.find(param_str(action.params, "item_id"));
+                if (item != world.items.end() && item->second.hidden) {
+                    warning(issues, "event " + event_id + ": " + item->first +
+                                        " is hidden, so the player never sees it appear");
+                }
+            }
         }
     }
 

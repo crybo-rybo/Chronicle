@@ -79,8 +79,9 @@ on load. If both forms are present, the canonical key wins.
   `unlock_target`, `properties`
 
 `locked_exits` may be a list of direction strings or objects
-`{"direction": "...", "unlocked": false}`. Item `properties` is a string map;
-readable items typically set `readable` and `text`.
+`{"direction": "...", "unlocked": false}`. An item's `unlock_target` is an exit
+direction or the id of the location an exit leads to. Item `properties` is a string
+map; readable items set `readable` to `"true"` and `text`.
 
 Location `items` lists are initial placement only. At runtime, item location is
 owned by a single `item_positions` map assembled from the cartridge.

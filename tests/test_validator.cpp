@@ -1,3 +1,5 @@
+#include <chrono>
+#include <functional>
 #include <gtest/gtest.h>
 
 #include "chronicle/cartridge/validator.hpp"
@@ -92,6 +94,68 @@ TEST(Validator, ExitToUnknownLocation) {
     WorldState world = ct::make_test_world();
     world.locations.at("hall").exits["west"] = "void";
     EXPECT_TRUE(has_issue_containing(validate_world(world), "exit west -> unknown void"));
+}
+
+TEST(Validator, ExitsThatCannotBeNamedAreWarnedAbout) {
+    WorldState world = ct::make_test_world();
+    world.locations.at("hall").exits[" "] = "garden";
+    world.locations.at("hall").exits["North"] = "garden";
+    const auto issues = validate_world(world);
+    EXPECT_FALSE(has_errors(issues));
+    EXPECT_TRUE(has_issue_containing(issues, "blank direction", IssueLevel::warning));
+    EXPECT_TRUE(has_issue_containing(issues, "differ only in case", IssueLevel::warning));
+}
+
+// Validation also guards every save and every rollback, so it must stay fast on
+// anything a package may hold.
+TEST(Validator, HugeListsAreValidatedInTime) {
+    WorldState world = ct::make_test_world();
+    for (int index = 0; index < 60'000; ++index) {
+        world.locations.at("hall").exits["way " + std::to_string(index)] = "garden";
+    }
+    for (int index = 0; index < 500; ++index) {
+        ItemData item;
+        item.name = "Key";
+        item.unlock_target = std::string(64, 'k') + std::to_string(index);
+        world.items["key_" + std::to_string(index)] = item;
+    }
+    auto &identity = world.npcs.at("keeper").identity;
+    for (int index = 0; index < 500; ++index) {
+        const auto id = "fact_" + std::to_string(index);
+        world.facts[id].text = "A fact.";
+        identity.knowledge.push_back(id);
+    }
+    identity.tool_policy.allowed_facts.assign(60'000, "fact_499");
+    const auto started = std::chrono::steady_clock::now();
+    EXPECT_TRUE(has_errors(validate_world(world))); // The facts repeat.
+    EXPECT_LT(std::chrono::steady_clock::now() - started, std::chrono::seconds(5));
+}
+
+TEST(Validator, ThingsThatCanNeverHappenAreWarnedAbout) {
+    const auto warns = [](const WorldState &world, const std::string &needle) {
+        const auto issues = validate_world(world);
+        EXPECT_FALSE(has_errors(issues));
+        return has_issue_containing(issues, needle, IssueLevel::warning);
+    };
+    WorldState world = ct::make_test_world();
+    EXPECT_TRUE(validate_world(world).empty());
+    world.items.at("gate_key").unlock_target = "gardn";
+    EXPECT_TRUE(warns(world, "unlock_target gardn"));
+    world.items.at("gate_key").unlock_target = "North";
+    EXPECT_FALSE(warns(world, "unlock_target"));
+
+    world.events["finale"] = EventTriggerData{
+        .conditions = {},
+        .actions = {{.type = "end_game", .params = nlohmann::json::object()},
+                    {.type = "narrate", .params = {{"text", "Too late."}}}},
+    };
+    EXPECT_TRUE(warns(world, "nothing happens after end_game"));
+    world.events["finale"] = EventTriggerData{
+        .conditions = {},
+        .actions = {{.type = "spawn_item",
+                     .params = {{"item_id", "hidden_note"}, {"location_id", "garden"}}}},
+    };
+    EXPECT_TRUE(warns(world, "hidden_note is hidden"));
 }
 
 TEST(Validator, UnplacedItemIsWarning) {

@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <memory>
 
 #include "chronicle/game/cartridge_game.hpp"
 #include "helpers.hpp"
@@ -97,7 +98,8 @@ TEST_F(GameTest, TakeDropInventoryFlow) {
 
 TEST_F(GameTest, TakeRejectsUntakeableAndAbsent) {
     EXPECT_NE(joined(command("take statue")).find("can't take that"), std::string::npos);
-    EXPECT_NE(joined(command("take moonbeam")).find("Take what?"), std::string::npos);
+    EXPECT_NE(joined(command("take moonbeam")).find("don't see that"), std::string::npos);
+    EXPECT_NE(joined(command("take")).find("Take what?"), std::string::npos);
 }
 
 TEST_F(GameTest, ExamineReadableItem) {
@@ -133,6 +135,188 @@ TEST_F(GameTest, TalkStartsConversationAndBellowsBlockedCommands) {
     EXPECT_EQ(game_.phase(), GamePhase::playing);
 }
 
+// --- what the player's words refer to ----------------------------------------------
+
+class NounTest : public ::testing::Test {
+  protected:
+    NounTest() : saves_("nounsaves") {
+        // A brass key out of reach, sorting before the gate key in the hall.
+        add_item("brass_key", "Brass Key", "garden");
+        add_item("monkey", "Monkey Puzzle", "hall");
+    }
+
+    void add_item(const std::string &item_id, const std::string &name,
+                  const std::string &location_id) {
+        ItemData item;
+        item.name = name;
+        item.description = "A " + name + ".";
+        world_.items[item_id] = item;
+        world_.item_positions[item_id] =
+            ItemPosition{.holder = ItemHolder::location, .id = location_id};
+    }
+
+    void add_npc(const std::string &npc_id, const std::string &name,
+                 const std::string &location_id) {
+        NpcData npc;
+        npc.identity.id = npc_id;
+        npc.identity.name = name;
+        npc.state.current_location = location_id;
+        world_.npcs[npc_id] = npc;
+    }
+
+    [[nodiscard]] std::string command(const std::string &text) {
+        if (!game_) {
+            game_ = std::make_unique<CartridgeGame>(world_, saves_.path());
+        }
+        return joined(game_->dispatch_player(text).events);
+    }
+
+    ct::TempDir saves_;
+    WorldState world_ = ct::make_test_world();
+    std::unique_ptr<CartridgeGame> game_;
+};
+
+TEST_F(NounTest, WordsMeanWhatIsHere) {
+    EXPECT_EQ(command("take key"), "You take the Gate Key.\n");
+    EXPECT_EQ(command("examine key"), "A heavy iron key.\n");
+    EXPECT_EQ(command("drop key"), "You drop the Gate Key.\n");
+}
+
+TEST_F(NounTest, ArticlesAndCaseDoNotMatter) {
+    EXPECT_EQ(command("take the Gate KEY"), "You take the Gate Key.\n");
+    EXPECT_EQ(command("drop a gate key"), "You drop the Gate Key.\n");
+    EXPECT_EQ(command("take the"), "You don't see that here.\n");
+}
+
+TEST_F(NounTest, AmbiguousWordsAskWhichAndDoNothing) {
+    add_item("silver_key", "Silver Key", "hall");
+    add_item("iron_key", "Iron Key", "hall");
+    EXPECT_EQ(command("take key"), "Which do you mean: Gate Key, Iron Key or Silver Key?\n");
+    EXPECT_EQ(command("examine key"), "Which do you mean: Gate Key, Iron Key or Silver Key?\n");
+    EXPECT_EQ(command("inventory"), "You are carrying nothing.\n");
+    EXPECT_EQ(command("take silver"), "You take the Silver Key.\n");
+    EXPECT_EQ(command("drop key"), "You drop the Silver Key.\n");
+}
+
+TEST_F(NounTest, AWholeNameBeatsAPartOfAnother) {
+    add_item("key", "Key", "hall");
+    EXPECT_EQ(command("take key"), "You take the Key.\n");
+    EXPECT_EQ(command("take puzz"), "You take the Monkey Puzzle.\n");
+}
+
+TEST_F(NounTest, ThingsOfOneNameAreTakenOneByOne) {
+    add_item("coin_two", "Old Coin", "hall");
+    EXPECT_EQ(command("take old coin"), "You take the Old Coin.\n");
+    EXPECT_EQ(command("take old coin"), "You take the Old Coin.\n");
+    EXPECT_EQ(command("take old coin"), "You already have that.\n");
+}
+
+TEST_F(NounTest, SomeoneElsewhereIsNotACommandToTalk) {
+    add_npc("mira", "Mira", "garden");
+    (void)command("talk keeper");
+    EXPECT_TRUE(game_->dispatch_player("talk mira").npc_turn.has_value());
+}
+
+// An id nobody sees may look like another thing's name.
+TEST_F(NounTest, ANameBeatsAnId) {
+    add_npc("guard", "Guard Captain", "hall");
+    add_npc("guard_2", "Guard", "hall");
+    for (const std::string line : {"talk guard", "talk to the Guard"}) {
+        EXPECT_EQ(command(line), "You begin talking with Guard.\n") << line;
+        (void)command("bye");
+    }
+    EXPECT_EQ(command("talk guar"), "Which do you mean: Guard Captain or Guard?\n");
+    EXPECT_EQ(command("talk captain"), "You begin talking with Guard Captain.\n");
+    (void)command("bye");
+    EXPECT_EQ(command("talk guard_2"), "You begin talking with Guard.\n");
+}
+
+TEST_F(NounTest, AnArticleCanTellNamesApart) {
+    add_item("first", "The Lantern", "hall");
+    add_item("second", "Lantern", "hall");
+    EXPECT_EQ(command("take lantern"), "You take the Lantern.\n");
+    EXPECT_EQ(command("drop lantern"), "You drop the Lantern.\n");
+    EXPECT_EQ(command("take the lantern"), "You take the The Lantern.\n");
+}
+
+TEST_F(NounTest, TalkFindsWhoIsHereFirst) {
+    add_npc("apprentice", "Young Keeper", "garden");
+    add_npc("beadle", "Beadle", "hall");
+    EXPECT_EQ(command("talk to the keeper"), "You begin talking with Keeper.\n");
+    (void)command("bye");
+    EXPECT_EQ(command("talk young"), "Young Keeper isn't here.\n");
+    EXPECT_EQ(command("talk with bea"), "You begin talking with Beadle.\n");
+    (void)command("bye");
+    EXPECT_EQ(command("talk ee"), "You begin talking with Keeper.\n");
+    (void)command("bye");
+    EXPECT_EQ(command("talk e"), "Which do you mean: Beadle or Keeper?\n");
+}
+
+TEST_F(NounTest, AnExitGoesByItsDirectionOrItsDestination) {
+    world_.locations.at("hall").locked_exits.clear();
+    world_.locations.at("hall").exits["Spiral Stairs"] = "garden";
+    for (const std::string line :
+         {"go north", "go spiral stairs", "go to the garden", "go GARDEN"}) {
+        EXPECT_NE(command(line).find("Garden\nAn overgrown garden."), std::string::npos) << line;
+        (void)command("go south");
+    }
+    EXPECT_EQ(command("go garden shed"), "You can't go that way.\n");
+}
+
+TEST_F(NounTest, TheFirstOpenWayIsTaken) {
+    // Both lead to the garden, and the first is locked.
+    world_.locations.at("hall").exits["trellis"] = "garden";
+    EXPECT_EQ(command("go north"), "That way is locked.\n");
+    EXPECT_NE(command("go garden").find("An overgrown garden."), std::string::npos);
+}
+
+TEST_F(NounTest, ADirectionBeatsADestination) {
+    LocationData shed;
+    shed.name = "North";
+    world_.locations["shed"] = shed;
+    world_.locations.at("hall").exits["east"] = "shed";
+    EXPECT_EQ(command("go north"), "That way is locked.\n");
+}
+
+TEST_F(NounTest, ADirectionMayHoldAPreposition) {
+    world_.locations.at("hall").exits["to the cellar"] = "garden";
+    EXPECT_NE(command("go to the cellar").find("An overgrown garden."), std::string::npos);
+}
+
+TEST_F(NounTest, WordsAfterADirectionDoNotMatter) {
+    world_.locations.at("hall").locked_exits.clear();
+    EXPECT_NE(command("go north now please").find("An overgrown garden."), std::string::npos);
+    (void)command("go south");
+    // To someone, it is speech.
+    (void)command("talk keeper");
+    EXPECT_TRUE(game_->dispatch_player("go north, young man").npc_turn.has_value());
+}
+
+TEST_F(NounTest, AKeyOpensTheWayItIsFor) {
+    for (const std::string target : {"north", "garden", "the Garden"}) {
+        game_.reset();
+        EXPECT_EQ(command("take gate key"), "You take the Gate Key.\n");
+        EXPECT_EQ(command("use gate key on " + target),
+                  "You use the Gate Key. The way is unlocked.\n");
+        EXPECT_EQ(command("use the gate key with " + target), "It isn't locked.\n");
+        EXPECT_NE(command("go north").find("Garden"), std::string::npos);
+    }
+}
+
+TEST_F(NounTest, AKeyMayBeForADirection) {
+    world_.items.at("gate_key").unlock_target = "North";
+    (void)command("take gate key");
+    EXPECT_EQ(command("use gate key on garden"), "You use the Gate Key. The way is unlocked.\n");
+}
+
+TEST_F(NounTest, AKeyDoesNothingElsewhere) {
+    world_.locations.at("hall").exits["west"] = "hall";
+    (void)command("take gate key");
+    EXPECT_EQ(command("use gate key on west"), "That doesn't work.\n");
+    EXPECT_EQ(command("use gate key on statue"), "That doesn't work.\n");
+    EXPECT_EQ(command("go north"), "That way is locked.\n");
+}
+
 TEST_F(GameTest, SpokenLinesThatStartWithACommandWordReachTheNpc) {
     (void)command("talk keeper");
     for (const std::string line :
@@ -166,17 +350,19 @@ TEST_F(GameTest, WholeLineCommandsStillWorkInConversation) {
     EXPECT_EQ(game_.phase(), GamePhase::game_over);
 }
 
-TEST_F(GameTest, ActionsThatWouldWorkHereAskToFinishTheConversation) {
+TEST_F(GameTest, CommandsAboutThingsHereAskToFinishTheConversation) {
     (void)command("take old coin");
     (void)command("talk keeper");
     for (const std::string line :
-         {"go north", "take gate key", "take the Gate Key", "examine statue", "drop old coin",
-          "use old coin on north", "talk keeper"}) {
+         {"go north", "go to the garden", "take gate key", "take the Gate Key", "take key",
+          "take statue", "examine statue", "examine coin", "drop old coin", "drop coin",
+          "use old coin on north", "use coin on north", "talk keeper", "talk to the keeper"}) {
         EXPECT_NE(joined(command(line)).find("Finish the conversation"), std::string::npos) << line;
     }
-    // Already carried, hidden, and not carried: nothing here to act on.
+    // Already carried, hidden, not carried, or only part of a word: nothing here is meant.
     for (const std::string line :
-         {"take old coin", "take hidden note", "drop gate key", "use gate key on north"}) {
+         {"take old coin", "take hidden note", "drop gate key", "use gate key on north",
+          "examine your conscience", "take stat", "go west", "talk to me"}) {
         EXPECT_TRUE(game_.dispatch_player(line).npc_turn.has_value()) << line;
     }
 }
@@ -338,6 +524,42 @@ TEST_F(GameTest, SaveAndLoadRejectMalformedSlots) {
     EXPECT_NE(joined(command("save nope")).find("must be an integer"), std::string::npos);
     EXPECT_NE(joined(command("load 1 extra")).find("Usage: load"), std::string::npos);
     EXPECT_FALSE(std::filesystem::exists(saves_.path() / "slot_1.json"));
+}
+
+// --- the broken_wheel example can be won and lost --------------------------------------
+
+class BrokenWheelTest : public ::testing::Test {
+  protected:
+    BrokenWheelTest() : saves_("wheelsaves"), game_(ct::broken_wheel_example(), saves_.path()) {}
+
+    std::string play(const std::string &line) {
+        auto events = game_.dispatch_player(line).events;
+        const auto after = game_.after_turn();
+        events.insert(events.end(), after.begin(), after.end());
+        return joined(events);
+    }
+
+    ct::TempDir saves_;
+    CartridgeGame game_;
+};
+
+TEST_F(BrokenWheelTest, BringingTheManifestToTheMarketWins) {
+    (void)play("talk marcus");
+    ASSERT_TRUE(game_.submit_npc_tool("marcus", tools::GiveItem{.item_id = "cargo_manifest"}));
+    (void)play("bye");
+    const auto ending = play("go north");
+    EXPECT_EQ(game_.phase(), GamePhase::game_over);
+    EXPECT_NE(ending.find("riders after Harlan"), std::string::npos) << ending;
+}
+
+TEST_F(BrokenWheelTest, TheTrailGoesColdAtSundown) {
+    std::string last;
+    for (int turn = 0; turn < 10; ++turn) {
+        ASSERT_EQ(game_.phase(), GamePhase::playing) << turn;
+        last = play(turn % 2 == 0 ? "go north" : "go south");
+    }
+    EXPECT_EQ(game_.phase(), GamePhase::game_over);
+    EXPECT_NE(last.find("trail goes cold"), std::string::npos) << last;
 }
 
 TEST(GameConstruction, UnsafeCartridgeIdCannotSelectASavePath) {

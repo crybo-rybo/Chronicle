@@ -107,6 +107,20 @@ TEST(CartridgeLoad, TheSameKeyInDifferentObjectsIsFine) {
     EXPECT_TRUE(load_package(dir.path()).flags.at("a"));
 }
 
+TEST(CartridgeLoad, EventParamsMustBeAnObject) {
+    for (const std::string params : {R"("The end.")", "[]", "7"}) {
+        ct::TempDir dir("stringparams");
+        ct::write_package(dir.path());
+        std::ofstream(dir.path() / "events.json")
+            << R"({"events":{"e":{"actions":[{"type":"end_game","params":)" << params << "}]}}}";
+        const auto issues = validate_package(dir.path());
+        ASSERT_EQ(issues.size(), 1u) << params;
+        EXPECT_NE(issues.front().message.find("end_game: params must be an object"),
+                  std::string::npos)
+            << issues.front().message;
+    }
+}
+
 TEST(CartridgeLoad, PathTraversalRejected) {
     ct::TempDir dir("traversal");
     ct::write_package(dir.path(), {{"scenario", {{"files", {{"world", "../outside.json"}}}}}});

@@ -397,8 +397,10 @@ void from_json(const json &j, ConditionData &v) {
 void from_json(const json &j, EventActionData &v) {
     reject_unknown(j, {"type", "params"}, "event action");
     req(j, "type", v.type);
-    const auto it = j.find("params");
-    if (it != j.end() && it->is_object()) {
+    if (const auto it = j.find("params"); it != j.end() && !it->is_null()) {
+        if (!it->is_object()) {
+            throw std::invalid_argument("event action " + v.type + ": params must be an object");
+        }
         v.params = *it;
     }
 }

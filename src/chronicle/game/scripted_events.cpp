@@ -15,32 +15,43 @@ using game_detail::parse_int;
 
 // --- scripted events -----------------------------------------------------
 
-GameEvents CartridgeGame::evaluate_events() {
-    GameEvents events;
-    std::vector<std::pair<std::string, std::vector<EventActionData>>> pending;
+// Events fire in id order. One fires only if its conditions held before any event
+// of this pass ran and still hold when its place comes: it never fires on a state
+// that an earlier event undid, nor sooner than the turn after the one that set it up.
+GameEvents CartridgeGame::evaluate_events(const bool turn_passed) {
+    std::vector<std::string> ready;
     for (const auto &[event_id, trigger] : world_.events) {
-        if (trigger.once && trigger.fired) {
-            continue;
+        // A repeating event is checked once per turn of the clock, not per line typed.
+        const bool due = trigger.once ? !trigger.fired : turn_passed;
+        if (due && conditions_met(trigger)) {
+            ready.push_back(event_id);
         }
-        const bool met = std::ranges::all_of(
-            trigger.conditions, [&](const ConditionData &cond) { return condition_met(cond); });
-        if (!met) {
-            continue;
-        }
-        pending.emplace_back(event_id, trigger.actions);
     }
-    for (const auto &[event_id, event_actions] : pending) {
+
+    GameEvents events;
+    for (const auto &event_id : ready) {
+        if (!conditions_met(world_.events.at(event_id))) {
+            continue;
+        }
         if (auto marked = submit_world_action(actions::MarkEventFired{.event_id = event_id});
             !marked) {
             events.push_back({EventKind::warning, marked.error().reason});
             continue;
         }
-        for (const auto &action : event_actions) {
+        for (const auto &action : world_.events.at(event_id).actions) {
             auto applied = apply_event_action(action);
             events.insert(events.end(), applied.begin(), applied.end());
+            if (phase_ == GamePhase::game_over) {
+                return events; // One ending, and nothing after it.
+            }
         }
     }
     return events;
+}
+
+bool CartridgeGame::conditions_met(const EventTriggerData &trigger) const {
+    return std::ranges::all_of(trigger.conditions,
+                               [&](const ConditionData &cond) { return condition_met(cond); });
 }
 
 bool CartridgeGame::condition_met(const ConditionData &cond) const {
@@ -141,6 +152,11 @@ GameEvents CartridgeGame::apply_event_action(const EventActionData &action) {
         const std::string item_id = str_param("item_id");
         const auto loc_it = world_.locations.find(str_param("location_id"));
         if (item_id.empty() || loc_it == world_.locations.end()) {
+            return {};
+        }
+        // What the player already carries, or what is already there, does not appear.
+        if (item_is_at(world_, item_id, ItemHolder::player) ||
+            item_is_at(world_, item_id, ItemHolder::location, loc_it->first)) {
             return {};
         }
         if (auto moved = submit_world_action(actions::RelocateItem{

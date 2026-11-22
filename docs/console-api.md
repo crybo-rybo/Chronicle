@@ -7,26 +7,31 @@ listed here.
 
 | Command | Arguments | Effect |
 | --- | --- | --- |
-| `go` | `<direction>` | Move through an exit |
+| `go` | `<direction or place>` | Move through an exit |
 | `look` | — | Re-render the current location |
 | `examine` | `<item>` | Show item description when accessible |
 | `take` | `<item>` | Pick up a takeable item here |
 | `drop` | `<item>` | Drop a carried item |
-| `use` | `<item> on/with <target>` | Use an item (including unlock targets) |
-| `talk` | `<npc>` | Begin a conversation |
+| `use` | `<item> on/with <direction or place>` | Unlock an exit with a carried item |
+| `talk` | `[to] <npc>` | Begin a conversation |
 | `inventory` | — | List carried items |
 | `save` | `[slot]` | Save to slot 1–99 (default 1) |
 | `load` | `[slot]` | Load from slot 1–99 (default 1) |
 | `help` | — | Show help |
 | `quit` | — | Exit |
 
+Words refer to what the player can reach: `take key` means the key in the room,
+not one elsewhere. A full name wins, then an id, then whole words of a name, then
+part of one, and articles do not matter. When two things fit equally well the
+console asks which is meant.
+
 In conversation, what the player types is said to the active NPC. A line is a
 command only when the whole line is one: `look`, `inventory`, `save [slot]`,
 `load [slot]`, `help`, `quit`, or an exit phrase (`bye`, `goodbye`, `leave`,
 `exit conversation`, with or without a closing `.` or `!`). "Quit lying to me" and
-"look at this" are speech. A line that would be a working action here and now,
-such as `go east` or `take visitor ledger`, is answered with a reminder to finish
-the conversation first.
+"look at this" are speech. A command about an exit, an item, or an NPC that is here,
+such as `go east` or `take visitor ledger`, is answered with a reminder to finish the
+conversation first.
 
 Verb aliases may be defined in `config.json`. An alias adds a word for a built-in
 command. One that redefines a built-in command is ignored.
@@ -96,7 +101,16 @@ and the player carry, and its most important memories, newest first. That contex
 goes with the turn it describes. History keeps the player's words, the NPC's
 answers, and its tool calls, and always the latest turn.
 
-## Event Conditions (AND)
+## Events
+
+After each line the player types, the events whose conditions hold fire in id order.
+An event with `once` true, the default, fires at most once. One with `once` false is
+checked only when the line took a turn of the clock, so looking around or asking for
+help never sets it off. An event an earlier one has undone does not fire, and an
+event an earlier one set up waits for the next line. The first `end_game` ends the
+game, and nothing after it happens.
+
+### Conditions (AND)
 
 | Type | Args |
 | --- | --- |
@@ -108,7 +122,7 @@ answers, and its tool calls, and always the latest turn.
 | `item_in_player_inv` | item_id |
 | `turn_ge` | turn count |
 
-## Event Actions
+### Actions
 
 | Type | Params |
 | --- | --- |
@@ -117,6 +131,9 @@ answers, and its tool calls, and always the latest turn.
 | `spawn_item` | `item_id`, `location_id` |
 | `narrate` | `text` |
 | `end_game` | optional `text` |
+
+`spawn_item` does nothing when the item is already there or the player carries it.
+A `hidden` item stays hidden wherever it is put.
 
 ## Time
 
