@@ -6,7 +6,7 @@
   "total_periods": 12,
   "max_memory_tokens": 800,
   "max_world_tokens": 400,
-  "max_history_tokens": 600,
+  "max_history_tokens": 2000,
   "action_narration_templates": {
     "give_item": "{npc} hands you the {item}.",
     "take_item": "{npc} takes the {item}.",

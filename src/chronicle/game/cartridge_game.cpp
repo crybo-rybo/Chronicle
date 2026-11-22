@@ -470,15 +470,7 @@ GameEvents CartridgeGame::examine(const std::string &arg) const {
     if (!item_id || !item_accessible(*item_id)) {
         return {{EventKind::narration, "You don't see that here."}};
     }
-    const auto &item = world_.items.at(*item_id);
-    std::string text = item.description;
-    const auto readable = item.properties.find("readable");
-    const auto item_text = item.properties.find("text");
-    if (readable != item.properties.end() && readable->second == "true" &&
-        item_text != item.properties.end() && !item_text->second.empty()) {
-        text += "\nIt reads: " + item_text->second;
-    }
-    return {{EventKind::narration, text}};
+    return {{EventKind::narration, item_text(world_.items.at(*item_id))}};
 }
 
 bool CartridgeGame::item_accessible(const std::string &item_id) const {

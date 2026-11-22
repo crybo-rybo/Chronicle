@@ -21,11 +21,15 @@
 #include <type_traits>
 #include <utility>
 
+#include "chronicle/game/text_utils.hpp"
 #include "chronicle/prompt.hpp"
 
 namespace chronicle {
 
 namespace {
+
+using game_detail::dialogue_line;
+using game_detail::single_line;
 
 // A policy rejection is deliberately a successful tool result: the NPC system
 // prompt tells the model to read `ok`, and saved histories hold results in this
@@ -149,6 +153,12 @@ template <typename Function> void for_each_tool_binding(Function &&function) {
 
 constexpr std::size_t MAX_LIVE_NPC_SESSIONS = 16;
 
+// Told only that a call went well, many models speak again and again until they
+// run out of rounds.
+constexpr const char *SPEECH_ACK =
+    "The player heard you. Finish acting if you must, then end your turn without speaking again.";
+constexpr std::size_t MAX_SPEECHES_PER_TURN = 3;
+
 class SessionError : public std::runtime_error {
   public:
     using std::runtime_error::runtime_error;
@@ -199,31 +209,54 @@ bool opens_turn(const nlohmann::json &message) {
            });
 }
 
-void trim_conversation_history(scry::Conversation &conversation, const int token_budget) {
+// Past turns keep the player's words without the context they were sent with.
+// Returns whether anything changed.
+bool drop_turn_contexts(nlohmann::json &document) {
+    bool changed = false;
+    for (auto &message : document["messages"]) {
+        if (!opens_turn(message)) {
+            continue;
+        }
+        for (auto &block : message["content"]) {
+            if (block.value("type", "") != "text") {
+                continue;
+            }
+            auto kept = without_turn_context(block.value("text", ""));
+            if (block["text"] != kept) {
+                block["text"] = std::move(kept);
+                changed = true;
+            }
+        }
+    }
+    return changed;
+}
+
+// Make committed history ready for the next request: without stale context, and
+// without the oldest turns when it is over budget. The latest turn always stays,
+// so an NPC never loses the exchange it is in the middle of.
+void prepare_history(scry::Conversation &conversation, const int token_budget) {
     auto document = inspect_conversation(conversation);
+    bool changed = drop_turn_contexts(document);
     auto &messages = document["messages"];
     const auto byte_budget = static_cast<std::size_t>(std::max(1, token_budget)) * 4U;
-    bool changed = false;
-    while (!messages.empty() && messages.dump().size() > byte_budget) {
-        // Drop the oldest turn: everything before the next one opens.
-        std::size_t erase_count = 1;
-        while (erase_count < messages.size() && !opens_turn(messages[erase_count])) {
-            ++erase_count;
+    while (messages.dump().size() > byte_budget) {
+        const auto next_turn =
+            std::find_if(messages.begin() + (messages.empty() ? 0 : 1), messages.end(), opens_turn);
+        if (next_turn == messages.end()) {
+            break;
         }
-        messages.erase(messages.begin(),
-                       messages.begin() +
-                           static_cast<nlohmann::json::difference_type>(erase_count));
+        messages.erase(messages.begin(), next_turn);
         changed = true;
     }
     if (!changed) {
         return;
     }
 
-    auto compacted = scry::Conversation::from_json(scrydantic::Json{.text = document.dump()});
-    if (!compacted) {
-        throw SessionError("Could not compact conversation history: " + compacted.error().message);
+    auto prepared = scry::Conversation::from_json(scrydantic::Json{.text = document.dump()});
+    if (!prepared) {
+        throw SessionError("Could not compact conversation history: " + prepared.error().message);
     }
-    conversation = std::move(*compacted);
+    conversation = std::move(*prepared);
 }
 
 // What Scry has finished so far of the turn in flight: the player's message and
@@ -242,6 +275,7 @@ class ObservedTurn {
             round_ = call.round;
             messages_.push_back({.role = scry::Role::assistant, .content = {}});
             if (!text_.empty()) {
+                spoken_ += text_ + "\n";
                 messages_.back().content.emplace_back(
                     scry::TextBlock{.text = std::exchange(text_, {})});
             }
@@ -252,6 +286,9 @@ class ObservedTurn {
         messages_.back().content.emplace_back(scry::ToolResultBlock{
             .tool_call_id = call.id, .result = call.result, .is_error = call.is_error});
     }
+
+    // What the model wrote beside its tool calls.
+    [[nodiscard]] const std::string &spoken() const { return spoken_; }
 
     // The committed history with this turn appended.
     [[nodiscard]] scry::Conversation append_to(const scry::Conversation &committed) const {
@@ -273,15 +310,26 @@ class ObservedTurn {
   private:
     std::vector<scry::Message> messages_;
     std::string text_;
+    std::string spoken_;
     std::uint32_t round_ = 0;
 };
 
-// Scry fails a turn whose last response is empty, because it commits no empty
-// message. Models that speak through the say tool often stop exactly that way,
-// and Scry reports it under no category of its own.
-bool ended_without_text(const scry::Error &error) {
-    return error.category == scry::ErrorCategory::protocol &&
-           error.message == "model response contained no content";
+// Scry fails a turn whose last response it cannot commit: an empty one, where a
+// model that speaks through the say tool often stops, or one cut off in the middle
+// of a tool call. The rounds before it were answered and still stand. Scry files an
+// HTTP refusal under the same category, and that says nothing about the model.
+bool is_unusable_response(const scry::Error &error) {
+    return error.category == scry::ErrorCategory::protocol && error.http_status < 400;
+}
+
+// Scry's diagnostic with what the provider said about it, which names the likes of
+// a model that is not installed.
+std::string describe(const scry::Error &error) {
+    std::string detail = error.http_status == 0 ? "" : "HTTP " + std::to_string(error.http_status);
+    if (!error.provider_detail.empty()) {
+        detail += (detail.empty() ? "" : ", ") + error.provider_detail;
+    }
+    return detail.empty() ? error.message : error.message + " (" + detail + ")";
 }
 
 // Harness::send_and_wait, with the turn observed as it runs.
@@ -395,9 +443,10 @@ NpcSessionManager::Session &NpcSessionManager::get_or_create(const std::string &
         .timeouts = {.idle = request_timeout, .transfer = request_timeout},
         .limits = {.max_pending_turns = 1, .max_tool_arguments_bytes = std::size_t{64} * 1024},
         .max_tool_rounds = 8,
-        // Running out of rounds must fail the turn, so that the world rolls back
-        // together with the history.
-        .tool_round_limit = scry::ToolRoundLimitPolicy::fail,
+        .max_tool_calls_per_turn = 32,
+        // Out of rounds, the turn ends with what it did. Scry commits those rounds,
+        // so the world and the history still agree.
+        .tool_round_limit = scry::ToolRoundLimitPolicy::complete,
     });
     if (!created) {
         throw SessionError(created.error().message);
@@ -409,19 +458,26 @@ NpcSessionManager::Session &NpcSessionManager::get_or_create(const std::string &
     const auto dispatch = [this, npc_id](const scry::ToolCallContext &context,
                                          const tools::NpcToolCall &call) -> ToolAck {
         try {
+            if (const auto *say = std::get_if<tools::Say>(&call)) {
+                if (auto issue = speech_issue(say->text)) {
+                    return ToolAck{.ok = false, .result = {}, .error = std::move(*issue)};
+                }
+            }
             auto outcome = submit_tool(npc_id, call);
             if (!outcome) {
                 return ToolAck{.ok = false, .result = {}, .error = outcome.error().reason};
             }
             std::string ack = "ok";
             for (auto &event : *outcome) {
-                if (event.kind == EventKind::dialogue) {
-                    turn_had_dialogue_ = true;
-                }
                 if (event.kind == EventKind::tool_result) {
-                    ack = event.text;
+                    ack = std::move(event.text); // An answer for the model alone.
+                    continue;
                 }
-                turn_events_.push_back(event);
+                if (event.kind == EventKind::dialogue) {
+                    ack = SPEECH_ACK;
+                    turn_speech_.push_back(std::get<tools::Say>(call).text);
+                }
+                turn_events_.push_back(std::move(event));
             }
             return ToolAck{.ok = true, .result = std::move(ack), .error = {}};
         } catch (const std::exception &exc) {
@@ -509,6 +565,16 @@ NpcSessionManager::Session &NpcSessionManager::get_or_create(const std::string &
     return *inserted->second;
 }
 
+std::optional<std::string> NpcSessionManager::speech_issue(const std::string &text) const {
+    if (std::ranges::find(turn_speech_, text) != turn_speech_.end()) {
+        return "You already said that. End your turn.";
+    }
+    if (turn_speech_.size() >= MAX_SPEECHES_PER_TURN) {
+        return "You have said enough. End your turn.";
+    }
+    return std::nullopt;
+}
+
 ToolOutcome NpcSessionManager::submit_tool(const std::string &npc_id,
                                            const tools::NpcToolCall &call) {
     return game_.submit_npc_tool(npc_id, call);
@@ -517,14 +583,14 @@ ToolOutcome NpcSessionManager::submit_tool(const std::string &npc_id,
 NpcTurnResult NpcSessionManager::run_turn(const std::string &npc_id,
                                           const std::string &player_text) {
     turn_events_.clear();
-    turn_had_dialogue_ = false;
+    turn_speech_.clear();
     turn_fault_.reset();
 
     Session *session = nullptr;
     std::string message;
     try {
         session = &get_or_create(npc_id);
-        trim_conversation_history(session->conversation, game_.world().config.max_history_tokens);
+        prepare_history(session->conversation, game_.world().config.max_history_tokens);
         // Throws for player text that is not UTF-8, which no request could carry.
         message = build_npc_turn_message(game_.world(), npc_id, player_text);
     } catch (const std::exception &exc) {
@@ -538,16 +604,21 @@ NpcTurnResult NpcSessionManager::run_turn(const std::string &npc_id,
         ObservedTurn observed(message);
         auto result = run_observed_turn(session->harness, session->conversation, std::move(message),
                                         observed);
+        const auto spoken = single_line(observed.spoken());
         if (result) {
-            final_text = strip_copy(result->text);
-        } else if (ended_without_text(result.error()) && !turn_events_.empty()) {
-            // The NPC already acted or spoke through its tools and had nothing to
-            // add. Commit those rounds, as Scry does when a turn stops at its
-            // round limit, so the world and the history still agree.
+            final_text = single_line(result->text);
+        } else if (!turn_fault_ && is_unusable_response(result.error()) &&
+                   (!turn_events_.empty() || !spoken.empty())) {
+            // The player has already seen the NPC act or heard it speak. Commit those
+            // rounds, as Scry does when a turn stops at its round limit, so the world
+            // and the history still agree.
             session->conversation = observed.append_to(session->conversation);
             final_text.emplace();
         } else {
-            failure = turn_fault_.value_or(result.error().message);
+            failure = turn_fault_.value_or(describe(result.error()));
+        }
+        if (final_text && final_text->empty()) {
+            final_text = spoken;
         }
     } catch (const std::exception &exc) {
         failure = exc.what();
@@ -567,9 +638,13 @@ NpcTurnResult NpcSessionManager::run_turn(const std::string &npc_id,
             NpcTurnFailure{.message = std::move(message_text), .world_rolled_back = rolled_back});
     }
 
-    if (!final_text->empty() && !turn_had_dialogue_) {
-        const auto &npc = game_.world().npcs.at(npc_id);
-        events.push_back({EventKind::dialogue, npc.identity.name + ": \"" + *final_text + "\""});
+    const auto &name = game_.world().npcs.at(npc_id).identity.name;
+    if (!final_text->empty() && turn_speech_.empty()) {
+        events.push_back({EventKind::dialogue, dialogue_line(name, *final_text)});
+    }
+    if (events.empty()) {
+        // Every round went to tools that show the player nothing.
+        events.push_back({EventKind::narration, name + " gives no answer."});
     }
     return events;
 }
@@ -589,6 +664,7 @@ std::expected<nlohmann::json, std::string> NpcSessionManager::snapshot_conversat
         if (parsed.is_discarded()) {
             return std::unexpected("conversation for '" + npc_id + "' serialized to invalid JSON");
         }
+        (void)drop_turn_contexts(parsed);
         snapshot[npc_id] = std::move(parsed);
     }
     return snapshot;

@@ -143,6 +143,16 @@ bool ItemPosition::is_npc(const std::string &npc_id) const {
     return holder == ItemHolder::npc && id == npc_id;
 }
 
+std::string item_text(const ItemData &item) {
+    const auto readable = item.properties.find("readable");
+    const auto written = item.properties.find("text");
+    if (readable == item.properties.end() || readable->second != "true" ||
+        written == item.properties.end() || written->second.empty()) {
+        return item.description;
+    }
+    return item.description + "\nIt reads: " + written->second;
+}
+
 std::vector<std::string> items_at(const WorldState &world, const ItemHolder holder,
                                   const std::string &id) {
     std::vector<std::string> result;

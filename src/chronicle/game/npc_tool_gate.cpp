@@ -7,8 +7,9 @@ namespace chronicle {
 namespace {
 
 using game_detail::contains;
+using game_detail::dialogue_line;
 using game_detail::format_template;
-using game_detail::strip;
+using game_detail::single_line;
 using tools::NpcToolCall;
 
 } // namespace
@@ -61,7 +62,12 @@ std::optional<std::string> CartridgeGame::validate_npc_tool(const std::string &n
         const decltype(check_item) &item_check;
         const decltype(check_present) &present_check;
 
-        std::optional<std::string> operator()(const tools::Say &) const { return present_check(); }
+        std::optional<std::string> operator()(const tools::Say &args) const {
+            if (single_line(args.text).empty()) {
+                return "There is nothing to say in an empty text";
+            }
+            return present_check();
+        }
         std::optional<std::string> operator()(const tools::GiveItem &args) const {
             if (auto issue = present_check()) {
                 return issue;
@@ -120,7 +126,7 @@ std::optional<std::string> CartridgeGame::validate_npc_tool(const std::string &n
             return std::nullopt;
         }
         std::optional<std::string> operator()(const tools::Remember &args) const {
-            if (strip(args.summary).empty()) {
+            if (single_line(args.summary).empty()) {
                 return "Memory summary required";
             }
             if (args.summary.size() > tools::Remember::max_summary_bytes) {
@@ -177,8 +183,7 @@ ToolOutcome CartridgeGame::apply_npc_tool(const std::string &npc_id, const NpcTo
         const decltype(submit) &submit_action;
 
         ToolOutcome operator()(const tools::Say &args) const {
-            return GameEvents{
-                {EventKind::dialogue, npc.identity.name + ": \"" + strip(args.text) + "\""}};
+            return GameEvents{{EventKind::dialogue, dialogue_line(npc.identity.name, args.text)}};
         }
         ToolOutcome operator()(const tools::GiveItem &args) const {
             const auto &item = game.world_.items.at(args.item_id);
@@ -210,9 +215,13 @@ ToolOutcome CartridgeGame::apply_npc_tool(const std::string &npc_id, const NpcTo
         }
         ToolOutcome operator()(const tools::UpdateMood &args) const {
             const std::string mood = tools::to_string(args.mood);
+            const bool unchanged = npc.state.mood == mood;
             if (auto rejected =
                     submit_action(actions::UpdateNpcMood{.npc_id = npc_id, .mood = mood})) {
                 return std::unexpected(std::move(*rejected));
+            }
+            if (unchanged) {
+                return GameEvents{};
             }
             const auto event =
                 game.narrate("update_mood", {{"npc", npc.identity.name}, {"mood", mood}});
@@ -259,7 +268,7 @@ ToolOutcome CartridgeGame::apply_npc_tool(const std::string &npc_id, const NpcTo
                         MemoryEntry{
                             .timestamp = game.world_.clock.period_name(),
                             .type = "observation",
-                            .summary = strip(args.summary),
+                            .summary = single_line(args.summary),
                             .importance = args.importance,
                             .related_npc = "",
                             .related_item = "",
@@ -280,8 +289,7 @@ ToolOutcome CartridgeGame::apply_npc_tool(const std::string &npc_id, const NpcTo
         }
         ToolOutcome operator()(const tools::InspectItem &args) const {
             const auto &item = game.world_.items.at(args.item_id);
-            return GameEvents{
-                {EventKind::tool_result, "[inspect] " + item.name + ": " + item.description}};
+            return GameEvents{{EventKind::tool_result, item.name + ": " + item_text(item)}};
         }
     };
     return std::visit(Visitor{*this, npc, npc_id, submit}, call);

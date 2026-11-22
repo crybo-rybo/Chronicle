@@ -69,8 +69,9 @@ class NpcSessionManager {
 
     // Run one blocking conversation turn with the active NPC. A failed turn
     // rolls back every tool-side world write and returns an error so the
-    // console can provide deterministic stub dialogue. A turn that acted through
-    // its tools and then ended without a word is complete, not failed.
+    // console can provide deterministic stub dialogue. A turn whose NPC has
+    // already spoken or visibly acted is complete, not failed, when the model's
+    // next response is empty or broken.
     [[nodiscard]] NpcTurnResult run_turn(const std::string &npc_id, const std::string &player_text);
 
     // npc_id -> serialized scry conversation document, for save files.
@@ -92,6 +93,8 @@ class NpcSessionManager {
     struct Session;
 
     Session &get_or_create(const std::string &npc_id);
+    // Why a further line of speech this turn is refused, if it is.
+    [[nodiscard]] std::optional<std::string> speech_issue(const std::string &text) const;
 
     CartridgeGame &game_;
     EndpointConfig endpoint_;
@@ -100,7 +103,8 @@ class NpcSessionManager {
 
     // Buffered gate output for the in-flight turn (filled by tool handlers).
     GameEvents turn_events_;
-    bool turn_had_dialogue_ = false;
+    // What the NPC has said through the say tool this turn.
+    std::vector<std::string> turn_speech_;
     // Why a throwing tool handler cancelled the in-flight turn.
     std::optional<std::string> turn_fault_;
     std::uint64_t use_sequence_ = 0;

@@ -71,16 +71,29 @@ Moods: `fearful`, `friendly`, `grieving`, `hostile`, `neutral`, `suspicious`.
 Per-NPC `tool_policy` restricts tools and scoped IDs; anything it does not list is
 refused. `say`, `give_item`, `take_item`, and `reveal_knowledge` also need the NPC
 to be where the player is, so an NPC that has moved away cannot use them. Only
-allowed tools are exposed to the model at all; each conversation turn is an agentic loop of up
-to 8 tool rounds, and a rejected tool call is returned to the model as an
-explicit structured result it can react to (the player sees no rejection).
-Tool arguments are strictly validated against generated JSON schemas — unknown
-fields, wrong types, and out-of-vocabulary moods are rejected before the gate
-runs, and the model is told the JSON path and the reason for each. A failed turn
-rolls back every world write it made before deterministic stub dialogue is
-shown. A turn fails when the provider fails, when the model uses up its tool
-rounds, when a tool handler throws, or when the model ends without any text and
-its tools gave the player nothing to see. A model may speak through `say` alone.
+allowed tools are exposed to the model at all, together with the ids each one accepts; each
+conversation turn is an agentic loop of up to 8 tool rounds, and a rejected tool
+call is returned to the model as an explicit structured result it can react to
+(the player sees no rejection). Tool arguments are strictly validated against
+generated JSON schemas — unknown fields, wrong types, and out-of-vocabulary moods
+are rejected before the gate runs, and the model is told the JSON path and the
+reason for each.
+
+An NPC is heard through `say`, at most three different lines a turn. If it never
+uses `say`, its closing text is heard instead, or failing that, the text it wrote
+beside its tool calls. Speech is shown on one line. What `inspect_item` reads goes
+to the model alone.
+
+A turn that runs out of rounds, or whose last response is empty or broken after
+the NPC spoke or visibly acted, keeps what was done up to there. Otherwise a turn
+fails when the provider fails, when a tool handler throws, or when the model
+answers with nothing the player could see. A failed turn rolls back every world
+write it made before deterministic stub dialogue is shown.
+
+Each turn sends the NPC its current situation: time, place, mood, trust, what it
+and the player carry, and its most important memories, newest first. That context
+goes with the turn it describes. History keeps the player's words, the NPC's
+answers, and its tool calls, and always the latest turn.
 
 ## Event Conditions (AND)
 

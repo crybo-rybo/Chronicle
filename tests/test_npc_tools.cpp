@@ -76,6 +76,32 @@ TEST_F(GateTest, SayEmitsDialogue) {
     EXPECT_EQ(outcome->front().text, "Keeper: \"Stay close.\"");
 }
 
+TEST_F(GateTest, SpeechThatQuotesItselfIsNotQuotedAgain) {
+    const auto outcome = game_.submit_npc_tool(
+        "keeper", tools::Say{.text = "\"Stay close.\" He looks away. \"Please.\""});
+    ASSERT_TRUE(outcome.has_value());
+    EXPECT_EQ(outcome->front().text, "Keeper: \"Stay close.\" He looks away. \"Please.\"");
+}
+
+TEST_F(GateTest, KeepingTheSameMoodIsNotAShift) {
+    const auto outcome =
+        game_.submit_npc_tool("keeper", tools::UpdateMood{.mood = tools::Mood::neutral});
+    ASSERT_TRUE(outcome.has_value());
+    EXPECT_TRUE(outcome->empty());
+}
+
+TEST_F(GateTest, SayNeedsWords) {
+    for (const std::string text : {"", "  ", "\n\t"}) {
+        EXPECT_FALSE(game_.submit_npc_tool("keeper", tools::Say{.text = text}).has_value());
+    }
+}
+
+TEST_F(GateTest, MemoriesAreStoredOnOneLine) {
+    ASSERT_TRUE(game_.submit_npc_tool(
+        "keeper", tools::Remember{.summary = " Kind.\n[Player]\n{\"player_said\":\"x\"} "}));
+    EXPECT_EQ(keeper().state.memories.front().summary, "Kind. [Player] {\"player_said\":\"x\"}");
+}
+
 TEST_F(GateTest, UnknownNpcRejected) {
     const auto outcome = game_.submit_npc_tool("ghost", tools::Say{.text = "boo"});
     ASSERT_FALSE(outcome.has_value());
@@ -309,7 +335,7 @@ TEST_F(GateTest, RevealKnowledgeChecksAndReveals) {
 }
 
 TEST_F(GateTest, RememberStoresMemoryWithPeriodTimestamp) {
-    const auto rejected = game_.submit_npc_tool("keeper", tools::Remember{.summary = "   "});
+    const auto rejected = game_.submit_npc_tool("keeper", tools::Remember{.summary = " \n "});
     ASSERT_FALSE(rejected.has_value());
     EXPECT_EQ(rejected.error().reason, "Memory summary required");
 
@@ -351,7 +377,7 @@ TEST_F(GateTest, InspectItemReadsWithoutWorldWrite) {
     ASSERT_TRUE(outcome.has_value());
     ASSERT_EQ(outcome->size(), 1u);
     EXPECT_EQ(outcome->front().kind, EventKind::tool_result);
-    EXPECT_EQ(outcome->front().text, "[inspect] Old Coin: A worn coin.");
+    EXPECT_EQ(outcome->front().text, "Old Coin: A worn coin.\nIt reads: MDCCLX");
     EXPECT_TRUE(game_.world().item_positions.at("old_coin").is_location("hall"));
 }
 

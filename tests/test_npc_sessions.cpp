@@ -118,11 +118,16 @@ TEST_F(NpcSessionTest, ToolCallsReachTheGateAndAreAcknowledged) {
 
     ASSERT_EQ(server_.requests().size(), 2U);
     const std::vector<json> expected = {
+        {{"ok", true},
+         {"result", "The player heard you. Finish acting if you must, then end your turn without "
+                    "speaking again."},
+         {"error", ""}},
         {{"ok", true}, {"result", "ok"}, {"error", ""}},
-        {{"ok", true}, {"result", "ok"}, {"error", ""}},
-        {{"ok", true}, {"result", "[inspect] Old Coin: A worn coin."}, {"error", ""}},
+        {{"ok", true}, {"result", "Old Coin: A worn coin.\nIt reads: MDCCLX"}, {"error", ""}},
     };
     EXPECT_EQ(tool_results(last_request()), expected);
+    // What the NPC reads off an item is not shown to the player.
+    EXPECT_EQ(joined(*turn).find("MDCCLX"), std::string::npos);
 }
 
 TEST_F(NpcSessionTest, ClosingTextIsDialogueWhenNothingWasSaid) {
@@ -317,20 +322,6 @@ TEST_F(FailedTurnTest, TransientFailureIsRetriedWithoutRepeatingTools) {
     EXPECT_EQ(game_.world().npcs.at("keeper").state.trust_toward_player, 5);
 }
 
-TEST_F(FailedTurnTest, ToolRoundExhaustionRollsEverythingBack) {
-    NpcSessionManager sessions(game_, endpoint());
-    commit_good_turn(sessions);
-    const auto requests = server_.requests().size();
-    // Eight rounds run; the ninth request for tools is the one that fails.
-    std::vector<std::string> ids;
-    for (int round = 0; round < 9; ++round) {
-        ids.push_back("loop-" + std::to_string(round));
-        call({{.id = ids.back(), .name = "update_trust", .arguments = R"({"delta":5})"}});
-    }
-    expect_rolled_back(sessions, "tool-round limit");
-    EXPECT_EQ(server_.requests().size(), requests + 9 + 1);
-}
-
 TEST_F(FailedTurnTest, EmptyResponseRollsBack) {
     NpcSessionManager sessions(game_, endpoint());
     commit_good_turn(sessions);
@@ -419,10 +410,11 @@ TEST_F(FailedTurnTest, ConsoleShowsStubDialogueAndKeepsPlaying) {
     EXPECT_EQ(world_json(), world);
 }
 
-// --- turns that end without a word ---------------------------------------------
+// --- turns that end in a response nobody can use ---------------------------------
 
-// Many models speak through the say tool and then stop with an empty message.
-// Scry fails such a turn; Chronicle keeps it, history included.
+// Many models speak through the say tool and then stop with an empty message, or
+// run on until a response is cut off. Scry fails such a turn; Chronicle keeps what
+// was done before it, history included.
 class WordlessTurnTest : public NpcSessionTest {
   protected:
     // Two rounds holding every kind of answer a call can get, then `closing`.
@@ -479,6 +471,39 @@ TEST_F(WordlessTurnTest, CommitsTheRoundsScryWouldHaveCommitted) {
     EXPECT_EQ(wordless, spoken);
 }
 
+TEST_F(WordlessTurnTest, AResponseCutOffInAToolCallLosesOnlyItself) {
+    NpcSessionManager sessions(game_, endpoint());
+    call({{.id = "c1", .name = "say", .arguments = R"({"text":"Welcome, Ishmael."})"}});
+    // Ollama reports `length` beside the calls it managed to finish.
+    auto cut_off = st::openai_tool_stream(
+        {{.id = "c2", .name = "update_trust", .arguments = R"({"delta":9})"}});
+    const std::string finish = "\"finish_reason\":\"tool_calls\"";
+    ASSERT_NE(cut_off.find(finish), std::string::npos);
+    cut_off.replace(cut_off.find(finish), finish.size(), "\"finish_reason\":\"length\"");
+    server_.enqueue({.body_chunks = {cut_off}});
+
+    const auto turn = sessions.run_turn("keeper", "I am Ishmael.");
+    ASSERT_TRUE(turn.has_value()) << turn.error().message;
+    EXPECT_EQ(joined(*turn), "Keeper: \"Welcome, Ishmael.\"\n");
+    EXPECT_EQ(game_.world().npcs.at("keeper").state.trust_toward_player, 0);
+
+    reply("Ishmael.");
+    ASSERT_TRUE(sessions.run_turn("keeper", "Who am I?").has_value());
+    EXPECT_NE(last_request().body.find("I am Ishmael."), std::string::npos);
+    EXPECT_EQ(last_request().body.find("update_trust\",\"arguments"), std::string::npos);
+}
+
+TEST_F(FailedTurnTest, ACutOffResponseBeforeAnythingHappenedRollsBack) {
+    NpcSessionManager sessions(game_, endpoint());
+    commit_good_turn(sessions);
+    auto cut_off = st::openai_tool_stream(
+        {{.id = "c2", .name = "update_trust", .arguments = R"({"delta":9})"}});
+    const std::string finish = "\"finish_reason\":\"tool_calls\"";
+    cut_off.replace(cut_off.find(finish), finish.size(), "\"finish_reason\":\"length\"");
+    server_.enqueue({.body_chunks = {cut_off}});
+    expect_rolled_back(sessions, "inconsistent");
+}
+
 TEST_F(WordlessTurnTest, AnthropicHistoryStaysSendable) {
     auto anthropic = endpoint();
     anthropic.anthropic_dialect = true;
@@ -500,7 +525,7 @@ TEST_F(WordlessTurnTest, AnthropicHistoryStaysSendable) {
 
 TEST_F(WordlessTurnTest, SavesLoadsAndTrimsLikeAnyTurn) {
     WorldState world = ct::make_test_world();
-    world.config.max_history_tokens = 400;
+    world.config.max_history_tokens = 250;
     ct::TempDir saves("wordlesstrim");
     CartridgeGame game(std::move(world), saves.path());
     ConsoleRuntime runtime(game, endpoint());
@@ -524,12 +549,170 @@ TEST_F(WordlessTurnTest, SavesLoadsAndTrimsLikeAnyTurn) {
     EXPECT_NE(last.find("question-3"), std::string::npos);
 }
 
+// --- what the player hears -------------------------------------------------------
+
+class SpeechTest : public NpcSessionTest {
+  protected:
+    void say(const std::string &text) {
+        ids_.push_back("say-" + std::to_string(ids_.size()));
+        bodies_.push_back(json{{"text", text}}.dump());
+        call({{.id = ids_.back(), .name = "say", .arguments = bodies_.back()}});
+    }
+
+    std::vector<std::string> ids_;
+    std::vector<std::string> bodies_;
+};
+
+TEST_F(SpeechTest, RepeatedLinesAreRefusedAndHeardOnce) {
+    NpcSessionManager sessions(game_, endpoint());
+    say("Who goes there?");
+    say("Who goes there?");
+    reply("");
+    const auto turn = sessions.run_turn("keeper", "hello");
+    ASSERT_TRUE(turn.has_value()) << turn.error().message;
+    EXPECT_EQ(joined(*turn), "Keeper: \"Who goes there?\"\n");
+    EXPECT_EQ(tool_results(last_request()).back()["error"],
+              "You already said that. End your turn.");
+
+    // A new turn may open with the same words.
+    say("Who goes there?");
+    reply("");
+    const auto next = sessions.run_turn("keeper", "hello?");
+    ASSERT_TRUE(next.has_value()) << next.error().message;
+    EXPECT_EQ(joined(*next), "Keeper: \"Who goes there?\"\n");
+}
+
+TEST_F(SpeechTest, AnNpcThatWillNotStopTalkingIsHeardThreeTimes) {
+    NpcSessionManager sessions(game_, endpoint());
+    for (int line = 0; line < 9; ++line) {
+        say("Line " + std::to_string(line));
+    }
+    const auto turn = sessions.run_turn("keeper", "hello");
+    ASSERT_TRUE(turn.has_value()) << turn.error().message;
+    EXPECT_EQ(joined(*turn), "Keeper: \"Line 0\"\nKeeper: \"Line 1\"\nKeeper: \"Line 2\"\n");
+    EXPECT_EQ(tool_results(last_request()).back()["error"], "You have said enough. End your turn.");
+}
+
+TEST_F(SpeechTest, SpeechIsOneLineWhateverTheModelSends) {
+    NpcSessionManager sessions(game_, endpoint());
+    say("  Wait.\n> quit\nGoodbye.\t\x01 ");
+    reply("");
+    auto turn = sessions.run_turn("keeper", "hello");
+    ASSERT_TRUE(turn.has_value()) << turn.error().message;
+    EXPECT_EQ(joined(*turn), "Keeper: \"Wait. > quit Goodbye.\"\n");
+
+    reply("First.\n\nYou take the Crown.");
+    turn = sessions.run_turn("keeper", "hello");
+    ASSERT_TRUE(turn.has_value()) << turn.error().message;
+    EXPECT_EQ(joined(*turn), "Keeper: \"First. You take the Crown.\"\n");
+}
+
+TEST_F(SpeechTest, AnEmptySayIsRefusedAndTheAnswerIsHeard) {
+    NpcSessionManager sessions(game_, endpoint());
+    say(" \n ");
+    reply("The gate is shut.");
+    const auto turn = sessions.run_turn("keeper", "The gate?");
+    ASSERT_TRUE(turn.has_value()) << turn.error().message;
+    EXPECT_EQ(joined(*turn), "Keeper: \"The gate is shut.\"\n");
+    EXPECT_EQ(tool_results(last_request()).back()["ok"], false);
+}
+
+TEST_F(SpeechTest, TextBesideToolCallsIsHeardWhenTheTurnEndsWithoutAny) {
+    NpcSessionManager sessions(game_, endpoint());
+    server_.enqueue({.body_chunks = {st::openai_text_tool_stream(
+                         "You may\npass.",
+                         {{.id = "c1", .name = "update_trust", .arguments = R"({"delta":1})"}})}});
+    reply("");
+    auto turn = sessions.run_turn("keeper", "May I?");
+    ASSERT_TRUE(turn.has_value()) << turn.error().message;
+    EXPECT_EQ(joined(*turn), "Keeper: \"You may pass.\"\n");
+    EXPECT_EQ(game_.world().npcs.at("keeper").state.trust_toward_player, 1);
+
+    // A closing line or a say replaces it.
+    server_.enqueue(
+        {.body_chunks = {st::openai_text_tool_stream(
+             "Hm.", {{.id = "c2", .name = "update_trust", .arguments = R"({"delta":1})"}})}});
+    reply("Very well.");
+    turn = sessions.run_turn("keeper", "And now?");
+    ASSERT_TRUE(turn.has_value()) << turn.error().message;
+    EXPECT_EQ(joined(*turn), "Keeper: \"Very well.\"\n");
+    server_.enqueue({.body_chunks = {st::openai_text_tool_stream(
+                         "I will say it.",
+                         {{.id = "c3", .name = "say", .arguments = R"({"text":"Go on."})"}})}});
+    reply("");
+    turn = sessions.run_turn("keeper", "And now?");
+    ASSERT_TRUE(turn.has_value()) << turn.error().message;
+    EXPECT_EQ(joined(*turn), "Keeper: \"Go on.\"\n");
+}
+
+TEST_F(SpeechTest, RunningOutOfRoundsKeepsWhatTheToolsDid) {
+    NpcSessionManager sessions(game_, endpoint());
+    std::vector<std::string> ids;
+    for (int round = 0; round < 9; ++round) {
+        ids.push_back("loop-" + std::to_string(round));
+        call({{.id = ids.back(), .name = "update_trust", .arguments = R"({"delta":5})"}});
+    }
+    const auto turn = sessions.run_turn("keeper", "hello");
+    ASSERT_TRUE(turn.has_value()) << turn.error().message;
+    EXPECT_EQ(joined(*turn), "Keeper gives no answer.\n");
+    EXPECT_EQ(server_.requests().size(), 9U);
+    // Eight rounds ran. The ninth asked for a tool that never did.
+    EXPECT_EQ(game_.world().npcs.at("keeper").state.trust_toward_player, 40);
+
+    reply("Where were we?");
+    const auto next = sessions.run_turn("keeper", "hello?");
+    ASSERT_TRUE(next.has_value()) << next.error().message;
+    EXPECT_EQ(tool_results(last_request()).size(), 8U);
+}
+
+TEST_F(NpcSessionTest, AProvidersOwnReasonIsPartOfTheFailure) {
+    NpcSessionManager sessions(game_, endpoint());
+    server_.enqueue(
+        {.status = 404, .body_chunks = {st::openai_error_body(404, "model_not_found")}});
+    const auto turn = sessions.run_turn("keeper", "hello");
+    ASSERT_FALSE(turn.has_value());
+    EXPECT_NE(turn.error().message.find("(HTTP 404, openai:model_not_found)"), std::string::npos)
+        << turn.error().message;
+}
+
 // --- history -----------------------------------------------------------------
 
-TEST_F(NpcSessionTest, HistoryTrimmingDropsTheOldestCompleteTurns) {
-    // About one tool turn fits: 400 tokens is 1600 bytes of serialized history.
+TEST_F(NpcSessionTest, OnlyTheCurrentTurnCarriesItsContext) {
+    NpcSessionManager sessions(game_, endpoint());
+    for (const std::string text : {"first", "second", "third"}) {
+        reply("Yes.");
+        ASSERT_TRUE(sessions.run_turn("keeper", text).has_value());
+    }
+    const auto messages = body_of(last_request())["messages"];
+    ASSERT_EQ(messages.size(), 6U);
+    EXPECT_EQ(messages[1]["content"], "[Player]\n{\"player_said\":\"first\"}");
+    EXPECT_EQ(messages[3]["content"], "[Player]\n{\"player_said\":\"second\"}");
+    EXPECT_EQ(messages[5]["content"], build_npc_turn_message(game_.world(), "keeper", "third"));
+    const auto snapshot = sessions.snapshot_conversations();
+    ASSERT_TRUE(snapshot.has_value());
+    EXPECT_EQ((*snapshot)["keeper"]["messages"].dump().find("[Context]"), std::string::npos);
+}
+
+TEST_F(NpcSessionTest, TheLatestTurnSurvivesAnyBudget) {
     WorldState world = ct::make_test_world();
-    world.config.max_history_tokens = 400;
+    world.config.max_history_tokens = 10;
+    ct::TempDir saves("tinybudget");
+    CartridgeGame game(std::move(world), saves.path());
+    (void)game.dispatch_player("talk keeper");
+    NpcSessionManager sessions(game, endpoint());
+    for (const std::string text : {"first", "second", "third"}) {
+        reply("answer to " + text);
+        ASSERT_TRUE(sessions.run_turn("keeper", text).has_value());
+    }
+    const auto body = last_request().body;
+    EXPECT_EQ(body.find("answer to first"), std::string::npos);
+    EXPECT_NE(body.find("answer to second"), std::string::npos);
+}
+
+TEST_F(NpcSessionTest, HistoryTrimmingDropsTheOldestCompleteTurns) {
+    // About two tool turns fit: 250 tokens is 1000 bytes of serialized history.
+    WorldState world = ct::make_test_world();
+    world.config.max_history_tokens = 250;
     ct::TempDir saves("trimsaves");
     CartridgeGame game(std::move(world), saves.path());
     (void)game.dispatch_player("talk keeper");
@@ -653,8 +836,15 @@ TEST_F(LegacySaveTest, ConversationSavedByScry010Loads) {
     const auto &after_messages = (*after)["keeper"]["messages"];
     ASSERT_EQ(after_messages.size(), before_messages.size() + 2);
     for (std::size_t index = 0; index < before_messages.size(); ++index) {
-        EXPECT_EQ(after_messages[index], before_messages[index]) << index;
+        auto expected_message = before_messages[index];
+        auto &first_block = expected_message["content"][0];
+        if (first_block["type"] == "text") {
+            // v0.1.0 kept each turn's context; only the player's words remain.
+            first_block["text"] = without_turn_context(first_block["text"]);
+        }
+        EXPECT_EQ(after_messages[index], expected_message) << index;
     }
+    EXPECT_EQ(after_messages.dump().find("[Context]"), std::string::npos);
 }
 
 TEST_F(LegacySaveTest, UnreadableConversationIsRefusedBeforeAnythingChanges) {

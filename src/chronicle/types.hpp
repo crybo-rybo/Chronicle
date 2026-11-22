@@ -20,7 +20,7 @@ enum class EventKind {
     system,
     dialogue,
     knowledge,
-    tool_result,
+    tool_result, // An answer for the model that called the tool; never shown.
     warning,
     ending,
 };

@@ -28,6 +28,34 @@ inline std::string strip(const std::string &text) {
     return text.substr(begin, end - begin + 1);
 }
 
+// The text on one line: whitespace runs become one space and other control
+// characters are dropped. What a model writes goes through this before it joins
+// text whose lines mean something, such as a prompt or the player's screen.
+inline std::string single_line(const std::string &text) {
+    std::string line;
+    bool gap = false;
+    for (const char ch : text) {
+        const auto byte = static_cast<unsigned char>(ch);
+        if (byte == ' ' || (byte >= '\t' && byte <= '\r')) {
+            gap = true;
+        } else if (byte >= 0x20 && byte != 0x7F) {
+            if (gap && !line.empty()) {
+                line += ' ';
+            }
+            gap = false;
+            line += ch;
+        }
+    }
+    return line;
+}
+
+// A line of speech as the player reads it. Models often write their own quotation
+// marks around what is said, with gestures between, and those are left as they are.
+inline std::string dialogue_line(const std::string &speaker, const std::string &speech) {
+    const std::string line = single_line(speech);
+    return speaker + ": " + (line.contains('"') ? line : "\"" + line + "\"");
+}
+
 inline std::vector<std::string> split_words(const std::string &text) {
     std::istringstream stream(text);
     std::vector<std::string> words;

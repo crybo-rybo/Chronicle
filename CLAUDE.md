@@ -84,9 +84,11 @@ Key couplings to keep in sync:
 - No endpoint → no Harness is ever created; the stub path routes a canned
   `say` through the same gate (invariant 5: mechanics work with no model).
 - A model turn is transactional across Scry history and the world. Any failed
-  turn (provider, harness, tool-round exhaustion, throwing handler) restores the
-  complete runtime checkpoint before deterministic stub dialogue is shown. A turn
-  that acted through tools and then ended with an empty message is kept:
-  `ObservedTurn` commits its rounds, since Scry fails such a turn.
+  turn (provider, harness, throwing handler) restores the complete runtime
+  checkpoint before deterministic stub dialogue is shown. A turn that ran out of
+  tool rounds is complete. So is one whose NPC spoke or visibly acted before a
+  response Scry cannot commit: Scry fails it, and `ObservedTurn` commits its rounds.
+- A turn's `[Context]` is for that turn. `without_turn_context` drops it from history
+  before the next request and from every save.
 - A loaded conversation keeps its messages and takes its system prompt from the
   cartridge, so `build_npc_system_prompt` may change without breaking saves.
