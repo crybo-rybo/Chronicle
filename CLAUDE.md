@@ -15,11 +15,11 @@ must always validate and play.
 
 ## Toolchain and commands
 
-**GCC 16+ only** — the reflection component needs `-std=c++26 -freflection`;
+**GCC 16.2+ only** — scry and Scrydantic need `-std=c++26 -freflection`;
 Clang cannot build this project (`.clangd` strips the flag so the LSP can
-still parse). Dependencies (scry v0.1.0, nlohmann/json, miniz, GTest) are
-fetched by CMake at pinned commits or content hashes; libcurl dev headers must
-be installed.
+still parse). Dependencies (scry v0.8.0 with the Scrydantic commit it pins,
+nlohmann/json, miniz, GTest) are fetched by CMake at pinned commits or content
+hashes; libcurl dev headers must be installed.
 
 - `just ci` — formatting + warning-clean build + tests + example and install smoke
 - `just test` — unit tests only (`cmake --preset dev && ctest --preset dev`)
@@ -57,17 +57,19 @@ Three layers (`src/CMakeLists.txt`):
 - **`chronicle_llm`** (compiled with `-freflection`): `llm/npc_sessions.cpp`
   — one scry `Harness` + persistent `Conversation` per talked-to NPC, created
   lazily; registers exactly the NPC's allowed tools via
-  `scry::reflection::add<Args>` with handlers that call the gate. `runtime.cpp`
-  drives the blocking turn loop (`send_and_wait`); `cli.cpp` parses args and
+  `scry::ToolRegistry::add<Args>` with handlers that call the gate. `runtime.cpp`
+  drives the blocking turn loop (`send` + `update`); `cli.cpp` parses args and
   owns subcommands (`run/validate/inspect/list/install/pack`, `--tiny`).
-- Tests: `tests/*.cpp` unit (150+, no network — gate, mechanics, events,
-  persistence, library, prompts, CLI, stub runtime), `tests/integration/`
+- Tests: `tests/*.cpp` unit (170+, no model — gate, mechanics, events,
+  persistence, library, prompts, CLI, stub runtime, and NPC sessions against
+  scry's loopback `testing::ScriptedServer`), `tests/integration/`
   live-Ollama playthroughs that skip cleanly when no server is up.
 
 Key couplings to keep in sync:
 
-- The reflected adapter aggregates and compile-time binding table in
-  `llm/npc_sessions.cpp` are the schema source of truth; they convert into the
+- The reflected adapter aggregates (annotated with `scrydantic::description`) and
+  compile-time binding table in `llm/npc_sessions.cpp` are the schema source of
+  truth, pinned by `tests/fixtures/npc_tool_schemas.json`; they convert into the
   named domain calls in `game/npc_tools.hpp`, which feed the authorization
   gate. A compile-time assertion keeps both catalogs exact. Adding a tool
   touches those files, the gate visitors in `npc_tool_gate.cpp`, and
@@ -80,6 +82,10 @@ Key couplings to keep in sync:
   system prompt — conversations persist across turns and into save files.
 - No endpoint → no Harness is ever created; the stub path routes a canned
   `say` through the same gate (invariant 5: mechanics work with no model).
-- A model turn is transactional across Scry history and the world. Provider or
-  harness failure restores the complete runtime checkpoint before deterministic
-  stub dialogue is shown.
+- A model turn is transactional across Scry history and the world. Any failed
+  turn (provider, harness, tool-round exhaustion, throwing handler) restores the
+  complete runtime checkpoint before deterministic stub dialogue is shown. A turn
+  that acted through tools and then ended with an empty message is kept:
+  `ObservedTurn` commits its rounds, since Scry fails such a turn.
+- Saved conversations pin the NPC system prompt: changing
+  `build_npc_system_prompt` makes existing saves fail to load.
