@@ -2,7 +2,9 @@
 #pragma once
 
 #include <cstddef>
+#include <exception>
 #include <nlohmann/json.hpp>
+#include <string>
 #include <string_view>
 
 namespace chronicle {
@@ -19,5 +21,8 @@ inline constexpr std::size_t MAX_SAVE_JSON_DEPTH = 512;
 // of what an author wrote. Both are refused here with std::invalid_argument;
 // malformed JSON throws nlohmann::json::parse_error.
 [[nodiscard]] nlohmann::json parse_untrusted_json(std::string_view text, std::size_t max_depth);
+
+// What an exception says, without nlohmann's "[json.exception.…]" tag.
+[[nodiscard]] std::string plain_message(const std::exception &exception);
 
 } // namespace chronicle

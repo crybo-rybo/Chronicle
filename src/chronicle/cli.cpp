@@ -1,5 +1,6 @@
 #include "chronicle/cli.hpp"
 
+#include <algorithm>
 #include <cstdlib>
 #include <iostream>
 
@@ -33,7 +34,18 @@ Play options:
                     default ~/.chronicle/saves
 
 Run a cartridge (default) or a subcommand. Without a model endpoint, NPC
-dialogue uses a deterministic stub so mechanics remain playable.)";
+dialogue uses a deterministic stub so mechanics remain playable.
+
+Exit status: 0 on success, 1 when the command failed, 2 when it was misused.)";
+
+constexpr int EXIT_USAGE = 2;
+
+// One field of a row or a labelled line, as it is but for what would end it.
+std::string field(std::string text) {
+    std::ranges::replace_if(
+        text, [](const char ch) { return ch == '\n' || ch == '\r' || ch == '\t'; }, ' ');
+    return printable(text);
+}
 
 bool is_subcommand(const std::string &word) {
     return word == "run" || word == "validate" || word == "inspect" || word == "list" ||
@@ -53,7 +65,9 @@ std::optional<std::string> semantic_error(const CliArgs &args) {
 
     if (args.command == "play") {
         if (!args.positional.empty() || args.output) {
-            return "play accepts only --scenario, --tiny, and play options";
+            return args.positional.empty()
+                       ? "play accepts only --scenario, --tiny, and play options"
+                       : "Unknown command: " + args.positional.front();
         }
         if (args.tiny && args.scenario) {
             return "--tiny and --scenario are mutually exclusive";
@@ -99,13 +113,13 @@ std::optional<std::string> semantic_error(const CliArgs &args) {
 int print_issues_and_status(const std::vector<ValidationIssue> &issues) {
     for (const auto &issue : issues) {
         if (issue.level == IssueLevel::warning) {
-            std::cout << issue.to_string() << '\n';
+            std::cout << printable(issue.to_string()) << '\n';
         }
     }
     bool any_error = false;
     for (const auto &issue : issues) {
         if (issue.level == IssueLevel::error) {
-            std::cout << issue.to_string() << '\n';
+            std::cout << printable(issue.to_string()) << '\n';
             any_error = true;
         }
     }
@@ -131,7 +145,7 @@ std::optional<WorldState> load_playable(const std::filesystem::path &package) {
     }
     for (const auto &issue : issues) {
         if (issue.level == IssueLevel::error) {
-            std::cerr << issue.to_string() << '\n';
+            std::cerr << printable(issue.to_string()) << '\n';
         }
     }
     return std::nullopt;
@@ -151,7 +165,17 @@ std::optional<std::filesystem::path> save_root(const CliArgs &args) {
 int play(WorldState world, const CliArgs &args) {
     const auto saves = save_directory(world.manifest.id, save_root(args));
     CartridgeGame game(std::move(world), saves);
-    ConsoleRuntime runtime(game, resolve_endpoint(args.base_url, args.model, &game.world().config));
+    auto endpoint = resolve_endpoint(args.base_url, args.model, &game.world().config);
+    if (!endpoint) {
+        std::cerr << printable(endpoint.error()) << '\n';
+        if (args.base_url || args.model) {
+            return EXIT_USAGE;
+        }
+        // Left over in the environment, perhaps for something else.
+        std::cerr << "Playing without a model.\n";
+        endpoint.emplace(std::nullopt);
+    }
+    ConsoleRuntime runtime(game, std::move(*endpoint));
     return runtime.run();
 }
 
@@ -177,6 +201,9 @@ CliArgs parse_cli(const std::vector<std::string> &args) {
                 return true;
             }
             out = args[++index];
+            if (out->empty()) {
+                parsed.error = flag + " requires a value";
+            }
             return true;
         }
         if (args[index].starts_with(flag + "=")) {
@@ -276,8 +303,8 @@ int run_cli(int argc, char **argv) {
     const CliArgs args = parse_cli(raw);
 
     if (args.error) {
-        std::cerr << *args.error << '\n' << USAGE << '\n';
-        return 2;
+        std::cerr << printable(*args.error) << '\n' << USAGE << '\n';
+        return EXIT_USAGE;
     }
     if (args.help) {
         std::cout << USAGE << '\n';
@@ -296,7 +323,7 @@ int run_cli(int argc, char **argv) {
         if (args.command == "run") {
             if (args.positional.empty()) {
                 std::cerr << "run requires a cartridge id\n";
-                return 2;
+                return EXIT_USAGE;
             }
             const auto &id = args.positional.front();
             if (!is_safe_cartridge_id(id)) {
@@ -313,27 +340,27 @@ int run_cli(int argc, char **argv) {
         if (args.command == "validate") {
             if (!args.scenario) {
                 std::cerr << "validate requires --scenario\n";
-                return 2;
+                return EXIT_USAGE;
             }
             return print_issues_and_status(validate_package(*args.scenario));
         }
         if (args.command == "inspect") {
             if (!args.scenario) {
                 std::cerr << "inspect requires --scenario\n";
-                return 2;
+                return EXIT_USAGE;
             }
             const auto info = inspect_package(std::filesystem::absolute(*args.scenario));
-            std::cout << "id:      " << info.id << '\n';
-            std::cout << "name:    " << info.name << '\n';
-            std::cout << "version: " << info.version << '\n';
+            std::cout << "id:      " << field(info.id) << '\n';
+            std::cout << "name:    " << field(info.name) << '\n';
+            std::cout << "version: " << field(info.version) << '\n';
             std::cout << "schema:  " << info.schema << '\n';
-            std::cout << "path:    " << info.path << '\n';
+            std::cout << "path:    " << field(info.path) << '\n';
             std::cout << "ready:   " << (info.ready ? "true" : "false") << '\n';
             for (const auto &line : info.errors) {
-                std::cout << line << '\n';
+                std::cout << printable(line) << '\n';
             }
             for (const auto &line : info.warnings) {
-                std::cout << line << '\n';
+                std::cout << printable(line) << '\n';
             }
             return info.ready ? 0 : 1;
         }
@@ -344,15 +371,15 @@ int run_cli(int argc, char **argv) {
                 return 0;
             }
             for (const auto &item : items) {
-                std::cout << item.id << '\t' << item.name << "\tv" << item.version << '\t'
-                          << item.path << '\n';
+                std::cout << field(item.id) << '\t' << field(item.name) << "\tv"
+                          << field(item.version) << '\t' << field(item.path) << '\n';
             }
             return 0;
         }
         if (args.command == "install") {
             if (args.positional.empty()) {
                 std::cerr << "install requires a path\n";
-                return 2;
+                return EXIT_USAGE;
             }
             const auto dest = install_cartridge(args.positional.front());
             std::cout << "Installed to " << dest.string() << '\n';
@@ -361,18 +388,18 @@ int run_cli(int argc, char **argv) {
         if (args.command == "pack") {
             if (!args.scenario || !args.output) {
                 std::cerr << "pack requires --scenario and --output\n";
-                return 2;
+                return EXIT_USAGE;
             }
             const auto out = pack_cartridge(*args.scenario, *args.output);
             std::cout << "Wrote " << out.string() << '\n';
             return 0;
         }
     } catch (const std::exception &exc) {
-        std::cerr << exc.what() << '\n';
+        std::cerr << printable(exc.what()) << '\n';
         return 1;
     }
     std::cerr << USAGE << '\n';
-    return 2;
+    return EXIT_USAGE;
 }
 
 } // namespace chronicle

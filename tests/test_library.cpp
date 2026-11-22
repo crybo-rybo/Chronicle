@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <iterator>
 #include <miniz.h>
 
 #include "chronicle/library.hpp"
@@ -21,6 +22,42 @@ void write_archive_entry(const fs::path &archive, const std::string &name,
         !mz_zip_writer_finalize_archive(&zip) || !mz_zip_writer_end(&zip)) {
         throw std::runtime_error("cannot finish test archive");
     }
+}
+
+// An archive of `entries`; a name that ends in a slash is a directory.
+void write_archive(const fs::path &archive,
+                   const std::vector<std::pair<std::string, std::string>> &entries) {
+    mz_zip_archive zip{};
+    if (!mz_zip_writer_init_file(&zip, archive.string().c_str(), 0)) {
+        throw std::runtime_error("cannot create test archive");
+    }
+    for (const auto &[name, contents] : entries) {
+        if (!mz_zip_writer_add_mem(&zip, name.c_str(), contents.data(), contents.size(),
+                                   MZ_DEFAULT_LEVEL)) {
+            throw std::runtime_error("cannot add to test archive");
+        }
+    }
+    if (!mz_zip_writer_finalize_archive(&zip) || !mz_zip_writer_end(&zip)) {
+        throw std::runtime_error("cannot finish test archive");
+    }
+}
+
+// The files of a valid package as archive entries under `prefix`.
+std::vector<std::pair<std::string, std::string>> package_entries(const std::string &prefix) {
+    ct::TempDir pkg("entries");
+    ct::write_package(pkg.path());
+    std::vector<std::pair<std::string, std::string>> entries;
+    for (const auto &file : fs::directory_iterator(pkg.path())) {
+        std::ifstream stream(file.path());
+        entries.emplace_back(prefix + file.path().filename().string(),
+                             std::string(std::istreambuf_iterator<char>(stream), {}));
+    }
+    return entries;
+}
+
+std::size_t entry_count(const fs::path &directory) {
+    return static_cast<std::size_t>(
+        std::distance(fs::directory_iterator(directory), fs::directory_iterator{}));
 }
 
 TEST(Library, InstallFromDirectoryAndList) {
@@ -103,10 +140,158 @@ TEST(Library, PackThenInstallArchiveRoundTrip) {
     EXPECT_TRUE(fs::equivalent(dest, lib.path() / "diskworld"));
     // The installed package still validates and loads.
     EXPECT_FALSE(has_errors(validate_package(dest)));
-    // No staging leftovers.
-    for (const auto &entry : fs::directory_iterator(lib.path())) {
-        EXPECT_FALSE(entry.path().filename().string().starts_with(".staging"));
+    EXPECT_EQ(entry_count(lib.path()), 1u); // No staging or extraction left over.
+}
+
+TEST(Library, OrdinaryZipLayoutsInstall) {
+    const auto installs = [](const std::vector<std::pair<std::string, std::string>> &entries,
+                             const std::string &file_name) {
+        ct::TempDir lib("liblayout");
+        ct::TempDir source("layout");
+        write_archive(source.path() / file_name, entries);
+        const auto dest = install_cartridge(source.path() / file_name, lib.path());
+        EXPECT_FALSE(has_errors(validate_package(dest)));
+        EXPECT_EQ(entry_count(lib.path()), 1u); // No staging or extraction left over.
+    };
+    installs(package_entries(""), "flat.zip");
+    installs(package_entries("disk/"), "SHOUTED.ZIP");
+
+    auto with_directories = package_entries("disk/");
+    with_directories.insert(with_directories.begin(), {"disk/", ""});
+    with_directories.emplace_back("disk/art/", "");
+    installs(with_directories, "directories.zip");
+
+    auto from_macos = package_entries("disk/");
+    from_macos.emplace_back("__MACOSX/", "");
+    from_macos.emplace_back("__MACOSX/disk/._scenario.json", "x");
+    installs(from_macos, "macos.chronicle");
+}
+
+TEST(Library, ArchivesWithoutOneCartridgeAreRefused) {
+    ct::TempDir lib("libnone");
+    ct::TempDir source("none");
+    auto two = package_entries("one/");
+    for (const auto &entry : package_entries("two/")) {
+        two.push_back(entry);
     }
+    for (const auto &entries : {two, {{"readme.txt", "hello"}}}) {
+        write_archive(source.path() / "a.zip", entries);
+        try {
+            (void)install_cartridge(source.path() / "a.zip", lib.path());
+            ADD_FAILURE() << "installed";
+        } catch (const LibraryError &error) {
+            EXPECT_STREQ(error.what(), "Archive does not contain one cartridge");
+        }
+        fs::remove(source.path() / "a.zip");
+        EXPECT_EQ(entry_count(lib.path()), 0u);
+    }
+}
+
+TEST(Library, UnsafeEntriesAreRefusedBeforeExtraction) {
+    for (const std::string name : {"../outside.txt", "/outside.txt", "a/../../outside.txt",
+                                   "./outside.txt", "a\\outside.txt", "../"}) {
+        ct::TempDir lib("libunsafe");
+        ct::TempDir source("unsafe");
+        const fs::path archive = source.path() / "a.zip";
+        // miniz writes no such name, so it is put in place of one it does write.
+        const std::string stand_in =
+            name.ends_with('/') ? "qq/" : "q" + std::string(name.size() - 1, 'z');
+        auto entries = package_entries("");
+        entries.emplace_back(stand_in, name.ends_with('/') ? "" : "owned");
+        write_archive(archive, entries);
+        std::string bytes;
+        {
+            std::ifstream stream(archive, std::ios::binary);
+            bytes.assign(std::istreambuf_iterator<char>(stream), {});
+        }
+        std::size_t replaced = 0;
+        for (auto at = bytes.find(stand_in); at != std::string::npos; at = bytes.find(stand_in)) {
+            bytes.replace(at, stand_in.size(), name);
+            ++replaced;
+        }
+        ASSERT_EQ(replaced, 2u) << name; // In its local header and in the directory.
+        std::ofstream(archive, std::ios::binary) << bytes;
+
+        try {
+            (void)install_cartridge(archive, lib.path());
+            ADD_FAILURE() << "installed " << name;
+        } catch (const LibraryError &error) {
+            EXPECT_NE(std::string(error.what()).find("Unsafe archive entry"), std::string::npos)
+                << name << ": " << error.what();
+        }
+        EXPECT_EQ(entry_count(lib.path()), 0u) << name;
+    }
+}
+
+TEST(Library, EntriesThatCollideOnSomeFileSystemsAreRefused) {
+    ct::TempDir lib("libcollide");
+    ct::TempDir source("collide");
+    auto entries = package_entries("");
+    entries.emplace_back("WORLD.json", "{}");
+    write_archive(source.path() / "a.zip", entries);
+    EXPECT_THROW((void)install_cartridge(source.path() / "a.zip", lib.path()), LibraryError);
+    EXPECT_EQ(entry_count(lib.path()), 0u);
+}
+
+TEST(Library, WhatPackWritesInstallAccepts) {
+    ct::TempDir lib("libpack");
+    ct::TempDir pkg("pkgpack");
+    ct::TempDir out("outpack");
+    ct::write_package(pkg.path());
+    std::ofstream(pkg.path() / "notes.txt") << std::string(1'000'000, 'z'); // Over 900 to 1.
+    fs::create_directories(pkg.path() / ".git");
+    std::ofstream(pkg.path() / ".git" / "config") << "private";
+    const auto archive = pack_cartridge(pkg.path(), out.path() / "disk.zip");
+    const auto dest = install_cartridge(archive, lib.path());
+    EXPECT_EQ(fs::file_size(dest / "notes.txt"), 1'000'000u);
+    EXPECT_FALSE(fs::exists(dest / ".git"));
+    EXPECT_EQ(entry_count(out.path()), 1u);
+
+    // Packing again replaces the archive.
+    fs::remove(pkg.path() / "notes.txt");
+    const auto before = fs::file_size(archive);
+    (void)pack_cartridge(pkg.path(), archive);
+    EXPECT_LT(fs::file_size(archive), before);
+    EXPECT_EQ(entry_count(out.path()), 1u);
+}
+
+TEST(Library, PackRefusesWhatInstallWouldRefuse) {
+    ct::TempDir pkg("pkgrefuse");
+    ct::TempDir out("outrefuse");
+    ct::write_package(pkg.path());
+    EXPECT_THROW((void)pack_cartridge(pkg.path(), out.path() / "disk.tar"), LibraryError);
+    std::ofstream(pkg.path() / "World.json") << "{}";
+    if (entry_count(pkg.path()) == 8u) { // A case-sensitive file system.
+        EXPECT_THROW((void)pack_cartridge(pkg.path(), out.path() / "disk.zip"), LibraryError);
+    }
+    EXPECT_EQ(entry_count(out.path()), 0u);
+}
+
+TEST(Library, ReplacingLeavesOneCompleteCartridge) {
+    ct::TempDir lib("libswap");
+    ct::TempDir pkg("pkgswap");
+    ct::write_package(pkg.path());
+    std::ofstream(pkg.path() / "only_in_first.txt") << "x";
+    (void)install_cartridge(pkg.path(), lib.path());
+    fs::remove(pkg.path() / "only_in_first.txt");
+    const auto dest = install_cartridge(pkg.path(), lib.path());
+    EXPECT_FALSE(fs::exists(dest / "only_in_first.txt"));
+    EXPECT_EQ(entry_count(lib.path()), 1u);
+}
+
+TEST(Library, ListSkipsWhatItCannotRead) {
+    ct::TempDir lib("liblist");
+    ct::TempDir pkg("pkglist");
+    ct::write_package(pkg.path());
+    (void)install_cartridge(pkg.path(), lib.path());
+    fs::create_directories(lib.path() / "locked");
+    fs::create_directories(lib.path() / "broken");
+    std::ofstream(lib.path() / "broken" / "scenario.json") << "{";
+    fs::permissions(lib.path() / "locked", fs::perms::none);
+    const auto items = list_cartridges(lib.path());
+    fs::permissions(lib.path() / "locked", fs::perms::owner_all);
+    ASSERT_EQ(items.size(), 1u);
+    EXPECT_EQ(items.front().id, "diskworld");
 }
 
 TEST(Library, PackRejectsInvalidPackage) {

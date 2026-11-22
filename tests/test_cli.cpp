@@ -1,7 +1,11 @@
+#include <array>
+#include <cstdlib>
 #include <gtest/gtest.h>
+#include <map>
 
 #include "chronicle/cartridge/validator.hpp"
 #include "chronicle/cli.hpp"
+#include "chronicle/llm/npc_sessions.hpp"
 #include "helpers.hpp"
 
 namespace chronicle {
@@ -99,6 +103,87 @@ TEST(Cli, TinyWorldIsValid) {
     EXPECT_TRUE(world.npcs.contains("stranger"));
     const auto &allowed = world.npcs.at("stranger").identity.tool_policy.allowed_tools;
     EXPECT_EQ(allowed, std::vector<std::string>{"say"});
+}
+
+TEST(Cli, EmptyValuesAreErrorsInEitherForm) {
+    for (const std::string flag : {"--scenario", "--model", "--base-url", "--save-dir"}) {
+        EXPECT_EQ(parse_cli({flag, ""}).error, flag + " requires a value");
+        EXPECT_EQ(parse_cli({flag + "="}).error, flag + " requires a value");
+    }
+}
+
+TEST(Cli, AMistypedCommandIsNamed) {
+    EXPECT_EQ(parse_cli({"valdiate", "--scenario", "s"}).error, "Unknown command: valdiate");
+}
+
+// The environment names an endpoint, and nothing else leaks in from the host.
+class EndpointTest : public ::testing::Test {
+  protected:
+    EndpointTest() {
+        for (const auto *name : NAMES) {
+            if (const char *value = std::getenv(name)) {
+                saved_[name] = value;
+            }
+            (void)::unsetenv(name);
+        }
+    }
+    ~EndpointTest() override {
+        for (const auto *name : NAMES) {
+            (void)::unsetenv(name);
+        }
+        for (const auto &[name, value] : saved_) {
+            (void)::setenv(name.c_str(), value.c_str(), 1);
+        }
+    }
+    static std::string problem(const std::optional<std::string> &url,
+                               const std::optional<std::string> &model) {
+        const auto endpoint = resolve_endpoint(url, model, nullptr);
+        return endpoint ? "" : endpoint.error();
+    }
+
+    static constexpr std::array NAMES{"CHRONICLE_BASE_URL", "CHRONICLE_MODEL",
+                                      "CHRONICLE_DIALECT",  "CHRONICLE_API_KEY",
+                                      "OPENAI_API_KEY",     "CHRONICLE_DISABLE_REASONING"};
+    std::map<std::string, std::string> saved_;
+};
+
+TEST_F(EndpointTest, NoneIsNotAProblem) {
+    const auto endpoint = resolve_endpoint(std::nullopt, std::nullopt, nullptr);
+    ASSERT_TRUE(endpoint.has_value());
+    EXPECT_FALSE(endpoint->has_value());
+}
+
+TEST_F(EndpointTest, HalfOfOneIs) {
+    EXPECT_NE(problem(std::nullopt, "m").find("Model 'm' has no endpoint"), std::string::npos);
+    EXPECT_NE(problem("http://localhost:1/v1", std::nullopt).find("has no model"),
+              std::string::npos);
+    (void)::setenv("CHRONICLE_MODEL", "m", 1);
+    EXPECT_NE(problem(std::nullopt, std::nullopt).find("has no endpoint"), std::string::npos);
+    EXPECT_EQ(problem("http://localhost:1/v1", std::nullopt), "");
+}
+
+TEST_F(EndpointTest, AnUnusableOneIsReportedUpFront) {
+    EXPECT_NE(problem("not a url", "m").find("cannot be used"), std::string::npos);
+    (void)::setenv("CHRONICLE_DIALECT", "Anthropic", 1);
+    const auto endpoint = resolve_endpoint("http://localhost:1", "m", nullptr);
+    ASSERT_TRUE(endpoint.has_value()) << endpoint.error();
+    EXPECT_TRUE((*endpoint)->anthropic_dialect);
+    (void)::setenv("CHRONICLE_DIALECT", "antropic", 1);
+    EXPECT_NE(problem("http://localhost:1", "m").find("must be openai or anthropic"),
+              std::string::npos);
+}
+
+TEST_F(EndpointTest, TheCartridgeTunesSamplingOnly) {
+    ConfigData config;
+    config.temperature = 0.25;
+    config.max_response_tokens = 99;
+    config.inference_timeout_ms = 1'234;
+    const auto endpoint = resolve_endpoint("http://localhost:1/v1", "m", &config);
+    ASSERT_TRUE(endpoint.has_value() && endpoint->has_value());
+    EXPECT_EQ((*endpoint)->temperature, 0.25);
+    EXPECT_EQ((*endpoint)->max_tokens, 99);
+    EXPECT_EQ((*endpoint)->timeout_ms, 1'234);
+    EXPECT_EQ((*endpoint)->api_key, "not-needed");
 }
 
 TEST(Cli, InspectReturnsFailureForInvalidCartridge) {

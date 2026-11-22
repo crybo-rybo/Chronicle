@@ -15,9 +15,8 @@ struct ValidationIssue {
     std::string message;
     IssueLevel level = IssueLevel::error;
 
-    [[nodiscard]] std::string to_string() const {
-        return (level == IssueLevel::error ? "[error] " : "[warning] ") + message;
-    }
+    // One line, whatever the cartridge calls the thing the issue is about.
+    [[nodiscard]] std::string to_string() const;
 };
 
 // Cartridge IDs become directory names in the library and save tree. Keep the

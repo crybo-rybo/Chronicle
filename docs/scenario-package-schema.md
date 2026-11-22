@@ -18,12 +18,20 @@ editor tooling and cover each cartridge file.
 
 Paths must stay inside the package directory (`..`, absolute paths, backslashes, and
 symlinks are rejected). A package may contain at most 256 files, 4 MiB per file,
-and 32 MiB total. JSON that repeats a key in one object or nests more than 64
-levels deep is rejected.
+and 32 MiB total. Files and directories whose names start with a dot, such as
+`.git`, are not part of it: they are neither checked, packed, nor installed. JSON
+that repeats a key in one object or nests more than 64 levels deep is rejected.
+Each file may carry a `$schema` key for editors.
+
+Limits: 128 locations, 512 items, 128 NPCs, 512 facts, 512 flags, 512 events, 128
+conditions and 128 actions per event, and 64 goals and 4096 memories per NPC.
+`validate` warns about blank names and fact texts, and about exits whose direction
+is blank or differs from another only in case. An archive may hold at most 16,384
+entries, hidden ones and directories included.
 
 ## Config (`config.json`)
 
-Optional; `{}` is valid. Accepted fields:
+The file must exist, and `{}` is enough: every field is optional.
 
 | Field | Default | Notes |
 | --- | --- | --- |

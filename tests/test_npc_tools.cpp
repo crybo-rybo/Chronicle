@@ -391,6 +391,44 @@ TEST_F(GateTest, CustomNarrationTemplateWins) {
     EXPECT_EQ(outcome->front().text, "Keeper presses the Keepsake into your hands.");
 }
 
+TEST_F(GateTest, EveryTemplateCanNameTheNpc) {
+    WorldState world = ct::make_test_world();
+    for (auto &[tool, text] : world.config.action_narration_templates) {
+        text = "{npc} did " + tool + ".";
+    }
+    world.item_positions["old_coin"] = ItemPosition{.holder = ItemHolder::player, .id = {}};
+    CartridgeGame game(std::move(world), saves_.path());
+    const std::vector<tools::NpcToolCall> calls = {
+        tools::GiveItem{.item_id = "keepsake"},
+        tools::TakeItem{.item_id = "old_coin"},
+        tools::UpdateMood{.mood = tools::Mood::hostile},
+        tools::UpdateTrust{.delta = 1},
+        tools::RevealKnowledge{.fact_id = "fact_gate"},
+        tools::Remember{.summary = "A visitor."},
+        tools::SetFlag{.flag_id = "gate_seen", .value = true},
+        tools::MoveSelf{.location_id = "garden"},
+    };
+    for (const auto &call : calls) {
+        const auto outcome = game.submit_npc_tool("keeper", call);
+        ASSERT_TRUE(outcome.has_value()) << outcome.error().reason;
+        ASSERT_FALSE(outcome->empty()) << tools::tool_name(call);
+        EXPECT_EQ(outcome->front().text, "Keeper did " + std::string(tools::tool_name(call)) + ".");
+    }
+}
+
+TEST_F(GateTest, AnEmptyTemplateSilencesHandingOver) {
+    WorldState world = ct::make_test_world();
+    world.config.action_narration_templates["give_item"] = "";
+    world.config.action_narration_templates["take_item"] = "";
+    CartridgeGame game(std::move(world), saves_.path());
+    const auto given = game.submit_npc_tool("keeper", tools::GiveItem{.item_id = "keepsake"});
+    ASSERT_TRUE(given.has_value());
+    EXPECT_TRUE(given->empty());
+    const auto taken = game.submit_npc_tool("keeper", tools::TakeItem{.item_id = "keepsake"});
+    ASSERT_TRUE(taken.has_value());
+    EXPECT_TRUE(taken->empty());
+}
+
 TEST_F(GateTest, EmptyNarrationTemplateSuppressesEvent) {
     WorldState world = ct::make_test_world();
     world.config.action_narration_templates["update_mood"] = "";

@@ -5,20 +5,21 @@
   "type": "object",
   "required": ["id", "name", "version", "chronicle_schema_version", "files"],
   "properties": {
+    "$schema": { "type": "string" },
     "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$" },
-    "name": { "type": "string", "minLength": 1 },
-    "version": { "type": "string", "minLength": 1 },
+    "name": { "type": "string", "pattern": "\\S" },
+    "version": { "type": "string", "pattern": "\\S" },
     "chronicle_schema_version": { "type": "integer", "const": 1 },
     "files": {
       "type": "object",
       "required": ["config", "world", "npcs", "facts", "flags", "events"],
       "properties": {
-        "config": { "type": "string" },
-        "world": { "type": "string" },
-        "npcs": { "type": "string" },
-        "facts": { "type": "string" },
-        "flags": { "type": "string" },
-        "events": { "type": "string" }
+        "config": { "$ref": "#/$defs/packagePath" },
+        "world": { "$ref": "#/$defs/packagePath" },
+        "npcs": { "$ref": "#/$defs/packagePath" },
+        "facts": { "$ref": "#/$defs/packagePath" },
+        "flags": { "$ref": "#/$defs/packagePath" },
+        "events": { "$ref": "#/$defs/packagePath" }
       },
       "additionalProperties": false
     },
@@ -32,5 +33,12 @@
       "additionalProperties": false
     }
   },
-  "additionalProperties": false
+  "additionalProperties": false,
+  "$defs": {
+    "packagePath": {
+      "type": "string",
+      "description": "A relative path inside the package, with no hidden part.",
+      "pattern": "^[^/.\\\\][^/\\\\]*(/[^/.\\\\][^/\\\\]*)*$"
+    }
+  }
 }

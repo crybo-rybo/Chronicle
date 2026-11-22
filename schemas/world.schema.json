@@ -6,14 +6,17 @@
   "required": ["start_location", "locations"],
   "additionalProperties": false,
   "properties": {
+    "$schema": { "type": "string" },
     "start_location": { "type": "string", "minLength": 1 },
     "locations": {
       "type": "object",
       "minProperties": 1,
+      "maxProperties": 128,
       "additionalProperties": { "$ref": "#/$defs/location" }
     },
     "items": {
       "type": "object",
+      "maxProperties": 512,
       "additionalProperties": { "$ref": "#/$defs/item" }
     }
   },
@@ -23,6 +26,7 @@
         { "type": "string", "minLength": 1 },
         {
           "type": "object",
+          "required": ["direction"],
           "additionalProperties": false,
           "properties": {
             "direction": { "type": "string", "minLength": 1 },
@@ -36,10 +40,11 @@
       "required": ["name", "base_description"],
       "additionalProperties": false,
       "properties": {
-        "name": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "pattern": "\\S" },
         "base_description": { "type": "string" },
         "exits": {
           "type": "object",
+          "propertyNames": { "pattern": "\\S" },
           "additionalProperties": { "type": "string", "minLength": 1 }
         },
         "items": {
@@ -57,7 +62,7 @@
       "required": ["name", "description"],
       "additionalProperties": false,
       "properties": {
-        "name": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "pattern": "\\S" },
         "description": { "type": "string" },
         "takeable": { "type": "boolean" },
         "key_item": { "type": "boolean" },

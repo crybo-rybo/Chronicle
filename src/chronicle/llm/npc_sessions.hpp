@@ -38,8 +38,9 @@ struct EndpointConfig {
 // Endpoint authority comes only from host-controlled CLI flags and
 // CHRONICLE_* environment variables. Cartridges may tune bounded sampling
 // values, but cannot select a network destination or receive host credentials.
-// Returns nullopt when the host did not configure an endpoint.
-[[nodiscard]] std::optional<EndpointConfig>
+// Returns nullopt when the host did not configure an endpoint, and what is wrong
+// when it configured half of one or one no request could be sent to.
+[[nodiscard]] std::expected<std::optional<EndpointConfig>, std::string>
 resolve_endpoint(const std::optional<std::string> &base_url_flag,
                  const std::optional<std::string> &model_flag, const ConfigData *cartridge_config);
 

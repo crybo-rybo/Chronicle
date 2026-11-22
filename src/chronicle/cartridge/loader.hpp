@@ -28,7 +28,8 @@ struct PackageContents {
 };
 
 // Inspect every entry in an untrusted package. Symlinks, special files, and
-// packages exceeding the fixed resource budget are rejected.
+// packages exceeding the fixed resource budget are rejected. Entries whose names
+// start with a dot, such as .git, are not part of the package.
 [[nodiscard]] PackageContents inspect_package_tree(const std::filesystem::path &package_dir);
 
 [[nodiscard]] ScenarioManifest load_manifest(const std::filesystem::path &package_dir);

@@ -9,6 +9,11 @@
 
 namespace chronicle {
 
+// Text that cannot drive the terminal it is printed on: cartridges and models write
+// what Chronicle prints, and an escape sequence can move the cursor, hide text, or
+// set the clipboard. Newlines and tabs stay.
+[[nodiscard]] std::string printable(const std::string &text);
+
 class TerminalRenderer {
   public:
     TerminalRenderer();

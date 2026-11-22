@@ -121,6 +121,86 @@ TEST(CartridgeLoad, EventParamsMustBeAnObject) {
     }
 }
 
+// The one problem validating a package finds, after overwriting one of its files.
+std::string problem_with(const std::string &file, const std::string &text) {
+    ct::TempDir dir("problem");
+    ct::write_package(dir.path());
+    std::ofstream(dir.path() / file) << text;
+    const auto issues = validate_package(dir.path());
+    EXPECT_EQ(issues.size(), 1u);
+    return issues.empty() ? "" : issues.front().message;
+}
+
+TEST(CartridgeLoad, NumbersAreTakenAtTheirWord) {
+    for (const std::string value : {"1.9", "4294967297", "true", "\"1\"", "-2147483649", "1e300"}) {
+        EXPECT_EQ(
+            problem_with("config.json", R"({"turns_per_period":)" + value + "}").substr(0, 53),
+            "config.json: turns_per_period must be an integer, not")
+            << value;
+    }
+    EXPECT_EQ(problem_with("config.json", R"({"temperature":true})"),
+              "config.json: temperature must be a number, not true");
+
+    ct::TempDir dir("wholenumbers");
+    ct::write_package(dir.path());
+    std::ofstream(dir.path() / "config.json") << R"({"turns_per_period":3.0,"temperature":1})";
+    EXPECT_EQ(load_package(dir.path()).config.turns_per_period, 3);
+}
+
+TEST(CartridgeLoad, ConfigMustBeAnObject) {
+    for (const std::string text : {"null", "[]", "7"}) {
+        EXPECT_EQ(problem_with("config.json", text), "config.json: config.json must be an object");
+    }
+}
+
+TEST(CartridgeLoad, ErrorsNameWhatTheyAreAbout) {
+    EXPECT_EQ(problem_with("facts.json", R"({"facts":{"a":{"text":"x"},"b":{}}})"),
+              "facts.json: fact b: key 'text' not found");
+    EXPECT_EQ(problem_with("flags.json", R"({"flags":{"f":{"default":"yes"}}})"),
+              "flags.json: flag f: type must be boolean, but is string");
+    EXPECT_EQ(problem_with("npcs.json", R"({"npcs":{"n":{"identity":{"nam":"x"},"state":{}}}})"),
+              "npcs.json: npc n: npc identity: unknown field 'nam'");
+    EXPECT_EQ(
+        problem_with("world.json", R"({"start_location":"a","locations":{"a":{"name":"A"}}})"),
+        "world.json: location a: key 'base_description' not found");
+    EXPECT_EQ(problem_with("events.json", R"({"events":[]})"),
+              "events.json: events must be an object");
+    EXPECT_NE(problem_with("flags.json", "{\n  nope").find("parse error at line 2"),
+              std::string::npos);
+}
+
+TEST(CartridgeLoad, EveryFileMayNameItsSchema) {
+    ct::TempDir dir("schemakey");
+    ct::write_package(dir.path());
+    for (const std::string file : {"scenario.json", "config.json", "world.json", "npcs.json",
+                                   "facts.json", "flags.json", "events.json"}) {
+        nlohmann::json document;
+        std::ifstream(dir.path() / file) >> document;
+        document["$schema"] = "https://chronicle.dev/schemas/" + file;
+        std::ofstream(dir.path() / file) << document.dump();
+    }
+    EXPECT_TRUE(validate_package(dir.path()).empty());
+}
+
+TEST(CartridgeLoad, HiddenFilesAreNotPartOfAPackage) {
+    ct::TempDir dir("hidden");
+    ct::write_package(dir.path());
+    std::filesystem::create_directories(dir.path() / ".git" / "objects");
+    for (int index = 0; index < 300; ++index) {
+        std::ofstream(dir.path() / ".git" / "objects" / std::to_string(index)) << "x";
+    }
+    std::error_code ec;
+    std::filesystem::create_symlink("/etc", dir.path() / ".link", ec);
+    EXPECT_EQ(inspect_package_tree(dir.path()).files.size(), 7u);
+    EXPECT_TRUE(validate_package(dir.path()).empty());
+
+    std::filesystem::rename(dir.path() / "world.json", dir.path() / ".world.json");
+    ct::write_package(dir.path(), {{"scenario", {{"files", {{"world", ".world.json"}}}}}});
+    const auto issues = validate_package(dir.path());
+    ASSERT_EQ(issues.size(), 1u);
+    EXPECT_NE(issues.front().message.find("must not be hidden"), std::string::npos);
+}
+
 TEST(CartridgeLoad, PathTraversalRejected) {
     ct::TempDir dir("traversal");
     ct::write_package(dir.path(), {{"scenario", {{"files", {{"world", "../outside.json"}}}}}});
@@ -181,6 +261,16 @@ TEST(CartridgeLoad, CanonicalNarrationTemplatesOverlayLegacyKeys) {
                          {"action_narration_templates", {{"give_item", "canonical"}}}}}});
     const WorldState world = load_package(dir.path());
     EXPECT_EQ(world.config.action_narration_templates.at("give_item"), "canonical");
+}
+
+TEST(CartridgeLoad, CanonicalNarrationKeyWinsInOneObjectToo) {
+    ct::TempDir dir("narrationpair");
+    ct::write_package(dir.path(),
+                      {{"config",
+                        {{"action_narration_templates",
+                          {{"give_item", "canonical"}, {"give_item_to_player", "legacy"}}}}}});
+    EXPECT_EQ(load_package(dir.path()).config.action_narration_templates.at("give_item"),
+              "canonical");
 }
 
 TEST(CartridgeLoad, UnknownNarrationTemplateIsRejected) {

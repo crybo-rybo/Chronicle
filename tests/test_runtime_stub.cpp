@@ -178,6 +178,30 @@ TEST_F(StubRuntimeTest, GameOverStopsFurtherProcessing) {
     EXPECT_EQ(game_.phase(), GamePhase::game_over);
 }
 
+TEST(Printable, ControlCharactersCannotReachTheTerminal) {
+    EXPECT_EQ(printable("plain text\twith\nlines"), "plain text\twith\nlines");
+    EXPECT_EQ(printable("caf\xC3\xA9 \xE4\xBD\xA0 \xF0\x9F\x95\xAF"),
+              "caf\xC3\xA9 \xE4\xBD\xA0 \xF0\x9F\x95\xAF");
+    EXPECT_EQ(printable("\x1B]52;c;aGk=\x07"), "?]52;c;aGk=?");
+    EXPECT_EQ(printable("\x1B[2J\x7F\b"), "?[2J??");
+    EXPECT_EQ(printable("\xC2\x9B"
+                        "2J"),
+              "?2J"); // U+009B, CSI in one character.
+    EXPECT_EQ(printable("\xC2\xA0"), "\xC2\xA0");
+    EXPECT_EQ(printable("over\rwrite\r\nnext"), "over?write\nnext");
+    EXPECT_EQ(printable("\x9B"
+                        "2J \xC3 \xFF \xE4\xBD"),
+              "?2J ? ? ??");
+}
+
+TEST_F(StubRuntimeTest, EventsArePrintedSafely) {
+    std::istringstream input;
+    std::ostringstream output;
+    const TerminalRenderer renderer(output, input);
+    renderer.print_events({{EventKind::dialogue, "Keeper: \"\x1B[31mred\x1B[0m\""}});
+    EXPECT_EQ(output.str(), "Keeper: \"?[31mred?[0m\"\n");
+}
+
 TEST_F(StubRuntimeTest, EndOfInputEndsTheRun) {
     std::istringstream input("look\n");
     std::ostringstream output;

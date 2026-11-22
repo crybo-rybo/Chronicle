@@ -29,6 +29,7 @@ namespace chronicle {
 namespace {
 
 using game_detail::dialogue_line;
+using game_detail::lower;
 using game_detail::single_line;
 
 // A policy rejection is deliberately a successful tool result: the NPC system
@@ -334,6 +335,32 @@ std::string describe(const scry::Error &error) {
     return detail.empty() ? error.message : error.message + " (" + detail + ")";
 }
 
+scry::Config harness_config(const EndpointConfig &endpoint) {
+    // The host timeout is a hard bound on one model request. Scry also fails a
+    // response that stays silent past `idle`, whose 120 s default would undercut
+    // a longer host timeout, so both bounds take the same value.
+    const auto request_timeout = std::chrono::milliseconds(std::max(1, endpoint.timeout_ms));
+    return {
+        .base_url = endpoint.base_url,
+        .api_key = endpoint.api_key,
+        .model = endpoint.model,
+        .dialect = endpoint.anthropic_dialect ? scry::ProviderDialect::anthropic
+                                              : scry::ProviderDialect::openai_compatible,
+        .sampling = {.temperature = endpoint.temperature,
+                     .top_p = {},
+                     .max_tokens = static_cast<std::uint32_t>(std::max(1, endpoint.max_tokens))},
+        .reasoning_mode = endpoint.disable_reasoning ? scry::ReasoningMode::disabled
+                                                     : scry::ReasoningMode::provider_default,
+        .timeouts = {.idle = request_timeout, .transfer = request_timeout},
+        .limits = {.max_pending_turns = 1, .max_tool_arguments_bytes = std::size_t{64} * 1024},
+        .max_tool_rounds = 8,
+        .max_tool_calls_per_turn = 32,
+        // Out of rounds, the turn ends with what it did. Scry commits those rounds,
+        // so the world and the history still agree.
+        .tool_round_limit = scry::ToolRoundLimitPolicy::complete,
+    };
+}
+
 // Harness::send_and_wait, with the turn observed as it runs.
 scry::Result<scry::Completion> run_observed_turn(scry::Harness &harness,
                                                  scry::Conversation &conversation,
@@ -366,29 +393,52 @@ scry::Result<scry::Completion> run_observed_turn(scry::Harness &harness,
 
 } // namespace
 
-std::optional<EndpointConfig> resolve_endpoint(const std::optional<std::string> &base_url_flag,
-                                               const std::optional<std::string> &model_flag,
-                                               const ConfigData *cartridge_config) {
+std::expected<std::optional<EndpointConfig>, std::string>
+resolve_endpoint(const std::optional<std::string> &base_url_flag,
+                 const std::optional<std::string> &model_flag, const ConfigData *cartridge_config) {
     EndpointConfig endpoint;
     endpoint.base_url = base_url_flag ? strip_copy(*base_url_flag) : env_text("CHRONICLE_BASE_URL");
     endpoint.model = model_flag ? strip_copy(*model_flag) : env_text("CHRONICLE_MODEL");
+    if (endpoint.base_url.empty() && endpoint.model.empty()) {
+        return std::nullopt;
+    }
+    if (endpoint.base_url.empty()) {
+        return std::unexpected("Model '" + endpoint.model +
+                               "' has no endpoint: set --base-url or CHRONICLE_BASE_URL.");
+    }
+    if (endpoint.model.empty()) {
+        return std::unexpected("Endpoint '" + endpoint.base_url +
+                               "' has no model: set --model or CHRONICLE_MODEL.");
+    }
     if (cartridge_config != nullptr) {
         endpoint.temperature = cartridge_config->temperature;
         endpoint.max_tokens = cartridge_config->max_response_tokens;
         endpoint.timeout_ms = cartridge_config->inference_timeout_ms;
     }
-    endpoint.anthropic_dialect = env_text("CHRONICLE_DIALECT") == "anthropic";
-    endpoint.disable_reasoning = env_truthy("CHRONICLE_DISABLE_REASONING");
-
-    if (!endpoint.configured()) {
-        return std::nullopt;
+    const std::string dialect = lower(env_text("CHRONICLE_DIALECT"));
+    if (!dialect.empty() && dialect != "openai" && dialect != "anthropic") {
+        return std::unexpected("CHRONICLE_DIALECT must be openai or anthropic, not '" + dialect +
+                               "'.");
     }
+    endpoint.anthropic_dialect = dialect == "anthropic";
+    endpoint.disable_reasoning = env_truthy("CHRONICLE_DISABLE_REASONING");
+    if (endpoint.anthropic_dialect) {
+        // This API takes temperatures up to 1 and has no such switch. Neither may
+        // make the host's endpoint unusable.
+        endpoint.temperature = std::min(endpoint.temperature, 1.0);
+        endpoint.disable_reasoning = false;
+    }
+
     std::string key = env_text("CHRONICLE_API_KEY");
     if (key.empty()) {
         key = env_text("OPENAI_API_KEY");
     }
     if (!key.empty()) {
         endpoint.api_key = std::move(key);
+    }
+    if (const auto status = scry::Harness::validate(harness_config(endpoint)); !status) {
+        return std::unexpected("Endpoint '" + endpoint.base_url +
+                               "' cannot be used: " + status.error().message);
     }
     return endpoint;
 }
@@ -427,29 +477,7 @@ NpcSessionManager::Session &NpcSessionManager::get_or_create(const std::string &
         throw SessionError("Unknown NPC: " + npc_id);
     }
 
-    // The host timeout is a hard bound on one model request. Scry also fails a
-    // response that stays silent past `idle`, whose 120 s default would undercut
-    // a longer host timeout, so both bounds take the same value.
-    const auto request_timeout = std::chrono::milliseconds(std::max(1, endpoint_.timeout_ms));
-    auto created = scry::Harness::create(scry::Config{
-        .base_url = endpoint_.base_url,
-        .api_key = endpoint_.api_key,
-        .model = endpoint_.model,
-        .dialect = endpoint_.anthropic_dialect ? scry::ProviderDialect::anthropic
-                                               : scry::ProviderDialect::openai_compatible,
-        .sampling = {.temperature = endpoint_.temperature,
-                     .top_p = {},
-                     .max_tokens = static_cast<std::uint32_t>(std::max(1, endpoint_.max_tokens))},
-        .reasoning_mode = endpoint_.disable_reasoning ? scry::ReasoningMode::disabled
-                                                      : scry::ReasoningMode::provider_default,
-        .timeouts = {.idle = request_timeout, .transfer = request_timeout},
-        .limits = {.max_pending_turns = 1, .max_tool_arguments_bytes = std::size_t{64} * 1024},
-        .max_tool_rounds = 8,
-        .max_tool_calls_per_turn = 32,
-        // Out of rounds, the turn ends with what it did. Scry commits those rounds,
-        // so the world and the history still agree.
-        .tool_round_limit = scry::ToolRoundLimitPolicy::complete,
-    });
+    auto created = scry::Harness::create(harness_config(endpoint_));
     if (!created) {
         throw SessionError(created.error().message);
     }

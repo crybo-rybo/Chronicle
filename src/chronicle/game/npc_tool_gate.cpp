@@ -182,6 +182,14 @@ ToolOutcome CartridgeGame::apply_npc_tool(const std::string &npc_id, const NpcTo
         const std::string &npc_id;
         const decltype(submit) &submit_action;
 
+        // The cartridge's narration of an accepted tool; an empty template is silence.
+        [[nodiscard]] GameEvents narrated(const std::string &tool,
+                                          std::map<std::string, std::string> args) const {
+            args["npc"] = npc.identity.name;
+            const auto event = game.narrate(tool, args);
+            return event ? GameEvents{*event} : GameEvents{};
+        }
+
         ToolOutcome operator()(const tools::Say &args) const {
             return GameEvents{{EventKind::dialogue, dialogue_line(npc.identity.name, args.text)}};
         }
@@ -193,11 +201,7 @@ ToolOutcome CartridgeGame::apply_npc_tool(const std::string &npc_id, const NpcTo
                 })) {
                 return std::unexpected(std::move(*rejected));
             }
-            const auto event =
-                game.narrate("give_item", {{"npc", npc.identity.name}, {"item", item.name}});
-            return event ? GameEvents{*event}
-                         : GameEvents{{EventKind::narration,
-                                       npc.identity.name + " gives you the " + item.name + "."}};
+            return narrated("give_item", {{"item", item.name}});
         }
         ToolOutcome operator()(const tools::TakeItem &args) const {
             const auto &item = game.world_.items.at(args.item_id);
@@ -207,11 +211,7 @@ ToolOutcome CartridgeGame::apply_npc_tool(const std::string &npc_id, const NpcTo
                 })) {
                 return std::unexpected(std::move(*rejected));
             }
-            const auto event =
-                game.narrate("take_item", {{"npc", npc.identity.name}, {"item", item.name}});
-            return event ? GameEvents{*event}
-                         : GameEvents{{EventKind::narration,
-                                       npc.identity.name + " takes the " + item.name + "."}};
+            return narrated("take_item", {{"item", item.name}});
         }
         ToolOutcome operator()(const tools::UpdateMood &args) const {
             const std::string mood = tools::to_string(args.mood);
@@ -223,17 +223,14 @@ ToolOutcome CartridgeGame::apply_npc_tool(const std::string &npc_id, const NpcTo
             if (unchanged) {
                 return GameEvents{};
             }
-            const auto event =
-                game.narrate("update_mood", {{"npc", npc.identity.name}, {"mood", mood}});
-            return event ? GameEvents{*event} : GameEvents{};
+            return narrated("update_mood", {{"mood", mood}});
         }
         ToolOutcome operator()(const tools::UpdateTrust &args) const {
             if (auto rejected =
                     submit_action(actions::AdjustNpcTrust{.npc_id = npc_id, .delta = args.delta})) {
                 return std::unexpected(std::move(*rejected));
             }
-            const auto event = game.narrate("update_trust", {{"npc", npc.identity.name}});
-            return event ? GameEvents{*event} : GameEvents{};
+            return narrated("update_trust", {});
         }
         ToolOutcome operator()(const tools::MoveSelf &args) const {
             const std::string location_name = game.world_.locations.at(args.location_id).name;
@@ -241,9 +238,7 @@ ToolOutcome CartridgeGame::apply_npc_tool(const std::string &npc_id, const NpcTo
                     .npc_id = npc_id, .destination = args.location_id, .significant = true})) {
                 return std::unexpected(std::move(*rejected));
             }
-            const auto event = game.narrate(
-                "move_self", {{"npc", npc.identity.name}, {"location", location_name}});
-            return event ? GameEvents{*event} : GameEvents{};
+            return narrated("move_self", {{"location", location_name}});
         }
         ToolOutcome operator()(const tools::RevealKnowledge &args) const {
             const std::string fact_text = game.world_.facts.at(args.fact_id).text;
@@ -254,10 +249,7 @@ ToolOutcome CartridgeGame::apply_npc_tool(const std::string &npc_id, const NpcTo
             if (already_known) {
                 return GameEvents{};
             }
-            GameEvents events;
-            if (const auto event = game.narrate("reveal_knowledge", {})) {
-                events.push_back(*event);
-            }
+            GameEvents events = narrated("reveal_knowledge", {});
             events.push_back({EventKind::knowledge, fact_text});
             return events;
         }
@@ -276,16 +268,14 @@ ToolOutcome CartridgeGame::apply_npc_tool(const std::string &npc_id, const NpcTo
                 })) {
                 return std::unexpected(std::move(*rejected));
             }
-            const auto event = game.narrate("remember", {});
-            return event ? GameEvents{*event} : GameEvents{};
+            return narrated("remember", {});
         }
         ToolOutcome operator()(const tools::SetFlag &args) const {
             if (auto rejected =
                     submit_action(actions::SetFlag{.flag_id = args.flag_id, .value = args.value})) {
                 return std::unexpected(std::move(*rejected));
             }
-            const auto event = game.narrate("set_flag", {});
-            return event ? GameEvents{*event} : GameEvents{};
+            return narrated("set_flag", {});
         }
         ToolOutcome operator()(const tools::InspectItem &args) const {
             const auto &item = game.world_.items.at(args.item_id);

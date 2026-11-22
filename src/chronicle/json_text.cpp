@@ -39,4 +39,13 @@ json parse_untrusted_json(const std::string_view text, const std::size_t max_dep
     return json::parse(text, check);
 }
 
+std::string plain_message(const std::exception &exception) {
+    const std::string message = exception.what();
+    if (!message.starts_with("[json.exception.")) {
+        return message;
+    }
+    const auto tag_end = message.find("] ");
+    return tag_end == std::string::npos ? message : message.substr(tag_end + 2);
+}
+
 } // namespace chronicle

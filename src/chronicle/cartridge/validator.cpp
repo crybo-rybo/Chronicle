@@ -217,6 +217,12 @@ void validate_event_action(const WorldState &world, const std::string &event_id,
 
 } // namespace
 
+std::string ValidationIssue::to_string() const {
+    std::string line = (level == IssueLevel::error ? "[error] " : "[warning] ") + message;
+    std::ranges::replace_if(line, [](const char ch) { return ch == '\n' || ch == '\r'; }, ' ');
+    return line;
+}
+
 bool is_safe_cartridge_id(const std::string &id) {
     const auto is_lower = [](const unsigned char ch) { return ch >= 'a' && ch <= 'z'; };
     const auto is_digit = [](const unsigned char ch) { return ch >= '0' && ch <= '9'; };
@@ -288,7 +294,23 @@ std::vector<ValidationIssue> validate_world(const WorldState &world) {
         error(issues, "start_location unknown: " + world.player.current_location);
     }
 
+    const auto require_name = [&](const std::string &text, const std::string &thing) {
+        if (!nonblank(text)) {
+            warning(issues, thing + " is blank");
+        }
+    };
+    for (const auto &[item_id, item] : world.items) {
+        require_name(item.name, "item " + item_id + ": name");
+    }
+    for (const auto &[fact_id, fact] : world.facts) {
+        require_name(fact.text, "fact " + fact_id + ": text");
+    }
+    for (const auto &[npc_id, npc] : world.npcs) {
+        require_name(npc.identity.name, "npc " + npc_id + ": name");
+    }
+
     for (const auto &[loc_id, loc] : world.locations) {
+        require_name(loc.name, "location " + loc_id + ": name");
         for (const auto &[direction, dest] : loc.exits) {
             if (!world.locations.contains(dest)) {
                 error(issues, "location " + loc_id + ": exit " + direction + " -> unknown " + dest);

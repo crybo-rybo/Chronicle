@@ -96,6 +96,30 @@ TEST(Validator, ExitToUnknownLocation) {
     EXPECT_TRUE(has_issue_containing(validate_world(world), "exit west -> unknown void"));
 }
 
+TEST(Validator, BlankNamesAreWarnedAbout) {
+    WorldState world = ct::make_test_world();
+    world.locations.at("hall").name = " ";
+    world.items.at("old_coin").name = "";
+    world.npcs.at("keeper").identity.name = "\t";
+    world.facts.at("fact_gate").text = "\n";
+    const auto issues = validate_world(world);
+    EXPECT_FALSE(has_errors(issues));
+    for (const std::string expected :
+         {"location hall: name is blank", "item old_coin: name is blank",
+          "npc keeper: name is blank", "fact fact_gate: text is blank"}) {
+        EXPECT_TRUE(has_issue_containing(issues, expected, IssueLevel::warning)) << expected;
+    }
+}
+
+TEST(Validator, AnIssueIsOneLineWhateverItNames) {
+    WorldState world = ct::make_test_world();
+    world.locations.at("hall").exits["up"] = "void\nOK\r\nready:   true";
+    const auto issues = validate_world(world);
+    ASSERT_FALSE(issues.empty());
+    EXPECT_EQ(issues.front().to_string(),
+              "[error] location hall: exit up -> unknown void OK  ready:   true");
+}
+
 TEST(Validator, ExitsThatCannotBeNamedAreWarnedAbout) {
     WorldState world = ct::make_test_world();
     world.locations.at("hall").exits[" "] = "garden";

@@ -5,8 +5,10 @@
   "type": "object",
   "additionalProperties": false,
   "properties": {
+    "$schema": { "type": "string" },
     "flags": {
       "type": "object",
+      "maxProperties": 512,
       "additionalProperties": {
         "type": "object",
         "additionalProperties": false,

@@ -3,6 +3,21 @@
 Creator-facing catalog of mechanics. Cartridges may use only the vocabularies
 listed here.
 
+## Command Line
+
+`chronicle --help` lists the subcommands and options. A command exits with 0 on
+success, 1 when it failed (an invalid cartridge, a file that cannot be read or
+written), and 2 when it was misused (unknown options, or a `--model` or `--base-url`
+that does not make a usable endpoint). An endpoint that is half configured in the
+environment is reported on standard error and the game is played without a model.
+
+`pack` writes a `.chronicle` or `.zip` archive that `install` accepts. `install`
+takes a directory or such an archive, with the cartridge at the top or in one
+directory, and replaces an installed version in one step.
+
+Whatever cartridges and models write is printed with control characters replaced by
+`?`, so it cannot drive the terminal.
+
 ## Player Commands
 
 | Command | Arguments | Effect |

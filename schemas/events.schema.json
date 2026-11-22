@@ -5,48 +5,209 @@
   "type": "object",
   "additionalProperties": false,
   "properties": {
+    "$schema": { "type": "string" },
     "events": {
       "type": "object",
+      "maxProperties": 512,
       "additionalProperties": { "$ref": "#/$defs/event" }
     }
   },
   "$defs": {
-    "conditionType": {
-      "type": "string",
-      "enum": [
-        "clock_is",
-        "player_at",
-        "flag_set",
-        "npc_trust_ge",
-        "npc_at",
-        "item_in_player_inv",
-        "turn_ge"
-      ]
-    },
-    "actionType": {
-      "type": "string",
-      "enum": ["move_npc", "set_flag", "spawn_item", "narrate", "end_game"]
-    },
+    "id": { "type": "string", "minLength": 1 },
+    "period": { "enum": ["morning", "afternoon", "evening", "night"] },
     "condition": {
       "type": "object",
-      "required": ["type"],
+      "required": ["type", "args"],
       "additionalProperties": false,
       "properties": {
-        "type": { "$ref": "#/$defs/conditionType" },
-        "args": {
-          "type": "array",
-          "items": { "type": "string" }
+        "type": {
+          "enum": [
+            "clock_is",
+            "player_at",
+            "flag_set",
+            "npc_trust_ge",
+            "npc_at",
+            "item_in_player_inv",
+            "turn_ge"
+          ]
+        },
+        "args": { "type": "array", "items": { "type": "string" } }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "type": { "const": "clock_is" } } },
+          "then": {
+            "properties": {
+              "args": {
+                "minItems": 1,
+                "maxItems": 1,
+                "prefixItems": [{ "$ref": "#/$defs/period" }]
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "player_at" } } },
+          "then": {
+            "properties": {
+              "args": {
+                "minItems": 1,
+                "maxItems": 1,
+                "prefixItems": [{ "$ref": "#/$defs/id" }]
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "flag_set" } } },
+          "then": {
+            "properties": {
+              "args": {
+                "minItems": 2,
+                "maxItems": 2,
+                "prefixItems": [{ "$ref": "#/$defs/id" }, { "enum": ["true", "false"] }]
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "npc_trust_ge" } } },
+          "then": {
+            "properties": {
+              "args": {
+                "minItems": 2,
+                "maxItems": 2,
+                "prefixItems": [
+                  { "$ref": "#/$defs/id" },
+                  { "pattern": "^([0-9]{1,2}|100)$" }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "npc_at" } } },
+          "then": {
+            "properties": {
+              "args": {
+                "minItems": 2,
+                "maxItems": 2,
+                "prefixItems": [{ "$ref": "#/$defs/id" }, { "$ref": "#/$defs/id" }]
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "item_in_player_inv" } } },
+          "then": {
+            "properties": {
+              "args": {
+                "minItems": 1,
+                "maxItems": 1,
+                "prefixItems": [{ "$ref": "#/$defs/id" }]
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "turn_ge" } } },
+          "then": {
+            "properties": {
+              "args": {
+                "minItems": 1,
+                "maxItems": 1,
+                "prefixItems": [{ "pattern": "^[0-9]{1,9}$" }]
+              }
+            }
+          }
         }
-      }
+      ]
     },
     "action": {
       "type": "object",
       "required": ["type"],
       "additionalProperties": false,
       "properties": {
-        "type": { "$ref": "#/$defs/actionType" },
+        "type": {
+          "enum": ["move_npc", "set_flag", "spawn_item", "narrate", "end_game"]
+        },
         "params": { "type": "object" }
-      }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "type": { "const": "move_npc" } } },
+          "then": {
+            "required": ["params"],
+            "properties": {
+              "params": {
+                "required": ["npc_id", "location_id"],
+                "additionalProperties": false,
+                "properties": {
+                  "npc_id": { "$ref": "#/$defs/id" },
+                  "location_id": { "$ref": "#/$defs/id" }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "set_flag" } } },
+          "then": {
+            "required": ["params"],
+            "properties": {
+              "params": {
+                "required": ["flag_id", "value"],
+                "additionalProperties": false,
+                "properties": {
+                  "flag_id": { "$ref": "#/$defs/id" },
+                  "value": { "type": "boolean" }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "spawn_item" } } },
+          "then": {
+            "required": ["params"],
+            "properties": {
+              "params": {
+                "required": ["item_id", "location_id"],
+                "additionalProperties": false,
+                "properties": {
+                  "item_id": { "$ref": "#/$defs/id" },
+                  "location_id": { "$ref": "#/$defs/id" }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "narrate" } } },
+          "then": {
+            "required": ["params"],
+            "properties": {
+              "params": {
+                "required": ["text"],
+                "additionalProperties": false,
+                "properties": { "text": { "type": "string" } }
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "end_game" } } },
+          "then": {
+            "properties": {
+              "params": {
+                "required": [],
+                "additionalProperties": false,
+                "properties": { "text": { "type": "string" } }
+              }
+            }
+          }
+        }
+      ]
     },
     "event": {
       "type": "object",
@@ -54,10 +215,12 @@
       "properties": {
         "conditions": {
           "type": "array",
+          "maxItems": 128,
           "items": { "$ref": "#/$defs/condition" }
         },
         "actions": {
           "type": "array",
+          "maxItems": 128,
           "items": { "$ref": "#/$defs/action" }
         },
         "once": { "type": "boolean" },

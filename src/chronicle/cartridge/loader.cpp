@@ -31,8 +31,12 @@ json read_json_file(const fs::path &path) {
     try {
         return parse_untrusted_json(text.view(), MAX_CARTRIDGE_JSON_DEPTH);
     } catch (const std::exception &exc) {
-        throw CartridgeError("Invalid JSON in " + path.string() + ": " + exc.what());
+        throw CartridgeError("Invalid JSON in " + path.string() + ": " + plain_message(exc));
     }
+}
+
+bool is_hidden(const fs::path &name) {
+    return name.string().starts_with('.');
 }
 
 // Reject absolute paths, parent traversal, and anything resolving outside root.
@@ -45,6 +49,9 @@ fs::path resolve_inside(const fs::path &root, const std::string &relative) {
     for (const auto &part : rel) {
         if (part == "." || part == ".." || part.empty()) {
             throw CartridgeError("Unsafe package path: '" + relative + "'");
+        }
+        if (is_hidden(part)) {
+            throw CartridgeError("Package path must not be hidden: '" + relative + "'");
         }
     }
     const fs::path resolved = fs::weakly_canonical(root / rel);
@@ -61,7 +68,7 @@ template <typename T> T parse_as(const json &raw, const char *what) {
     try {
         return raw.get<T>();
     } catch (const std::exception &exc) {
-        throw CartridgeError(std::string(what) + ": " + exc.what());
+        throw CartridgeError(std::string(what) + ": " + plain_message(exc));
     }
 }
 
@@ -82,6 +89,10 @@ PackageContents inspect_package_tree(const fs::path &package_dir) {
     for (const fs::recursive_directory_iterator end; it != end; it.increment(ec)) {
         if (ec) {
             throw CartridgeError("Cannot inspect package: " + ec.message());
+        }
+        if (is_hidden(it->path().filename())) {
+            it.disable_recursion_pending();
+            continue;
         }
         const auto link_status = it->symlink_status(ec);
         if (ec) {
@@ -127,14 +138,12 @@ WorldState assemble_world(const json &manifest_raw, const json &config_raw, cons
                           const json &events_raw) {
     WorldState state;
     state.manifest = parse_as<ScenarioManifest>(manifest_raw, "scenario.json");
-    state.config = config_raw.is_null() || config_raw.empty()
-                       ? parse_as<ConfigData>(json::object(), "config")
-                       : parse_as<ConfigData>(config_raw, "config");
-    const auto world = parse_as<WorldData>(world_raw, "world");
-    auto npcs_file = parse_as<NpcsFile>(npcs_raw, "npcs");
-    const auto facts_file = parse_as<FactsFile>(facts_raw, "facts");
-    const auto flags_file = parse_as<FlagsFile>(flags_raw, "flags");
-    const auto events_file = parse_as<EventsFile>(events_raw, "events");
+    state.config = parse_as<ConfigData>(config_raw, "config.json");
+    const auto world = parse_as<WorldData>(world_raw, "world.json");
+    auto npcs_file = parse_as<NpcsFile>(npcs_raw, "npcs.json");
+    const auto facts_file = parse_as<FactsFile>(facts_raw, "facts.json");
+    const auto flags_file = parse_as<FlagsFile>(flags_raw, "flags.json");
+    const auto events_file = parse_as<EventsFile>(events_raw, "events.json");
 
     for (auto &[location_id, authored] : world.locations) {
         state.locations.emplace(location_id, std::move(authored.location));

@@ -5,6 +5,7 @@
   "type": "object",
   "additionalProperties": false,
   "properties": {
+    "$schema": { "type": "string" },
     "temperature": { "type": "number", "minimum": 0, "maximum": 2 },
     "max_response_tokens": { "type": "integer", "minimum": 1, "maximum": 16384 },
     "inference_timeout_ms": { "type": "integer", "minimum": 100, "maximum": 600000 },
@@ -16,7 +17,10 @@
     "verb_aliases": {
       "type": "object",
       "description": "New word to built-in command, such as \"grab\": \"take\".",
-      "additionalProperties": { "type": "string", "minLength": 1 },
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^(go|look|examine|take|drop|use|talk|inventory|save|load|help|quit|q)(\\s.*)?$"
+      },
       "propertyNames": {
         "pattern": "^[^\\sA-Z]+$",
         "not": {
