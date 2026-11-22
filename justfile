@@ -68,5 +68,6 @@ clean:
     cmake -E remove_directory build
     cmake -E remove_directory build-ci
     cmake -E remove_directory build-install-smoke
+    cmake -E remove_directory build-integration
     cmake -E remove_directory build-linux-ci
     cmake -E remove_directory build-release

@@ -37,11 +37,13 @@ jobs:
     runs-on: ubuntu-26.04
     # scry and Scrydantic require GCC 16.2, and Ubuntu 26.04 packages only a
     # 16.0.1 snapshot, so this job runs in the official GCC image, pinned by
-    # digest. The image calls its compilers gcc and g++, so the configure steps
-    # override the names in the presets.
+    # digest. CC and CXX keep CMake off any other compiler in the image.
     container:
       image: gcc:16.2.0@sha256:07280eb2e744f1b7a2d8d4a3894c089ea07266c109758afc388a634bd098e4eb
     timeout-minutes: 20
+    env:
+      CC: gcc
+      CXX: g++
     defaults:
       run:
         shell: bash
@@ -55,7 +57,7 @@ jobs:
           apt-get install -y --no-install-recommends cmake libcurl4-openssl-dev
 
       - name: Configure
-        run: cmake --preset linux-ci -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++
+        run: cmake --preset linux-ci
 
       - name: Build
         run: cmake --build --preset linux-ci -j "$(nproc)"
@@ -71,7 +73,7 @@ jobs:
 
       - name: Release build and relocatable install smoke
         run: |
-          cmake --preset release -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++
+          cmake --preset release
           cmake --build --preset release -j "$(nproc)"
           cmake --install build-release --prefix "$RUNNER_TEMP/chronicle"
           "$RUNNER_TEMP/chronicle/bin/chronicle" --version

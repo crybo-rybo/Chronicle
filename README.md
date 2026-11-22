@@ -28,7 +28,9 @@ cmake --preset dev
 cmake --build --preset dev -j
 ```
 
-Or, with [`just`](https://github.com/casey/just): `just build`.
+Or, with [`just`](https://github.com/casey/just): `just build`. The presets use
+the default compiler; if that is not GCC 16.2+, name one the first time you
+configure, for example `CC=gcc-16 CXX=g++-16 cmake --preset dev`.
 
 Install a release build (the executable, bundled examples, and documentation):
 

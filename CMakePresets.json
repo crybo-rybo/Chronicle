@@ -1,14 +1,12 @@
 {
   "version": 6,
-  "cmakeMinimumRequired": { "major": 3, "minor": 28, "patch": 0 },
+  "cmakeMinimumRequired": { "major": 3, "minor": 30, "patch": 0 },
   "configurePresets": [
     {
       "name": "dev",
       "displayName": "Debug + unit tests",
       "binaryDir": "${sourceDir}/build",
       "cacheVariables": {
-        "CMAKE_C_COMPILER": "gcc-16",
-        "CMAKE_CXX_COMPILER": "g++-16",
         "CMAKE_BUILD_TYPE": "Debug",
         "CHRONICLE_BUILD_TESTS": "ON"
       }
@@ -18,8 +16,6 @@
       "displayName": "Release",
       "binaryDir": "${sourceDir}/build-release",
       "cacheVariables": {
-        "CMAKE_C_COMPILER": "gcc-16",
-        "CMAKE_CXX_COMPILER": "g++-16",
         "CMAKE_BUILD_TYPE": "Release",
         "CHRONICLE_BUILD_TESTS": "OFF"
       }
@@ -51,6 +47,7 @@
       "name": "integration",
       "displayName": "Debug + unit and live-LLM integration tests",
       "inherits": "dev",
+      "binaryDir": "${sourceDir}/build-integration",
       "cacheVariables": {
         "CHRONICLE_INTEGRATION_TESTS": "ON"
       }
