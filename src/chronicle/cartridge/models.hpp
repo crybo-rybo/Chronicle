@@ -10,6 +10,7 @@
 namespace chronicle {
 
 inline constexpr int SCHEMA_VERSION = 1;
+inline constexpr std::size_t MAX_NPC_MEMORIES = 4'096;
 
 [[nodiscard]] const std::vector<std::string> &valid_moods();
 [[nodiscard]] const std::vector<std::string> &period_names();

@@ -22,11 +22,11 @@ void TerminalRenderer::print_events(const GameEvents &events) const {
     out_.flush();
 }
 
-std::string TerminalRenderer::prompt(const std::string &prefix) const {
+std::optional<std::string> TerminalRenderer::prompt(const std::string &prefix) const {
     out_ << prefix << std::flush;
     std::string line;
     if (!std::getline(in_, line)) {
-        return "quit";
+        return std::nullopt;
     }
     return line;
 }

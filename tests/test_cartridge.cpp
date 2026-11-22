@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include "chronicle/cartridge/loader.hpp"
+#include "chronicle/cartridge/validator.hpp"
 #include "helpers.hpp"
 
 namespace chronicle {
@@ -71,6 +72,39 @@ TEST(CartridgeLoad, InvalidJsonThrows) {
     stream << "{ not json";
     stream.close();
     EXPECT_THROW((void)load_package(dir.path()), CartridgeError);
+}
+
+TEST(CartridgeLoad, DeeplyNestedJsonIsRefusedWithoutOverflow) {
+    for (const std::string key : {"params", "ignored"}) {
+        ct::TempDir dir("deepjson");
+        ct::write_package(dir.path());
+        std::ofstream(dir.path() / "events.json")
+            << R"({"events":{"e":{"actions":[{"type":"narrate",")" << key << R"(":)"
+            << std::string(200'000, '[') << std::string(200'000, ']') << "}]}}}";
+        const auto issues = validate_package(dir.path());
+        ASSERT_EQ(issues.size(), 1u);
+        EXPECT_NE(issues.front().message.find("nested more than 64"), std::string::npos)
+            << issues.front().message;
+    }
+}
+
+TEST(CartridgeLoad, RepeatedKeysAreRefused) {
+    ct::TempDir dir("repeatedkeys");
+    ct::write_package(dir.path());
+    std::ofstream(dir.path() / "flags.json")
+        << R"({"flags":{"a":{"default":true},"b":{},"a":{"default":false}}})";
+    const auto issues = validate_package(dir.path());
+    ASSERT_EQ(issues.size(), 1u);
+    EXPECT_NE(issues.front().message.find("repeats the key \"a\""), std::string::npos)
+        << issues.front().message;
+}
+
+TEST(CartridgeLoad, TheSameKeyInDifferentObjectsIsFine) {
+    ct::TempDir dir("samekeys");
+    ct::write_package(dir.path());
+    std::ofstream(dir.path() / "flags.json")
+        << R"({"flags":{"a":{"default":true},"b":{"default":false}}})";
+    EXPECT_TRUE(load_package(dir.path()).flags.at("a"));
 }
 
 TEST(CartridgeLoad, PathTraversalRejected) {

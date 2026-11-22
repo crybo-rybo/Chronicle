@@ -2,6 +2,7 @@
 #pragma once
 
 #include <iosfwd>
+#include <optional>
 #include <string>
 
 #include "chronicle/types.hpp"
@@ -15,8 +16,8 @@ class TerminalRenderer {
 
     void print_events(const GameEvents &events) const;
 
-    // Show the prompt and read a line; EOF yields "quit".
-    [[nodiscard]] std::string prompt(const std::string &prefix = "> ") const;
+    // Show the prompt and read a line; nothing at the end of the input.
+    [[nodiscard]] std::optional<std::string> prompt(const std::string &prefix = "> ") const;
 
   private:
     std::ostream &out_;

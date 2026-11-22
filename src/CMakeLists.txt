@@ -12,7 +12,9 @@ add_library(chronicle_core STATIC
     chronicle/game/npc_tool_gate.cpp
     chronicle/game/scripted_events.cpp
     chronicle/game/world_actions.cpp
+    chronicle/json_text.cpp
     chronicle/library.cpp
+    chronicle/paths.cpp
     chronicle/persist.cpp
     chronicle/prompt.cpp
     chronicle/render.cpp

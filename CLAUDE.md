@@ -52,7 +52,8 @@ Three layers (`src/CMakeLists.txt`):
   (`cartridge_game.cpp` — session lifecycle and player commands;
   `npc_tool_gate.cpp` — model authorization and translation;
   `scripted_events.cpp` — event evaluation;
-  `npc_tools.hpp` — the ten tool argument structs), `persist`, `library`
+  `npc_tools.hpp` — the ten tool argument structs), `json_text` (the one parser for
+  untrusted JSON: bounded depth, no repeated keys), `paths`, `persist`, `library`
   (miniz zip pack/install under `~/.chronicle/cartridges`), `prompt`, `render`.
 - **`chronicle_llm`** (compiled with `-freflection`): `llm/npc_sessions.cpp`
   — one scry `Harness` + persistent `Conversation` per talked-to NPC, created

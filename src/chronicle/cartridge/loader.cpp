@@ -3,6 +3,8 @@
 #include <fstream>
 #include <sstream>
 
+#include "chronicle/json_text.hpp"
+
 namespace chronicle {
 
 namespace fs = std::filesystem;
@@ -24,9 +26,11 @@ json read_json_file(const fs::path &path) {
     if (!stream) {
         throw CartridgeError("Missing package file: " + path.string());
     }
+    std::ostringstream text;
+    text << stream.rdbuf();
     try {
-        return json::parse(stream);
-    } catch (const json::parse_error &exc) {
+        return parse_untrusted_json(text.view(), MAX_CARTRIDGE_JSON_DEPTH);
+    } catch (const std::exception &exc) {
         throw CartridgeError("Invalid JSON in " + path.string() + ": " + exc.what());
     }
 }

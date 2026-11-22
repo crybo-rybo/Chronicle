@@ -103,6 +103,10 @@ std::optional<std::string> CartridgeGame::validate_npc_tool(const std::string &n
             if (strip(args.summary).empty()) {
                 return "Memory summary required";
             }
+            if (args.summary.size() > tools::Remember::max_summary_bytes) {
+                return "Memory summary must be at most " +
+                       std::to_string(tools::Remember::max_summary_bytes) + " bytes";
+            }
             if (args.importance < 1 || args.importance > 10) {
                 return "Memory importance must be between 1 and 10";
             }

@@ -20,13 +20,25 @@ listed here.
 | `help` | — | Show help |
 | `quit` | — | Exit |
 
-In conversation, free text goes to the active NPC. Hard commands still available:
-`look`, `inventory`, `save`, `load`, `help`, `quit`, and exit phrases
-(`bye`, `goodbye`, `leave`, `exit conversation`).
+In conversation, what the player types is said to the active NPC. A line is a
+command only when the whole line is one: `look`, `inventory`, `save [slot]`,
+`load [slot]`, `help`, `quit`, or an exit phrase (`bye`, `goodbye`, `leave`,
+`exit conversation`, with or without a closing `.` or `!`). "Quit lying to me" and
+"look at this" are speech. A line that would be a working action here and now,
+such as `go east` or `take visitor ledger`, is answered with a reminder to finish
+the conversation first.
 
-Verb aliases may be defined in `config.json`.
+Verb aliases may be defined in `config.json`. An alias adds a word for a built-in
+command. One that redefines a built-in command is ignored.
 
-## Save Integrity
+## Saves
+
+Saves are kept in `~/.chronicle/saves/<cartridge id>/`. `--save-dir` or
+`CHRONICLE_SAVE_DIR` names another root. A cartridge that already has saves in
+`./saves`, where earlier versions kept them, stays there. Nothing is created until
+the first save, so a game starts even where it cannot write. Cartridges with one id,
+and versions of one cartridge, share a directory. `save` replaces a save only if this
+cartridge could load it, and otherwise asks for another slot.
 
 Save files are versioned and bound to the exact cartridge id and content
 version. They contain only mutable runtime state; authored facts, NPC identities,
@@ -34,7 +46,8 @@ tool policies, event definitions, and prompts are always reconstructed from the
 validated cartridge. Writes use atomic replacement, reads are size-bounded, and
 the complete world plus all Scry conversation documents are validated before a
 load commits. A failed world or conversation restore leaves the current session
-unchanged. Saves written on scry v0.1.0 load unchanged: scry v0.8.0 reads and
+unchanged. Playing a save without a model keeps its NPC conversations for the next
+session that has one. Saves written on scry v0.1.0 load unchanged: scry v0.8.0 reads and
 writes the same version 1 conversation documents.
 
 ## NPC Tool Palette

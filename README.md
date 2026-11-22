@@ -62,6 +62,9 @@ the Anthropic Messages API, and `CHRONICLE_DISABLE_REASONING=1` to request
 `reasoning_effort: "none"` from endpoints that support it (recommended for
 qwen3-class models).
 
+Saves go to `~/.chronicle/saves`; `--save-dir` or `CHRONICLE_SAVE_DIR` names
+another directory.
+
 Harness smoke demo (no cartridge):
 
 ```bash

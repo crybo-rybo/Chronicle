@@ -15,14 +15,29 @@ ConsoleRuntime::ConsoleRuntime(CartridgeGame &game, std::optional<EndpointConfig
         game_.set_conversation_hooks(
             [this] { return sessions_->snapshot_conversations(); },
             [this](const nlohmann::json &docs) { return sessions_->restore_conversations(docs); });
+    } else {
+        game_.set_conversation_hooks(
+            [this]() -> std::expected<nlohmann::json, std::string> { return kept_conversations_; },
+            [this](const nlohmann::json &docs) -> std::expected<void, std::string> {
+                kept_conversations_ = docs;
+                return {};
+            });
     }
+}
+
+ConsoleRuntime::~ConsoleRuntime() {
+    game_.set_conversation_hooks({}, {});
 }
 
 int ConsoleRuntime::run() {
     renderer_.print_events(game_.bootstrap());
     while (game_.phase() != GamePhase::game_over) {
-        const std::string line = renderer_.prompt();
-        renderer_.print_events(handle_line(line));
+        const auto line = renderer_.prompt();
+        if (!line) {
+            renderer_.print_events({{EventKind::system, "Goodbye."}});
+            break;
+        }
+        renderer_.print_events(handle_line(*line));
     }
     return 0;
 }

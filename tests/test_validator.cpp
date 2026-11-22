@@ -61,6 +61,27 @@ TEST(Validator, ConfigResourceBoundsAreEnforced) {
     EXPECT_TRUE(has_issue_containing(issues, "clock limits"));
 }
 
+TEST(Validator, AliasesThatDoNothingAreWarnedAbout) {
+    const auto warned = [](const std::string &alias, const std::string &expansion,
+                           const std::string &needle) {
+        WorldState world = ct::make_test_world();
+        world.config.verb_aliases[alias] = expansion;
+        const auto issues = validate_world(world);
+        EXPECT_FALSE(has_errors(issues)) << alias; // It plays all the same.
+        return has_issue_containing(issues, needle, IssueLevel::warning);
+    };
+    EXPECT_FALSE(warned("grab", "take", "verb alias"));
+    EXPECT_FALSE(warned("north", "Go north", "verb alias"));
+    for (const std::string word : {"quit", "q", "save", "look", "bye", "leave"}) {
+        EXPECT_TRUE(warned(word, "take", "redefines a built-in")) << word;
+    }
+    for (const std::string word : {"Grab", "pick up", ""}) {
+        EXPECT_TRUE(warned(word, "take", "one lowercase word")) << word;
+    }
+    EXPECT_TRUE(warned("jump", "leap", "does not stand for"));
+    EXPECT_TRUE(warned("jump", "", "does not stand for"));
+}
+
 TEST(Validator, UnknownStartLocation) {
     WorldState world = ct::make_test_world();
     world.player.current_location = "nowhere";

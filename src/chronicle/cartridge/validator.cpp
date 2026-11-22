@@ -1,11 +1,14 @@
 #include "chronicle/cartridge/validator.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <charconv>
 #include <set>
 
 #include "chronicle/cartridge/loader.hpp"
 #include "chronicle/game/npc_tools.hpp"
+#include "chronicle/game/player_verbs.hpp"
+#include "chronicle/game/text_utils.hpp"
 
 namespace chronicle {
 
@@ -47,6 +50,24 @@ void require_unique(const std::vector<std::string> &values, const std::string &c
         if (!seen.insert(value).second) {
             error(issues, context + ": duplicate '" + value + "'");
         }
+    }
+}
+
+// What play ignores or cannot reach is worth a warning; the cartridge still plays.
+void validate_alias(const std::string &alias, const std::string &expansion,
+                    std::vector<ValidationIssue> &issues) {
+    const std::string prefix = "verb alias '" + alias + "'";
+    const bool one_word = !alias.empty() && std::ranges::none_of(alias, [](const unsigned char ch) {
+        return std::isspace(ch) != 0 || std::isupper(ch) != 0;
+    });
+    if (!one_word) {
+        warning(issues, prefix + ": never matches, because it is not one lowercase word");
+    }
+    if (is_player_verb(alias) || is_exit_phrase(alias)) {
+        warning(issues, prefix + ": is ignored, because it redefines a built-in command");
+    }
+    if (!is_player_verb(game_detail::split_command(expansion).first)) {
+        warning(issues, prefix + ": does not stand for a built-in command: '" + expansion + "'");
     }
 }
 
@@ -206,6 +227,9 @@ std::vector<ValidationIssue> validate_world(const WorldState &world) {
         config.max_history_tokens < 1 || config.max_history_tokens > 1'000'000) {
         error(issues, "prompt budgets must be between 1 and 1000000");
     }
+    for (const auto &[alias, expansion] : config.verb_aliases) {
+        validate_alias(alias, expansion, issues);
+    }
     const auto maximum_turns = static_cast<long long>(config.turns_per_period) *
                                static_cast<long long>(config.total_periods);
     if (world.clock.turns_elapsed < 0 || world.clock.turns_elapsed > maximum_turns ||
@@ -320,8 +344,9 @@ std::vector<ValidationIssue> validate_world(const WorldState &world) {
                 error(issues, "npc " + npc_id + ": allowed_locations unknown " + loc_id);
             }
         }
-        if (npc.state.memories.size() > 4'096) {
-            error(issues, "npc " + npc_id + ": memory count exceeds 4096");
+        if (npc.state.memories.size() > MAX_NPC_MEMORIES) {
+            error(issues,
+                  "npc " + npc_id + ": memory count exceeds " + std::to_string(MAX_NPC_MEMORIES));
         }
         for (const auto &memory : npc.state.memories) {
             if (!nonblank(memory.summary)) {

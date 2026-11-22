@@ -87,7 +87,12 @@ class CartridgeGame {
 
   private:
     [[nodiscard]] GameEvents dispatch_playing(const std::string &text);
+    [[nodiscard]] PlayerDispatch dispatch_conversation(const std::string &raw,
+                                                       const std::string &expanded);
     [[nodiscard]] std::string expand_alias(const std::string &text) const;
+    // True when the line is an action that would work here and now, outside the
+    // conversation.
+    [[nodiscard]] bool names_possible_action(const std::string &line) const;
 
     [[nodiscard]] GameEvents look() const;
     [[nodiscard]] GameEvents show_inventory() const;

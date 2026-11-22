@@ -4,7 +4,6 @@
 #include <atomic>
 #include <cctype>
 #include <chrono>
-#include <cstdlib>
 #include <miniz.h>
 #include <set>
 
@@ -13,6 +12,7 @@
 #endif
 
 #include "chronicle/cartridge/loader.hpp"
+#include "chronicle/paths.hpp"
 
 namespace chronicle {
 
@@ -271,9 +271,7 @@ void commit_replacement(ScopedDirectory &staged, const fs::path &destination) {
 } // namespace
 
 fs::path default_library_dir() {
-    const char *home = std::getenv("HOME");
-    const fs::path base = home != nullptr ? fs::path(home) : fs::current_path();
-    return base / ".chronicle" / "cartridges";
+    return chronicle_home() / "cartridges";
 }
 
 std::vector<CartridgeInfo> list_cartridges(const std::optional<fs::path> &library_dir) {

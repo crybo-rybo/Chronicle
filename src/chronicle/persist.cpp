@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "chronicle/cartridge/validator.hpp"
+#include "chronicle/json_text.hpp"
 
 namespace chronicle {
 
@@ -258,7 +259,8 @@ std::optional<std::string> conversation_inconsistency(const WorldState &world,
 }
 
 std::expected<std::string, SaveError> read_bounded(const fs::path &path) {
-    const int descriptor = ::open(path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
+    // O_NONBLOCK so that a FIFO in the slot's place is refused below, not waited on.
+    const int descriptor = ::open(path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK);
     if (descriptor < 0) {
         const auto kind = errno == ENOENT ? SaveError::Kind::missing : SaveError::Kind::io;
         return std::unexpected(
@@ -377,6 +379,23 @@ SaveResult write_atomically(const fs::path &directory, const fs::path &target,
     return {};
 }
 
+// A missing directory is fine: nothing has been saved yet.
+std::optional<SaveError> unsafe_directory(const fs::path &directory) {
+    std::error_code ec;
+    const auto status = fs::symlink_status(directory, ec);
+    if (status.type() == fs::file_type::not_found) {
+        return std::nullopt;
+    }
+    if (fs::is_symlink(status)) {
+        return error(SaveError::Kind::io,
+                     "Save directory must not be a symbolic link: " + directory.string());
+    }
+    if (ec || !fs::is_directory(status)) {
+        return error(SaveError::Kind::io, "Save path is not a directory: " + directory.string());
+    }
+    return std::nullopt;
+}
+
 } // namespace
 
 SaveSystem::SaveSystem(fs::path directory, const WorldState &canonical_world)
@@ -387,22 +406,7 @@ SaveSystem::SaveSystem(fs::path directory, const WorldState &canonical_world)
         throw std::invalid_argument("SaveSystem requires a valid canonical world: " + *issue);
     }
 
-    std::error_code ec;
-    const auto before = fs::symlink_status(directory_, ec);
-    if (!ec && fs::is_symlink(before)) {
-        throw std::runtime_error("Save directory must not be a symbolic link: " +
-                                 directory_.string());
-    }
-    ec.clear();
-    fs::create_directories(directory_, ec);
-    if (ec) {
-        throw fs::filesystem_error("Could not create save directory", directory_, ec);
-    }
-    const auto after = fs::symlink_status(directory_, ec);
-    if (ec || !fs::is_directory(after) || fs::is_symlink(after)) {
-        throw std::runtime_error("Save path is not a safe directory: " + directory_.string());
-    }
-    directory_ = fs::canonical(directory_);
+    directory_ = fs::absolute(directory_);
 }
 
 fs::path SaveSystem::path_for(const int slot) const {
@@ -430,6 +434,21 @@ SaveResult SaveSystem::save(const int slot, const WorldState &world, const GameP
         return std::unexpected(error(SaveError::Kind::corrupt, *issue));
     }
 
+    if (auto unsafe = unsafe_directory(directory_)) {
+        return std::unexpected(std::move(*unsafe));
+    }
+    // Cartridges with one id share a directory, and so do versions of one cartridge.
+    // A save of another is somebody's progress, whatever this one makes of it.
+    std::error_code absent;
+    if (fs::exists(fs::symlink_status(path_for(slot), absent))) {
+        if (const auto existing = load(slot); !existing) {
+            return std::unexpected(
+                error(SaveError::Kind::occupied,
+                      "it holds a save this cartridge cannot load (" + existing.error().message +
+                          "). Save to another slot, or remove " + path_for(slot).string()));
+        }
+    }
+
     try {
         const json payload{
             {"save_schema_version", SAVE_SCHEMA_VERSION},
@@ -446,6 +465,16 @@ SaveResult SaveSystem::save(const int slot, const WorldState &world, const GameP
             return std::unexpected(
                 error(SaveError::Kind::too_large, "Save exceeds the 64 MiB size limit"));
         }
+        std::error_code ec;
+        fs::create_directories(directory_, ec);
+        if (auto unsafe = unsafe_directory(directory_)) {
+            return std::unexpected(std::move(*unsafe));
+        }
+        if (ec) {
+            return std::unexpected(error(SaveError::Kind::io, "Could not create save directory '" +
+                                                                  directory_.string() +
+                                                                  "': " + ec.message()));
+        }
         return write_atomically(directory_, path_for(slot), encoded);
     } catch (const std::exception &exception) {
         return std::unexpected(error(SaveError::Kind::corrupt,
@@ -458,6 +487,9 @@ std::expected<SavePayload, SaveError> SaveSystem::load(const int slot) const {
         return std::unexpected(
             error(SaveError::Kind::invalid_slot, "Save slot must be between 1 and 99"));
     }
+    if (auto unsafe = unsafe_directory(directory_)) {
+        return std::unexpected(std::move(*unsafe));
+    }
     auto contents = read_bounded(path_for(slot));
     if (!contents) {
         return std::unexpected(std::move(contents.error()));
@@ -465,8 +497,8 @@ std::expected<SavePayload, SaveError> SaveSystem::load(const int slot) const {
 
     json data;
     try {
-        data = json::parse(*contents);
-    } catch (const json::parse_error &exception) {
+        data = parse_untrusted_json(*contents, MAX_SAVE_JSON_DEPTH);
+    } catch (const std::exception &exception) {
         return std::unexpected(
             error(SaveError::Kind::corrupt, "Invalid save JSON: " + std::string(exception.what())));
     }
@@ -479,7 +511,7 @@ std::expected<SavePayload, SaveError> SaveSystem::load(const int slot) const {
         return std::unexpected(error(SaveError::Kind::corrupt, *issue));
     }
     if (!data["save_schema_version"].is_number_integer() ||
-        data["save_schema_version"].get<int>() != SAVE_SCHEMA_VERSION) {
+        data["save_schema_version"] != SAVE_SCHEMA_VERSION) {
         return std::unexpected(
             error(SaveError::Kind::unsupported_schema,
                   "Unsupported save schema: " + data["save_schema_version"].dump()));

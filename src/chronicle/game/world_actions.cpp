@@ -196,6 +196,9 @@ ActionOutcome ActionGate::submit(WorldAction action) {
                 add.memory.importance < 1 || add.memory.importance > 10) {
                 return reject("Invalid NPC memory");
             }
+            if (npc->second.state.memories.size() >= MAX_NPC_MEMORIES) {
+                return reject("NPC memory is full");
+            }
             npc->second.state.memories.push_back(std::move(add.memory));
             return {};
         }

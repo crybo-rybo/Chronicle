@@ -133,6 +133,54 @@ TEST_F(GameTest, TalkStartsConversationAndBellowsBlockedCommands) {
     EXPECT_EQ(game_.phase(), GamePhase::playing);
 }
 
+TEST_F(GameTest, SpokenLinesThatStartWithACommandWordReachTheNpc) {
+    (void)command("talk keeper");
+    for (const std::string line :
+         {"Quit lying to me.", "Help me find the thief.", "Look at me when I talk to you.",
+          "Save yourself!", "Load of nonsense.", "Take care of her.", "Go away!", "Go west.",
+          "Use your head.", "Talk to me.", "Drop the act.", "Examine your conscience.",
+          "Leave me alone.", "Bye the way, who are you?", "Inventory the cellar for me.",
+          "take moonbeam", "help!"}) {
+        const auto dispatch = game_.dispatch_player(line);
+        EXPECT_TRUE(dispatch.events.empty()) << line;
+        ASSERT_TRUE(dispatch.npc_turn.has_value()) << line;
+        EXPECT_EQ(dispatch.npc_turn->player_text, line);
+    }
+    EXPECT_EQ(game_.phase(), GamePhase::in_conversation);
+}
+
+TEST_F(GameTest, WholeLineCommandsStillWorkInConversation) {
+    (void)command("talk keeper");
+    EXPECT_NE(joined(command("look")).find("Hall"), std::string::npos);
+    EXPECT_NE(joined(command("INVENTORY")).find("carrying nothing"), std::string::npos);
+    EXPECT_NE(joined(command("help")).find("In conversation"), std::string::npos);
+    EXPECT_NE(joined(command("save 2")).find("Saved to slot 2"), std::string::npos);
+    EXPECT_NE(joined(command("load  2")).find("Loaded slot 2"), std::string::npos);
+    EXPECT_EQ(game_.phase(), GamePhase::in_conversation);
+    for (const std::string line : {"bye", "Goodbye!", "Leave.", "exit conversation"}) {
+        EXPECT_NE(joined(command(line)).find("You end the conversation"), std::string::npos)
+            << line;
+        (void)command("talk keeper");
+    }
+    (void)command("quit");
+    EXPECT_EQ(game_.phase(), GamePhase::game_over);
+}
+
+TEST_F(GameTest, ActionsThatWouldWorkHereAskToFinishTheConversation) {
+    (void)command("take old coin");
+    (void)command("talk keeper");
+    for (const std::string line :
+         {"go north", "take gate key", "take the Gate Key", "examine statue", "drop old coin",
+          "use old coin on north", "talk keeper"}) {
+        EXPECT_NE(joined(command(line)).find("Finish the conversation"), std::string::npos) << line;
+    }
+    // Already carried, hidden, and not carried: nothing here to act on.
+    for (const std::string line :
+         {"take old coin", "take hidden note", "drop gate key", "use gate key on north"}) {
+        EXPECT_TRUE(game_.dispatch_player(line).npc_turn.has_value()) << line;
+    }
+}
+
 TEST_F(GameTest, TalkToAbsentNpc) {
     (void)game_.submit_npc_tool("keeper", tools::MoveSelf{.location_id = "garden"});
     EXPECT_NE(joined(command("talk keeper")).find("isn't here"), std::string::npos);
@@ -145,6 +193,42 @@ TEST_F(GameTest, VerbAliasesExpand) {
     CartridgeGame game(std::move(world), saves_.path());
     (void)game.dispatch_player("grab old coin");
     EXPECT_TRUE(game.world().item_positions.at("old_coin").is_player());
+}
+
+TEST_F(GameTest, AnAliasIsForCommandsAndNotForSpeech) {
+    WorldState world = ct::make_test_world();
+    world.config.verb_aliases["grab"] = "take";
+    CartridgeGame game(std::move(world), saves_.path());
+    (void)game.dispatch_player("talk keeper");
+    const auto dispatch = game.dispatch_player("Grab a chair and sit.");
+    ASSERT_TRUE(dispatch.npc_turn.has_value());
+    EXPECT_EQ(dispatch.npc_turn->player_text, "Grab a chair and sit.");
+    EXPECT_NE(joined(game.dispatch_player("grab old coin").events).find("Finish the conversation"),
+              std::string::npos);
+}
+
+TEST_F(GameTest, AnAliasNeverTakesAnExitPhraseApart) {
+    WorldState world = ct::make_test_world();
+    world.config.verb_aliases["exit"] = "quit";
+    CartridgeGame game(std::move(world), saves_.path());
+    (void)game.dispatch_player("talk keeper");
+    EXPECT_NE(
+        joined(game.dispatch_player("Exit conversation.").events).find("You end the conversation"),
+        std::string::npos);
+    (void)game.dispatch_player("exit");
+    EXPECT_EQ(game.phase(), GamePhase::game_over);
+}
+
+TEST_F(GameTest, AnAliasNeverReplacesABuiltInCommand) {
+    WorldState world = ct::make_test_world();
+    world.config.verb_aliases = {{"quit", "look"}, {"look", "inventory"}, {"bye", "take"}};
+    CartridgeGame game(std::move(world), saves_.path());
+    EXPECT_NE(joined(game.dispatch_player("look").events).find("A dusty hall."), std::string::npos);
+    (void)game.dispatch_player("talk keeper");
+    EXPECT_NE(joined(game.dispatch_player("bye").events).find("You end the conversation"),
+              std::string::npos);
+    (void)game.dispatch_player("quit");
+    EXPECT_EQ(game.phase(), GamePhase::game_over);
 }
 
 TEST_F(GameTest, UnknownCommandEchoes) {
@@ -233,6 +317,21 @@ TEST_F(GameTest, FailedConversationRestoreRollsBackEntireLoad) {
 
 TEST_F(GameTest, LoadMissingSlot) {
     EXPECT_NE(joined(command("load 7")).find("No save in slot 7"), std::string::npos);
+}
+
+TEST_F(GameTest, RunawayRememberingIsRefusedAndTheGameStillSaves) {
+    MemoryEntry memory;
+    memory.summary = "Again.";
+    actions::ActionOutcome outcome;
+    for (std::size_t count = 0; count <= MAX_NPC_MEMORIES; ++count) {
+        ASSERT_TRUE(outcome.has_value()) << count << ": " << outcome.error().reason;
+        outcome =
+            game_.submit_world_action(actions::AddMemory{.npc_id = "keeper", .memory = memory});
+    }
+    ASSERT_FALSE(outcome.has_value());
+    EXPECT_EQ(outcome.error().reason, "NPC memory is full");
+    EXPECT_TRUE(game_.restore_runtime(game_.checkpoint_runtime()).has_value());
+    EXPECT_TRUE(game_.save(1).has_value());
 }
 
 TEST_F(GameTest, SaveAndLoadRejectMalformedSlots) {

@@ -18,7 +18,8 @@ editor tooling and cover each cartridge file.
 
 Paths must stay inside the package directory (`..`, absolute paths, backslashes, and
 symlinks are rejected). A package may contain at most 256 files, 4 MiB per file,
-and 32 MiB total.
+and 32 MiB total. JSON that repeats a key in one object or nests more than 64
+levels deep is rejected.
 
 ## Config (`config.json`)
 
@@ -31,7 +32,7 @@ Optional; `{}` is valid. Accepted fields:
 | `max_memory_tokens` | `800` | Prompt budget for NPC memories |
 | `max_world_tokens` | `400` | Prompt budget for world context |
 | `max_history_tokens` | `600` | Prompt budget for conversation history |
-| `verb_aliases` | `{}` | Map of alias → canonical player verb |
+| `verb_aliases` | `{}` | Map of a new lowercase word → built-in command, such as `"grab": "take"` |
 | `action_narration_templates` | built-in defaults | Player-facing text after an accepted NPC world write |
 | `temperature` | `0.7` | Sampling hint used when a host endpoint is configured |
 | `max_response_tokens` | `512` | Output token cap sent to the host endpoint |

@@ -1,21 +1,16 @@
 #include "chronicle/game/cartridge_game.hpp"
 
+#include <algorithm>
 #include <regex>
-#include <sstream>
 
 #include "chronicle/cartridge/loader.hpp"
-#include "chronicle/cartridge/validator.hpp"
+#include "chronicle/game/player_verbs.hpp"
 #include "chronicle/game/text_utils.hpp"
+#include "chronicle/paths.hpp"
 
 namespace chronicle {
 
 namespace {
-
-const std::set<std::string> EXIT_PHRASES = {"bye", "goodbye", "leave", "exit conversation"};
-const std::set<std::string> HARD_CONVERSATION_COMMANDS = {"look", "inventory", "help",
-                                                          "quit", "save",      "load"};
-const std::set<std::string> BLOCKED_CONVERSATION_COMMANDS = {"go",   "examine", "take",
-                                                             "drop", "use",     "talk"};
 
 using game_detail::lower;
 using game_detail::parse_int;
@@ -23,15 +18,46 @@ using game_detail::split_command;
 using game_detail::split_words;
 using game_detail::strip;
 
-std::filesystem::path
-save_directory_for(const WorldState &world,
-                   const std::optional<std::filesystem::path> &override_directory) {
-    if (!is_safe_cartridge_id(world.manifest.id)) {
-        throw std::invalid_argument("Unsafe cartridge id cannot be used for saves: " +
-                                    world.manifest.id);
+// A spoken line is a command only when all of it is one: "quit", "save 2", "bye!".
+// Anything longer, such as "quit lying to me" or "look at this", is something to say.
+bool is_whole_command(const std::vector<std::string> &words) {
+    if (words.size() == 1) {
+        const auto &word = words.front();
+        return word == "look" || word == "inventory" || word == "help" || word == "quit" ||
+               word == "q" || word == "save" || word == "load";
     }
-    return override_directory.value_or(std::filesystem::current_path() / "saves" /
-                                       world.manifest.id);
+    return words.size() == 2 && (words[0] == "save" || words[0] == "load") && parse_int(words[1]);
+}
+
+// True when the player's words are this thing's id or full name.
+bool names(const std::string &text, const std::string &id, const std::string &name) {
+    std::string wanted = strip(lower(text));
+    for (const std::string_view article : {"the ", "a ", "an "}) {
+        if (wanted.starts_with(article)) {
+            wanted = strip(wanted.substr(article.size()));
+            break;
+        }
+    }
+    return !wanted.empty() && (wanted == id || wanted == lower(name));
+}
+
+struct UseCommand {
+    std::string item;
+    std::string target;
+};
+
+std::optional<UseCommand> parse_use(const std::string &arg) {
+    static const std::regex pattern(R"((.+?)\s+(?:on|with|on/with)\s+(.+))", std::regex::icase);
+    std::smatch match;
+    if (!std::regex_match(arg, match, pattern)) {
+        return std::nullopt;
+    }
+    return UseCommand{.item = match[1].str(), .target = strip(lower(match[2].str()))};
+}
+
+std::string without_closing_punctuation(std::string text) {
+    text.resize(text.find_last_not_of(".!") + 1);
+    return text;
 }
 
 } // namespace
@@ -42,7 +68,7 @@ CartridgeGame::CartridgeGame(const std::filesystem::path &package_dir,
 
 CartridgeGame::CartridgeGame(WorldState world, std::optional<std::filesystem::path> save_dir)
     : world_(std::move(world)), action_gate_(world_, phase_, active_npc_, significant_),
-      saves_(save_directory_for(world_, save_dir), world_) {}
+      saves_(save_dir.value_or(save_directory(world_.manifest.id)), world_) {}
 
 void CartridgeGame::set_conversation_hooks(SnapshotHook snapshot, RestoreHook restore) {
     conversation_snapshot_ = std::move(snapshot);
@@ -68,28 +94,68 @@ PlayerDispatch CartridgeGame::dispatch_player(const std::string &text) {
     }
 
     const std::string expanded = expand_alias(raw);
-    const std::string lowered = strip(lower(expanded));
-
     if (phase_ == GamePhase::in_conversation) {
-        if (EXIT_PHRASES.contains(lowered)) {
-            (void)submit_world_action(actions::EndConversation{});
-            return {.events = {{EventKind::narration, "You end the conversation."}},
-                    .npc_turn = std::nullopt};
-        }
-        const auto [first, ignored] = split_command(lowered);
-        if (HARD_CONVERSATION_COMMANDS.contains(first)) {
-            return {.events = dispatch_playing(expanded), .npc_turn = std::nullopt};
-        }
-        if (BLOCKED_CONVERSATION_COMMANDS.contains(first)) {
-            return {
-                .events = {{EventKind::narration, "Finish the conversation first (say 'bye')."}},
-                .npc_turn = std::nullopt};
-        }
-        return {.events = {},
-                .npc_turn = NpcTurnRequest{.npc_id = *active_npc_, .player_text = raw}};
+        return dispatch_conversation(raw, expanded);
     }
-
     return {.events = dispatch_playing(expanded), .npc_turn = std::nullopt};
+}
+
+PlayerDispatch CartridgeGame::dispatch_conversation(const std::string &raw,
+                                                    const std::string &expanded) {
+    const std::string lowered = lower(expanded);
+    // An alias for "exit" must not take "exit conversation" away.
+    if (is_exit_phrase(without_closing_punctuation(lower(raw))) ||
+        is_exit_phrase(without_closing_punctuation(lowered))) {
+        (void)submit_world_action(actions::EndConversation{});
+        return {.events = {{EventKind::narration, "You end the conversation."}},
+                .npc_turn = std::nullopt};
+    }
+    if (is_whole_command(split_words(lowered))) {
+        return {.events = dispatch_playing(expanded), .npc_turn = std::nullopt};
+    }
+    if (names_possible_action(expanded)) {
+        return {.events = {{EventKind::narration, "Finish the conversation first (say 'bye')."}},
+                .npc_turn = std::nullopt};
+    }
+    return {.events = {}, .npc_turn = NpcTurnRequest{.npc_id = *active_npc_, .player_text = raw}};
+}
+
+bool CartridgeGame::names_possible_action(const std::string &line) const {
+    const auto [verb, arg] = split_command(line);
+    const auto &here = world_.player.current_location;
+    const auto is_item = [&](const std::string &text, const auto &usable) {
+        return std::ranges::any_of(world_.items, [&](const auto &entry) {
+            const auto &[item_id, item] = entry;
+            return names(text, item_id, item.name) && usable(item_id);
+        });
+    };
+    const auto carried = [&](const std::string &item_id) {
+        return item_is_at(world_, item_id, ItemHolder::player);
+    };
+    if (verb == "go") {
+        return world_.locations.at(here).exits.contains(lower(arg));
+    }
+    if (verb == "take") {
+        return is_item(arg, [&](const std::string &item_id) {
+            return item_accessible(item_id) && !carried(item_id);
+        });
+    }
+    if (verb == "examine") {
+        return is_item(arg, [&](const std::string &item_id) { return item_accessible(item_id); });
+    }
+    if (verb == "drop") {
+        return is_item(arg, carried);
+    }
+    if (verb == "use") {
+        const auto used = parse_use(arg);
+        return used && is_item(used->item, carried);
+    }
+    if (verb == "talk") {
+        return std::ranges::any_of(world_.npcs, [&](const auto &entry) {
+            return names(arg, entry.first, entry.second.identity.name);
+        });
+    }
+    return false;
 }
 
 actions::ActionOutcome CartridgeGame::submit_world_action(actions::WorldAction action) {
@@ -151,7 +217,8 @@ SaveResult CartridgeGame::save(const int slot) {
 
 std::string CartridgeGame::help_text() const {
     if (phase_ == GamePhase::in_conversation) {
-        return "In conversation: speak freely, or bye/look/inventory/save/load/help/quit.";
+        return "In conversation: speak freely, or enter only bye, look, inventory, save [n], "
+               "load [n], help, or quit.";
     }
     return "Commands: go <dir>, look, examine <item>, take/drop <item>, "
            "use <item> on <target>, talk <npc>, inventory, save [n], load [n], help, quit";
@@ -162,7 +229,9 @@ std::string CartridgeGame::help_text() const {
 std::string CartridgeGame::expand_alias(const std::string &text) const {
     const auto [first, rest] = split_command(text);
     const auto it = world_.config.verb_aliases.find(first);
-    if (it == world_.config.verb_aliases.end()) {
+    // An alias can add a word, never take one over: one for "quit" would leave a game
+    // nobody can leave.
+    if (it == world_.config.verb_aliases.end() || is_player_verb(first) || is_exit_phrase(first)) {
         return text;
     }
     return rest.empty() ? it->second : it->second + " " + rest;
@@ -462,14 +531,12 @@ GameEvents CartridgeGame::drop(const std::string &arg) {
 }
 
 GameEvents CartridgeGame::use(const std::string &arg) {
-    static const std::regex on_pattern(R"((.+?)\s+on(?:/with)?\s+(.+))", std::regex::icase);
-    static const std::regex with_pattern(R"((.+?)\s+with\s+(.+))", std::regex::icase);
-    std::smatch match;
-    if (!std::regex_match(arg, match, on_pattern) && !std::regex_match(arg, match, with_pattern)) {
+    const auto used = parse_use(arg);
+    if (!used) {
         return {{EventKind::narration, "Use what on what?"}};
     }
-    const auto item_id = resolve_item_ref(match[1].str());
-    const std::string target = strip(lower(match[2].str()));
+    const auto item_id = resolve_item_ref(used->item);
+    const std::string &target = used->target;
     if (!item_id || !item_is_at(world_, *item_id, ItemHolder::player)) {
         return {{EventKind::narration, "You aren't carrying that."}};
     }

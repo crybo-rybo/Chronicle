@@ -16,6 +16,7 @@ struct CliArgs {
     std::optional<std::string> base_url;
     std::optional<std::string> model;
     std::optional<std::string> output;
+    std::optional<std::string> save_dir;
     std::vector<std::string> positional; // run <id>, install <path>
     bool tiny = false;
     bool version = false;

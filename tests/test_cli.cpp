@@ -37,6 +37,12 @@ TEST(Cli, SubcommandsAndPositionals) {
     EXPECT_EQ(pack.output, "o.chronicle");
 }
 
+TEST(Cli, SaveDirIsAPlayOption) {
+    EXPECT_EQ(parse_cli({"--save-dir", "d"}).save_dir, "d");
+    EXPECT_FALSE(parse_cli({"run", "minimal", "--save-dir=d"}).error.has_value());
+    EXPECT_TRUE(parse_cli({"--save-dir="}).error.has_value());
+}
+
 TEST(Cli, BoolFlags) {
     const auto args = parse_cli({"--tiny", "--version", "--help"});
     EXPECT_TRUE(args.tiny);
@@ -78,6 +84,8 @@ TEST(Cli, CommandShapesAndOptionDomainsAreStrict) {
         {"install", "one", "two"},
         {"pack", "--scenario", "s"},
         {"--tiny", "--scenario", "s"},
+        {"list", "--save-dir", "d"},
+        {"validate", "--scenario", "s", "--save-dir", "d"},
     };
     for (const auto &invalid : invalid_commands) {
         EXPECT_TRUE(parse_cli(invalid).error.has_value());

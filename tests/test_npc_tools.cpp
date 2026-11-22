@@ -222,6 +222,12 @@ TEST_F(GateTest, RememberStoresMemoryWithPeriodTimestamp) {
     ASSERT_FALSE(bad_importance.has_value());
     EXPECT_EQ(bad_importance.error().reason, "Memory importance must be between 1 and 10");
 
+    const auto long_summary = game_.submit_npc_tool(
+        "keeper",
+        tools::Remember{.summary = std::string(tools::Remember::max_summary_bytes + 1, 'x')});
+    ASSERT_FALSE(long_summary.has_value());
+    EXPECT_EQ(long_summary.error().reason, "Memory summary must be at most 500 bytes");
+
     const auto outcome = game_.submit_npc_tool(
         "keeper", tools::Remember{.summary = "The visitor asked about the gate.", .importance = 8});
     ASSERT_TRUE(outcome.has_value());

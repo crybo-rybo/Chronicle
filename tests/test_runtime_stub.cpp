@@ -1,5 +1,6 @@
 // The console runtime in stub mode: no endpoint, no network, still playable.
 #include <gtest/gtest.h>
+#include <sstream>
 
 #include "chronicle/cli.hpp"
 #include "chronicle/prompt.hpp"
@@ -158,6 +159,47 @@ TEST_F(StubRuntimeTest, GameOverStopsFurtherProcessing) {
     ASSERT_EQ(events.size(), 1u);
     EXPECT_EQ(events.front().kind, EventKind::system);
     EXPECT_EQ(game_.phase(), GamePhase::game_over);
+}
+
+TEST_F(StubRuntimeTest, EndOfInputEndsTheRun) {
+    std::istringstream input("look\n");
+    std::ostringstream output;
+    ConsoleRuntime runtime(game_, std::nullopt, TerminalRenderer(output, input));
+    EXPECT_EQ(runtime.run(), 0);
+    EXPECT_TRUE(output.str().ends_with("Goodbye.\n")) << output.str();
+}
+
+TEST_F(StubRuntimeTest, EndOfInputInConversationEndsTheRunToo) {
+    std::istringstream input("talk keeper");
+    std::ostringstream output;
+    ConsoleRuntime runtime(game_, std::nullopt, TerminalRenderer(output, input));
+    EXPECT_EQ(runtime.run(), 0);
+    EXPECT_TRUE(output.str().ends_with("Goodbye.\n")) << output.str();
+}
+
+TEST_F(StubRuntimeTest, SavingWithoutAModelKeepsSavedConversations) {
+    const nlohmann::json conversations{
+        {"keeper",
+         {{"messages", nlohmann::json::array()},
+          {"system_prompt", build_npc_system_prompt(game_.world(), "keeper")},
+          {"version", 1}}}};
+    SaveSystem store(saves_.path(), game_.world());
+    ASSERT_TRUE(store.save(1, game_.world(), GamePhase::in_conversation, "keeper", conversations));
+
+    ASSERT_NE(joined(runtime_.handle_line("load 1")).find("Loaded slot 1"), std::string::npos);
+    (void)runtime_.handle_line("hello?");
+    ASSERT_NE(joined(runtime_.handle_line("save 2")).find("Saved to slot 2"), std::string::npos);
+    const auto saved = store.load(2);
+    ASSERT_TRUE(saved.has_value()) << saved.error().message;
+    EXPECT_EQ(saved->conversations, conversations);
+}
+
+TEST_F(StubRuntimeTest, TheGameOutlivesItsRuntime) {
+    {
+        ConsoleRuntime shorter(game_, std::nullopt);
+        (void)shorter.handle_line("take old coin");
+    }
+    EXPECT_TRUE(game_.save(1).has_value());
 }
 
 TEST_F(StubRuntimeTest, FullStubPlaythroughOnTinyWorld) {
