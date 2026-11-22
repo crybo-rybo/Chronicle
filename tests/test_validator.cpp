@@ -129,6 +129,35 @@ TEST(Validator, NpcIssues) {
     EXPECT_TRUE(has_issue_containing(issues, "allowed_locations unknown void"));
 }
 
+TEST(Validator, ToolsWithNothingInScopeAreWarnedAbout) {
+    WorldState world = ct::make_test_world();
+    EXPECT_FALSE(
+        has_issue_containing(validate_world(world), "every call is refused", IssueLevel::warning));
+    auto &identity = world.npcs.at("keeper").identity;
+    identity.tool_policy.allowed_items.clear();
+    identity.tool_policy.allowed_facts.clear();
+    identity.tool_policy.allowed_flags.clear();
+    identity.tool_policy.allowed_locations.clear();
+    auto issues = validate_world(world);
+    EXPECT_FALSE(has_errors(issues));
+    for (const std::string tool :
+         {"give_item is allowed but allowed_items", "take_item", "inspect_item",
+          "reveal_knowledge is allowed but allowed_facts", "set_flag is allowed but allowed_flags",
+          "move_self is allowed but allowed_locations"}) {
+        EXPECT_TRUE(has_issue_containing(issues, tool, IssueLevel::warning)) << tool;
+    }
+
+    // A list nobody uses is not worth a warning.
+    identity.tool_policy.allowed_tools = {"say"};
+    EXPECT_FALSE(
+        has_issue_containing(validate_world(world), "every call is refused", IssueLevel::warning));
+
+    identity.tool_policy.allowed_facts = {"fact_gate"};
+    identity.knowledge.clear();
+    EXPECT_TRUE(has_issue_containing(validate_world(world), "which is not in knowledge",
+                                     IssueLevel::warning));
+}
+
 TEST(Validator, MutableRuntimeStateIsBoundedAndReferentiallyValid) {
     WorldState world = ct::make_test_world();
     world.clock.turns_elapsed = -1;

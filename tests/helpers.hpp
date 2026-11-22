@@ -111,6 +111,9 @@ inline WorldState make_test_world() {
                {{"allowed_tools", json::array({"say", "give_item", "take_item", "update_mood",
                                                "update_trust", "move_self", "reveal_knowledge",
                                                "remember", "set_flag", "inspect_item"})},
+                {"allowed_items", json::array({"keepsake", "old_coin", "gate_key"})},
+                {"allowed_facts", json::array({"fact_gate"})},
+                {"allowed_flags", json::array({"gate_seen"})},
                 {"allowed_locations", json::array({"hall", "garden"})}}}}},
             {"state", {{"current_location", "hall"}, {"inventory", json::array({"keepsake"})}}}}}}},
     };

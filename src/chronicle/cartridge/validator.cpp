@@ -71,6 +71,32 @@ void validate_alias(const std::string &alias, const std::string &expansion,
     }
 }
 
+// An empty scope list allows nothing, so a tool that needs one can only be refused.
+void validate_policy_scopes(const std::string &npc_id, const NpcIdentity &identity,
+                            std::vector<ValidationIssue> &issues) {
+    const auto &policy = identity.tool_policy;
+    const auto require = [&](const std::string_view tool, const std::vector<std::string> &scope,
+                             const std::string &scope_name) {
+        if (scope.empty() && contains(policy.allowed_tools, std::string(tool))) {
+            warning(issues, "npc " + npc_id + ": " + std::string(tool) + " is allowed but " +
+                                scope_name + " is empty, so every call is refused");
+        }
+    };
+    require(tools::GiveItem::name, policy.allowed_items, "allowed_items");
+    require(tools::TakeItem::name, policy.allowed_items, "allowed_items");
+    require(tools::InspectItem::name, policy.allowed_items, "allowed_items");
+    require(tools::RevealKnowledge::name, policy.allowed_facts, "allowed_facts");
+    require(tools::SetFlag::name, policy.allowed_flags, "allowed_flags");
+    require(tools::MoveSelf::name, policy.allowed_locations, "allowed_locations");
+    const std::set<std::string> knowledge(identity.knowledge.begin(), identity.knowledge.end());
+    for (const auto &fact_id : policy.allowed_facts) {
+        if (!knowledge.contains(fact_id)) {
+            warning(issues, "npc " + npc_id + ": allowed_facts lists " + fact_id +
+                                ", which is not in knowledge, so it is never revealed");
+        }
+    }
+}
+
 std::string param_str(const nlohmann::json &params, const char *key) {
     const auto it = params.find(key);
     if (it == params.end() || !it->is_string()) {
@@ -344,6 +370,7 @@ std::vector<ValidationIssue> validate_world(const WorldState &world) {
                 error(issues, "npc " + npc_id + ": allowed_locations unknown " + loc_id);
             }
         }
+        validate_policy_scopes(npc_id, npc.identity, issues);
         if (npc.state.memories.size() > MAX_NPC_MEMORIES) {
             error(issues,
                   "npc " + npc_id + ": memory count exceeds " + std::to_string(MAX_NPC_MEMORIES));

@@ -94,7 +94,9 @@ Identity: `name` (required), optional `id`, `role`, `personality_summary`,
 
 `tool_policy` lists: `allowed_tools`, `allowed_items`, `allowed_facts`,
 `allowed_flags`, `allowed_locations`. Only listed tools are registered on the
-model. Empty scoped ID lists mean no additional IDs of that kind are allowed.
+model. Each scope list names every id its tools may touch, and an empty or absent
+list allows none: an NPC with `give_item` and no `allowed_items` can give nothing.
+`validate` warns about a tool that can only be refused.
 
 State: `current_location`, `mood`, `trust_toward_player`, `inventory`,
 `memories`, `has_met_player`, `secret_revealed`.

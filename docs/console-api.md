@@ -67,8 +67,10 @@ writes the same version 1 conversation documents.
 
 Moods: `fearful`, `friendly`, `grieving`, `hostile`, `neutral`, `suspicious`.
 
-Per-NPC `tool_policy` restricts tools and scoped IDs. Only allowed tools are
-exposed to the model at all; each conversation turn is an agentic loop of up
+Per-NPC `tool_policy` restricts tools and scoped IDs; anything it does not list is
+refused. `say`, `give_item`, `take_item`, and `reveal_knowledge` also need the NPC
+to be where the player is, so an NPC that has moved away cannot use them. Only
+allowed tools are exposed to the model at all; each conversation turn is an agentic loop of up
 to 8 tool rounds, and a rejected tool call is returned to the model as an
 explicit structured result it can react to (the player sees no rejection).
 Tool arguments are strictly validated against generated JSON schemas — unknown

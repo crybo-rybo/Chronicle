@@ -114,6 +114,102 @@ TEST_F(GateTest, GiveItemOutsideAllowedItemsRejected) {
     EXPECT_NE(outcome.error().reason.find("not allowed"), std::string::npos);
 }
 
+// Every scope list is closed: what it does not name is refused, and an empty list
+// names nothing.
+TEST_F(GateTest, EmptyScopeListsAllowNothing) {
+    WorldState world = ct::make_test_world();
+    auto &policy = world.npcs.at("keeper").identity.tool_policy;
+    policy.allowed_items.clear();
+    policy.allowed_facts.clear();
+    policy.allowed_flags.clear();
+    policy.allowed_locations.clear();
+    world.item_positions["old_coin"] = ItemPosition{.holder = ItemHolder::player, .id = {}};
+    CartridgeGame game(std::move(world), saves_.path());
+    const nlohmann::json before = game.world();
+
+    const std::vector<std::pair<tools::NpcToolCall, std::string>> refused = {
+        {tools::GiveItem{.item_id = "keepsake"}, "Item 'keepsake' not allowed"},
+        {tools::TakeItem{.item_id = "old_coin"}, "Item 'old_coin' not allowed"},
+        {tools::InspectItem{.item_id = "keepsake"}, "Item 'keepsake' not allowed"},
+        {tools::RevealKnowledge{.fact_id = "fact_gate"}, "Fact not allowed"},
+        {tools::SetFlag{.flag_id = "gate_seen", .value = true}, "Flag not allowed"},
+        {tools::MoveSelf{.location_id = "garden"}, "Location not allowed"},
+    };
+    for (const auto &[call, reason] : refused) {
+        const auto outcome = game.submit_npc_tool("keeper", call);
+        ASSERT_FALSE(outcome.has_value()) << tools::tool_name(call);
+        EXPECT_EQ(outcome.error().reason, reason);
+    }
+    EXPECT_EQ(nlohmann::json(game.world()), before);
+
+    // Tools without a scope are unaffected.
+    EXPECT_TRUE(game.submit_npc_tool("keeper", tools::Say{.text = "Still here."}));
+    EXPECT_TRUE(game.submit_npc_tool("keeper", tools::UpdateTrust{.delta = 1}));
+    EXPECT_TRUE(game.submit_npc_tool("keeper", tools::Remember{.summary = "A visitor."}));
+}
+
+TEST_F(GateTest, AnNpcThatLeftCannotReachThePlayer) {
+    (void)game_.dispatch_player("take old coin");
+    (void)game_.dispatch_player("talk keeper");
+    ASSERT_TRUE(game_.submit_npc_tool("keeper", tools::MoveSelf{.location_id = "garden"}));
+    const std::vector<tools::NpcToolCall> refused = {
+        tools::Say{.text = "One more thing."},
+        tools::GiveItem{.item_id = "keepsake"},
+        tools::TakeItem{.item_id = "old_coin"},
+        tools::RevealKnowledge{.fact_id = "fact_gate"},
+    };
+    for (const auto &call : refused) {
+        const auto outcome = game_.submit_npc_tool("keeper", call);
+        ASSERT_FALSE(outcome.has_value()) << tools::tool_name(call);
+        EXPECT_EQ(outcome.error().reason, "You are no longer with the player");
+    }
+    EXPECT_TRUE(game_.world().item_positions.at("old_coin").is_player());
+    EXPECT_TRUE(game_.world().item_positions.at("keepsake").is_npc("keeper"));
+    // What an NPC does alone, it can still do.
+    EXPECT_TRUE(game_.submit_npc_tool("keeper", tools::Remember{.summary = "Left in a hurry."}));
+    EXPECT_TRUE(game_.submit_npc_tool("keeper", tools::MoveSelf{.location_id = "hall"}));
+}
+
+TEST_F(GateTest, MovingToTheSameRoomIsNotLeaving) {
+    (void)game_.dispatch_player("talk keeper");
+    const auto outcome = game_.submit_npc_tool("keeper", tools::MoveSelf{.location_id = "hall"});
+    ASSERT_FALSE(outcome.has_value());
+    EXPECT_EQ(outcome.error().reason, "You are already there");
+    EXPECT_EQ(game_.phase(), GamePhase::in_conversation);
+}
+
+TEST_F(GateTest, RevealingAKnownFactAgainChangesNothing) {
+    ASSERT_TRUE(game_.submit_npc_tool("keeper", tools::RevealKnowledge{.fact_id = "fact_gate"}));
+    (void)game_.after_turn();
+    ASSERT_EQ(game_.world().clock.turns_elapsed, 1);
+    const auto again =
+        game_.submit_npc_tool("keeper", tools::RevealKnowledge{.fact_id = "fact_gate"});
+    ASSERT_TRUE(again.has_value());
+    EXPECT_TRUE(again->empty());
+    (void)game_.after_turn();
+    EXPECT_EQ(game_.world().clock.turns_elapsed, 1);
+}
+
+TEST_F(GateTest, SettingAFlagToItsValueChangesNothing) {
+    const auto set_flag = [&](const bool value) {
+        EXPECT_TRUE(game_.submit_npc_tool("keeper",
+                                          tools::SetFlag{.flag_id = "gate_seen", .value = value}));
+        (void)game_.after_turn();
+        return game_.world().clock.turns_elapsed;
+    };
+    EXPECT_EQ(set_flag(false), 0);
+    EXPECT_EQ(set_flag(true), 1);
+    EXPECT_EQ(set_flag(true), 1);
+    EXPECT_EQ(set_flag(false), 2);
+}
+
+TEST_F(GateTest, TheClockCannotPassItsLastTurn) {
+    EXPECT_FALSE(game_.submit_world_action(actions::AdvanceClock{.turns = 7}));
+    EXPECT_FALSE(game_.submit_world_action(actions::AdvanceClock{.turns = -1}));
+    EXPECT_EQ(game_.world().clock.turns_elapsed, 0);
+    EXPECT_TRUE(game_.submit_world_action(actions::AdvanceClock{.turns = 6}));
+}
+
 TEST_F(GateTest, TakeItemRequiresPlayerHolding) {
     const auto rejected = game_.submit_npc_tool("keeper", tools::TakeItem{.item_id = "old_coin"});
     ASSERT_FALSE(rejected.has_value());
