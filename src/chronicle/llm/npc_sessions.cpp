@@ -28,8 +28,8 @@ namespace chronicle {
 namespace {
 
 // A policy rejection is deliberately a successful tool result: the NPC system
-// prompt tells the model to read `ok`, and saved conversations pin that prompt.
-// Arguments that do not match the generated schema never get this far; Scry
+// prompt tells the model to read `ok`, and saved histories hold results in this
+// shape. Arguments that do not match the generated schema never get this far; Scry
 // answers the model with the JSON path and the reason.
 struct ToolAck {
     [[= scrydantic::description{"Whether Chronicle accepted the action"}]] bool ok;
@@ -608,17 +608,14 @@ NpcSessionManager::restore_conversations(const nlohmann::json &conversations) {
         if (!game_.world().npcs.contains(npc_id)) {
             return std::unexpected("conversation references unknown NPC '" + npc_id + "'");
         }
-        if (!doc.is_object() || !doc.contains("system_prompt") ||
-            !doc["system_prompt"].is_string()) {
+        if (!doc.is_object()) {
             return std::unexpected("conversation for '" + npc_id + "' is malformed");
         }
-        if (doc["system_prompt"].get_ref<const std::string &>() !=
-            build_npc_system_prompt(game_.world(), npc_id)) {
-            return std::unexpected("conversation for '" + npc_id +
-                                   "' has a non-canonical system prompt");
-        }
-
-        auto restored = scry::Conversation::from_json(scrydantic::Json{.text = doc.dump()});
+        // The prompt always comes from the cartridge. The saved one is what some
+        // earlier Chronicle built, or what someone wrote into the file.
+        auto current = doc;
+        current["system_prompt"] = build_npc_system_prompt(game_.world(), npc_id);
+        auto restored = scry::Conversation::from_json(scrydantic::Json{.text = current.dump()});
         if (!restored) {
             return std::unexpected("conversation for '" + npc_id +
                                    "' is invalid: " + restored.error().message);

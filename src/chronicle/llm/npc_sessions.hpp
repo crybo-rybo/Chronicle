@@ -76,9 +76,9 @@ class NpcSessionManager {
     // npc_id -> serialized scry conversation document, for save files.
     [[nodiscard]] std::expected<nlohmann::json, std::string> snapshot_conversations();
 
-    // Validate every restored document and its canonical system prompt before
-    // atomically replacing live sessions. Each document is picked up when the
-    // player next talks to that NPC.
+    // Validate every restored document, under the cartridge's own system prompt,
+    // before atomically replacing live sessions. Each document is picked up when
+    // the player next talks to that NPC.
     [[nodiscard]] std::expected<void, std::string>
     restore_conversations(const nlohmann::json &conversations);
 

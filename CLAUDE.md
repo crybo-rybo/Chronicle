@@ -77,8 +77,8 @@ Key couplings to keep in sync:
   `docs/console-api.md`. Editor JSON Schema lives under `schemas/`; adding a
   narrating tool also updates `default_narration_templates()` and
   `schemas/config.schema.json`.
-- The static NPC system prompt (identity/knowledge/rules) is fixed at
-  `Conversation` creation; **dynamic state (time, mood, trust, secret,
+- The static NPC system prompt (identity/knowledge/rules) is fixed when a session
+  is created or restored; **dynamic state (time, mood, trust, secret,
   memories) must go in the per-turn user message** (`prompt.cpp`), never the
   system prompt — conversations persist across turns and into save files.
 - No endpoint → no Harness is ever created; the stub path routes a canned
@@ -88,5 +88,5 @@ Key couplings to keep in sync:
   complete runtime checkpoint before deterministic stub dialogue is shown. A turn
   that acted through tools and then ended with an empty message is kept:
   `ObservedTurn` commits its rounds, since Scry fails such a turn.
-- Saved conversations pin the NPC system prompt: changing
-  `build_npc_system_prompt` makes existing saves fail to load.
+- A loaded conversation keeps its messages and takes its system prompt from the
+  cartridge, so `build_npc_system_prompt` may change without breaking saves.

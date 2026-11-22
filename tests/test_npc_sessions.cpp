@@ -628,10 +628,7 @@ class LegacySaveTest : public NpcSessionTest {
     [[nodiscard]] json legacy_conversations() const {
         std::ifstream stream(ct::repo_dir() / "tests" / "fixtures" /
                              "conversation_scry_v0_1_0.json");
-        auto document = json::parse(stream);
-        // The saved prompt must match today's test world, which may change.
-        document["system_prompt"] = build_npc_system_prompt(game_.world(), "keeper");
-        return {{"keeper", std::move(document)}};
+        return {{"keeper", json::parse(stream)}};
     }
 };
 
@@ -640,7 +637,10 @@ TEST_F(LegacySaveTest, ConversationSavedByScry010Loads) {
     NpcSessionManager sessions(game_, endpoint());
     const auto status = sessions.restore_conversations(saved);
     ASSERT_TRUE(status.has_value()) << status.error();
-    EXPECT_EQ(sessions.snapshot_conversations(), saved);
+    // Every message survives, under today's prompt.
+    auto expected = saved;
+    expected["keeper"]["system_prompt"] = build_npc_system_prompt(game_.world(), "keeper");
+    EXPECT_EQ(sessions.snapshot_conversations(), expected);
 
     reply("I remember.");
     ASSERT_TRUE(sessions.run_turn("keeper", "Go on.").has_value());
