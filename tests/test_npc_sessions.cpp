@@ -311,6 +311,18 @@ TEST_F(FailedTurnTest, AProviderThatFailsInsideAResponseRollsBack) {
     EXPECT_EQ(server_.requests().size(), requests + 3);
 }
 
+// A refusal need not say anything, and then only its status tells it from a response
+// the model spoiled.
+TEST_F(FailedTurnTest, ARefusalWithoutAWordRollsBack) {
+    NpcSessionManager sessions(game_, endpoint());
+    commit_good_turn(sessions);
+    mutate_everything();
+    server_.enqueue({.status = 400, .body_chunks = {"{}"}});
+    const auto requests = server_.requests().size();
+    expect_rolled_back(sessions, "HTTP 400");
+    EXPECT_EQ(server_.requests().size(), requests + 3);
+}
+
 TEST_F(FailedTurnTest, DroppedConnectionRollsBackWithoutRepeatingTools) {
     NpcSessionManager sessions(game_, endpoint());
     commit_good_turn(sessions);

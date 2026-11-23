@@ -368,6 +368,15 @@ TEST_F(NounTest, AnExitGoesByItsDirectionOrItsDestination) {
     EXPECT_EQ(command("go garden shed"), "You can't go that way.\n");
 }
 
+TEST_F(NounTest, AnArticleInAPlaceNameDoesNotMatter) {
+    world_.locations.at("hall").locked_exits.clear();
+    world_.locations.at("garden").name = "The Walled Garden";
+    for (const std::string line : {"go walled garden", "go to the walled garden"}) {
+        EXPECT_NE(command(line).find("An overgrown garden."), std::string::npos) << line;
+        (void)command("go south");
+    }
+}
+
 TEST_F(NounTest, TheFirstOpenWayIsTaken) {
     // Both lead to the garden, and the first is locked.
     world_.locations.at("hall").exits["trellis"] = "garden";
