@@ -22,6 +22,11 @@ class ConsoleRuntime {
     ConsoleRuntime(CartridgeGame &game, std::optional<EndpointConfig> endpoint);
     ConsoleRuntime(CartridgeGame &game, std::optional<EndpointConfig> endpoint,
                    TerminalRenderer renderer);
+    ~ConsoleRuntime();
+
+    // The game holds hooks into this object.
+    ConsoleRuntime(const ConsoleRuntime &) = delete;
+    ConsoleRuntime &operator=(const ConsoleRuntime &) = delete;
 
     // Blocking play loop; returns the process exit code.
     int run();
@@ -38,6 +43,9 @@ class ConsoleRuntime {
     CartridgeGame &game_;
     TerminalRenderer renderer_;
     std::unique_ptr<NpcSessionManager> sessions_;
+    // Without a model, conversations from a loaded save are kept as they are, so
+    // that saving again does not lose them.
+    nlohmann::json kept_conversations_ = nlohmann::json::object();
 };
 
 } // namespace chronicle

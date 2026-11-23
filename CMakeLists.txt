@@ -1,10 +1,10 @@
-cmake_minimum_required(VERSION 3.28)
+cmake_minimum_required(VERSION 3.30)
 project(chronicle VERSION 2.0.0 LANGUAGES C CXX)
 
 include(GNUInstallDirs)
 
-if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_VERSION VERSION_LESS 16)
-    message(FATAL_ERROR "Chronicle requires GCC 16+ (C++26 reflection via -freflection). "
+if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_VERSION VERSION_LESS 16.2)
+    message(FATAL_ERROR "Chronicle requires GCC 16.2+ (C++26 reflection via -freflection). "
                         "Found: ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}")
 endif()
 
@@ -55,8 +55,12 @@ add_library(miniz STATIC ${miniz_SOURCE_DIR}/miniz.c)
 target_include_directories(miniz SYSTEM PUBLIC ${miniz_SOURCE_DIR})
 target_compile_options(miniz PRIVATE ${CHRONICLE_SANITIZER_FLAGS})
 
-# scry — LLM harness; the reflection component generates NPC tool schemas.
-set(SCRY_ENABLE_REFLECTION ON CACHE BOOL "" FORCE)
+# scry — LLM harness. It brings Scrydantic, whose C++26 reflection generates the
+# NPC tool schemas. scry fetches Scrydantic at a commit it pins itself, but
+# prefers an installed package; disabling that lookup keeps the build on the pin.
+set(CMAKE_DISABLE_FIND_PACKAGE_scrydantic ON)
+# scry::testing (the scripted loopback server) is used by the unit tests only.
+set(SCRY_BUILD_TESTING_SUPPORT ${CHRONICLE_BUILD_TESTS} CACHE BOOL "" FORCE)
 if(CHRONICLE_SANITIZERS)
     set(SCRY_SANITIZER address-undefined CACHE STRING "" FORCE)
 else()
@@ -65,8 +69,8 @@ endif()
 FetchContent_Declare(
     scry
     GIT_REPOSITORY https://github.com/crybo-rybo/scry.git
-    # v0.1.0, pinned to an immutable commit for reproducible builds.
-    GIT_TAG c499516310a5852c2407e0dd5f3d8a9579fed20c
+    # v0.8.0, pinned to an immutable commit for reproducible builds.
+    GIT_TAG f7b3d4e89b10304650ed150f664168248521d393
     EXCLUDE_FROM_ALL
 )
 FetchContent_MakeAvailable(scry)
@@ -77,7 +81,7 @@ install(TARGETS chronicle RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(DIRECTORY examples/ DESTINATION ${CMAKE_INSTALL_DATADIR}/chronicle/examples)
 install(DIRECTORY docs/ DESTINATION ${CMAKE_INSTALL_DOCDIR})
 install(DIRECTORY schemas/ DESTINATION ${CMAKE_INSTALL_DATADIR}/chronicle/schemas)
-install(FILES README.md CONTRIBUTING.md LICENSE DESTINATION ${CMAKE_INSTALL_DOCDIR})
+install(FILES README.md LICENSE DESTINATION ${CMAKE_INSTALL_DOCDIR})
 
 if(CHRONICLE_BUILD_TESTS OR CHRONICLE_INTEGRATION_TESTS)
     enable_testing()

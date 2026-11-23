@@ -23,10 +23,26 @@
       "once": true,
       "fired": false
     },
+    "cargo_recovered": {
+      "conditions": [
+        {"type": "item_in_player_inv", "args": ["cargo_manifest"]},
+        {"type": "player_at", "args": ["market_square"]}
+      ],
+      "actions": [
+        {
+          "type": "end_game",
+          "params": {
+            "text": "You lay the manifest in front of the guards. Shipment 47, one sealed chest, and beside it in Marcus's own hand, the name of the boat that carried it upriver. They send riders after Harlan before the stalls have closed."
+          }
+        }
+      ],
+      "once": true,
+      "fired": false
+    },
     "cargo_trail_goes_cold": {
       "conditions": [
         {"type": "flag_set", "args": ["cargo_inquiry_public", "true"]},
-        {"type": "turn_ge", "args": ["6"]}
+        {"type": "turn_ge", "args": ["10"]}
       ],
       "actions": [
         {

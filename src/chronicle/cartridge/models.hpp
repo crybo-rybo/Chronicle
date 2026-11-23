@@ -10,6 +10,7 @@
 namespace chronicle {
 
 inline constexpr int SCHEMA_VERSION = 1;
+inline constexpr std::size_t MAX_NPC_MEMORIES = 4'096;
 
 [[nodiscard]] const std::vector<std::string> &valid_moods();
 [[nodiscard]] const std::vector<std::string> &period_names();
@@ -46,7 +47,7 @@ struct ConfigData {
     int total_periods = 12;
     int max_memory_tokens = 800;
     int max_world_tokens = 400;
-    int max_history_tokens = 600;
+    int max_history_tokens = 2'000;
     std::map<std::string, std::string> verb_aliases;
     /// Player-facing text after an accepted NPC world write. Keys match public
     /// tool names (`give_item`, `remember`, …). Empty string suppresses
@@ -237,6 +238,9 @@ struct WorldState {
     // The sole runtime source of truth for item placement.
     std::map<std::string, ItemPosition> item_positions;
 };
+
+// The description, and what is written on the item when it can be read.
+[[nodiscard]] std::string item_text(const ItemData &item);
 
 [[nodiscard]] std::vector<std::string> items_at(const WorldState &world, ItemHolder holder,
                                                 const std::string &id = {});

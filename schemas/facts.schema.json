@@ -5,14 +5,16 @@
   "type": "object",
   "additionalProperties": false,
   "properties": {
+    "$schema": { "type": "string" },
     "facts": {
       "type": "object",
+      "maxProperties": 512,
       "additionalProperties": {
         "type": "object",
         "required": ["text"],
         "additionalProperties": false,
         "properties": {
-          "text": { "type": "string", "minLength": 1 },
+          "text": { "type": "string", "pattern": "\\S" },
           "category": { "type": "string" },
           "revealed_by_default": { "type": "boolean" }
         }

@@ -2,6 +2,7 @@
 build/
 build-ci/
 build-install-smoke/
+build-integration/
 build-linux-ci/
 build-release/
 compile_commands.json

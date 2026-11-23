@@ -17,4 +17,8 @@ namespace chronicle {
 [[nodiscard]] std::string build_npc_turn_message(const WorldState &world, const std::string &npc_id,
                                                  const std::string &player_text);
 
+// What history keeps of a turn message: the player's words. The context before
+// them describes a moment that has passed and is several times their size.
+[[nodiscard]] std::string without_turn_context(const std::string &turn_message);
+
 } // namespace chronicle

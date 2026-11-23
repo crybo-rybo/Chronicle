@@ -44,13 +44,19 @@ TEST_F(EventsTest, PlayerAtConditionAndNarrateAction) {
     EXPECT_TRUE(fire().empty());
 }
 
-TEST_F(EventsTest, RepeatingEventFiresEachTime) {
+TEST_F(EventsTest, RepeatingEventFiresOncePerTurnOfTheClock) {
     install_event("hum", {.conditions = {{.type = "player_at", .args = {"hall"}}},
                           .actions = {{.type = "narrate", .params = {{"text", "A low hum."}}}},
                           .once = false,
                           .fired = false});
-    EXPECT_EQ(fire().size(), 1u);
-    EXPECT_EQ(fire().size(), 1u);
+    for (const std::string line : {"look", "help", "inventory", "save 1", "load 1", "dance"}) {
+        (void)game_->dispatch_player(line);
+        EXPECT_TRUE(fire().empty()) << line;
+    }
+    for (const std::string line : {"take old coin", "drop old coin", "take old coin"}) {
+        (void)game_->dispatch_player(line);
+        EXPECT_EQ(fire().size(), 1u) << line;
+    }
 }
 
 TEST_F(EventsTest, UnmetConditionDoesNotFire) {
@@ -147,6 +153,18 @@ TEST_F(EventsTest, MovingActiveNpcEndsConversation) {
     EXPECT_FALSE(game_->active_npc_id().has_value());
 }
 
+TEST_F(EventsTest, MovingTheActiveNpcToTheSameRoomKeepsTheConversation) {
+    install_event("stay", {.conditions = {},
+                           .actions = {{.type = "move_npc",
+                                        .params = {{"npc_id", "keeper"}, {"location_id", "hall"}}}},
+                           .once = true,
+                           .fired = false});
+    (void)game_->dispatch_player("talk keeper");
+    (void)fire();
+    EXPECT_EQ(game_->phase(), GamePhase::in_conversation);
+    EXPECT_EQ(game_->active_npc_id(), "keeper");
+}
+
 TEST_F(EventsTest, SetFlagActionRequiresBoolean) {
     install_event("mark", {.conditions = {},
                            .actions = {{.type = "set_flag",
@@ -170,6 +188,85 @@ TEST_F(EventsTest, SpawnItemAction) {
     EXPECT_TRUE(items_at(game_->world(), ItemHolder::npc, "keeper").empty());
     ASSERT_EQ(events.size(), 1u);
     EXPECT_EQ(events.front().text, "Something new appears in Garden.");
+}
+
+TEST_F(EventsTest, SpawningLeavesWhatThePlayerCarries) {
+    install_event("drip",
+                  {.conditions = {},
+                   .actions = {{.type = "spawn_item",
+                                .params = {{"item_id", "old_coin"}, {"location_id", "garden"}}}},
+                   .once = false,
+                   .fired = false});
+    (void)game_->dispatch_player("take old coin");
+    EXPECT_TRUE(fire().empty());
+    EXPECT_TRUE(game_->world().item_positions.at("old_coin").is_player());
+
+    (void)game_->dispatch_player("drop old coin");
+    EXPECT_EQ(fire().size(), 1u);
+    EXPECT_TRUE(game_->world().item_positions.at("old_coin").is_location("garden"));
+    // It is there already: nothing new appears.
+    (void)game_->dispatch_player("take gate key");
+    EXPECT_TRUE(fire().empty());
+}
+
+TEST_F(EventsTest, AnEventAnEarlierOneUndidDoesNotFire) {
+    install_event(
+        "a_first",
+        {.conditions = {},
+         .actions = {{.type = "set_flag", .params = {{"flag_id", "gate_seen"}, {"value", true}}}},
+         .once = true,
+         .fired = false},
+        [](WorldState &world) {
+            world.events["b_second"] = EventTriggerData{
+                .conditions = {{.type = "flag_set", .args = {"gate_seen", "false"}}},
+                .actions = {{.type = "narrate", .params = {{"text", "Unseen."}}}},
+            };
+        });
+    EXPECT_TRUE(fire().empty());
+    EXPECT_FALSE(game_->world().events.at("b_second").fired);
+}
+
+TEST_F(EventsTest, AnEventSetUpByAnotherWaitsForTheNextPass) {
+    // In either id order.
+    for (const std::string second : {"a_second", "z_second"}) {
+        install_event("m_first",
+                      {.conditions = {},
+                       .actions = {{.type = "set_flag",
+                                    .params = {{"flag_id", "gate_seen"}, {"value", true}}}},
+                       .once = true,
+                       .fired = false},
+                      [&](WorldState &world) {
+                          world.events[second] = EventTriggerData{
+                              .conditions = {{.type = "flag_set", .args = {"gate_seen", "true"}}},
+                              .actions = {{.type = "narrate", .params = {{"text", "Seen."}}}},
+                          };
+                      });
+        EXPECT_TRUE(fire().empty()) << second;
+        EXPECT_EQ(fire().size(), 1u) << second;
+    }
+}
+
+TEST_F(EventsTest, OnlyOneEndingIsShownAndNothingFollowsIt) {
+    install_event(
+        "a_win",
+        {.conditions = {},
+         .actions = {{.type = "end_game", .params = {{"text", "You win."}}},
+                     {.type = "narrate", .params = {{"text", "Afterwards."}}},
+                     {.type = "set_flag", .params = {{"flag_id", "gate_seen"}, {"value", true}}}},
+         .once = true,
+         .fired = false},
+        [](WorldState &world) {
+            world.clock.turns_elapsed = 5;
+            world.events["b_lose"] = EventTriggerData{
+                .conditions = {},
+                .actions = {{.type = "end_game", .params = {{"text", "You lose."}}}},
+            };
+        });
+    (void)game_->dispatch_player("take old coin"); // The last turn of the clock.
+    const auto events = fire();
+    ASSERT_EQ(events.size(), 1u);
+    EXPECT_EQ(events.front().text, "You win.");
+    EXPECT_FALSE(game_->world().flags.at("gate_seen"));
 }
 
 TEST_F(EventsTest, EndGameAction) {

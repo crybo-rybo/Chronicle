@@ -6,12 +6,19 @@
   "required": ["npcs"],
   "additionalProperties": false,
   "properties": {
+    "$schema": { "type": "string" },
     "npcs": {
       "type": "object",
+      "maxProperties": 128,
       "additionalProperties": { "$ref": "#/$defs/npc" }
     }
   },
   "$defs": {
+    "idSet": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    },
     "mood": {
       "type": "string",
       "enum": ["fearful", "friendly", "grieving", "hostile", "neutral", "suspicious"]
@@ -38,7 +45,7 @@
       "properties": {
         "timestamp": { "type": "string" },
         "type": { "type": "string" },
-        "summary": { "type": "string", "minLength": 1 },
+        "summary": { "type": "string", "pattern": "\\S" },
         "importance": { "type": "integer", "minimum": 1, "maximum": 10 },
         "related_npc": { "type": "string" },
         "related_item": { "type": "string" }
@@ -50,12 +57,13 @@
       "properties": {
         "allowed_tools": {
           "type": "array",
+          "uniqueItems": true,
           "items": { "$ref": "#/$defs/toolName" }
         },
-        "allowed_items": { "type": "array", "items": { "type": "string", "minLength": 1 } },
-        "allowed_facts": { "type": "array", "items": { "type": "string", "minLength": 1 } },
-        "allowed_flags": { "type": "array", "items": { "type": "string", "minLength": 1 } },
-        "allowed_locations": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+        "allowed_items": { "$ref": "#/$defs/idSet" },
+        "allowed_facts": { "$ref": "#/$defs/idSet" },
+        "allowed_flags": { "$ref": "#/$defs/idSet" },
+        "allowed_locations": { "$ref": "#/$defs/idSet" }
       }
     },
     "identity": {
@@ -64,13 +72,13 @@
       "additionalProperties": false,
       "properties": {
         "id": { "type": "string", "minLength": 1 },
-        "name": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "pattern": "\\S" },
         "role": { "type": "string" },
         "personality_summary": { "type": "string" },
         "backstory": { "type": "string" },
         "secret": { "type": "string" },
-        "goals": { "type": "array", "items": { "type": "string" } },
-        "knowledge": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "goals": { "type": "array", "maxItems": 64, "items": { "type": "string" } },
+        "knowledge": { "$ref": "#/$defs/idSet" },
         "trust_reveal_threshold": { "type": "integer", "minimum": 0, "maximum": 100 },
         "tool_policy": { "$ref": "#/$defs/toolPolicy" }
       }
@@ -82,9 +90,9 @@
       "properties": {
         "current_location": { "type": "string", "minLength": 1 },
         "mood": { "$ref": "#/$defs/mood" },
-        "trust_toward_player": { "type": "integer", "minimum": -100, "maximum": 100 },
+        "trust_toward_player": { "type": "integer", "minimum": 0, "maximum": 100 },
         "inventory": { "type": "array", "items": { "type": "string", "minLength": 1 } },
-        "memories": { "type": "array", "items": { "$ref": "#/$defs/memory" } },
+        "memories": { "type": "array", "maxItems": 4096, "items": { "$ref": "#/$defs/memory" } },
         "has_met_player": { "type": "boolean" },
         "secret_revealed": { "type": "boolean" }
       }

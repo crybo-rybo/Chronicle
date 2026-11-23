@@ -1,7 +1,7 @@
 {
   "id": "broken_wheel",
   "name": "Broken Wheel",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "chronicle_schema_version": 1,
   "files": {
     "config": "config.json",

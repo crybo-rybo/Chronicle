@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <fstream>
 #include <nlohmann/json.hpp>
+#include <stdexcept>
 #include <string>
 #include <unistd.h>
 
@@ -111,6 +112,9 @@ inline WorldState make_test_world() {
                {{"allowed_tools", json::array({"say", "give_item", "take_item", "update_mood",
                                                "update_trust", "move_self", "reveal_knowledge",
                                                "remember", "set_flag", "inspect_item"})},
+                {"allowed_items", json::array({"keepsake", "old_coin", "gate_key"})},
+                {"allowed_facts", json::array({"fact_gate"})},
+                {"allowed_flags", json::array({"gate_seen"})},
                 {"allowed_locations", json::array({"hall", "garden"})}}}}},
             {"state", {{"current_location", "hall"}, {"inventory", json::array({"keepsake"})}}}}}}},
     };
@@ -168,6 +172,14 @@ inline void write_package(const std::filesystem::path &dir, nlohmann::json overr
             npcs = value;
         } else if (key == "config") {
             config = value;
+        } else if (key == "facts") {
+            facts = value;
+        } else if (key == "flags") {
+            flags = value;
+        } else if (key == "events") {
+            events = value;
+        } else {
+            throw std::invalid_argument("write_package has no file for '" + key + "'");
         }
     }
     const auto write = [&dir](const char *name, const json &doc) {

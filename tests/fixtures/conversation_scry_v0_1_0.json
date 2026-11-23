@@ -1,0 +1,325 @@
+{
+  "messages": [
+    {
+      "content": [
+        {
+          "text": "[Context]\nTime: morning (turn 0)\nYour location: Hall\nMood: neutral\nTrust toward player: 0\nAlso here: no one\nVisible items: Gate Key, Old Coin, Statue\nPlayer carries: nothing\nLocation description: A dusty hall.\n\nMemories:\n- (none)\n\n[Player]\n{\"player_said\":\"h\u00e9llo \u4f60\u597d \ud83d\udd6f \\\"q\\\" \\\\\"}",
+          "type": "text"
+        }
+      ],
+      "role": "user"
+    },
+    {
+      "content": [
+        {
+          "text": "thinking aloud",
+          "type": "text"
+        },
+        {
+          "arguments": {
+            "delta": 5
+          },
+          "id": "n1",
+          "name": "update_trust",
+          "type": "tool_call"
+        },
+        {
+          "arguments": {
+            "delta": 10
+          },
+          "id": "n2",
+          "name": "update_trust",
+          "type": "tool_call"
+        },
+        {
+          "arguments": {
+            "delta": 0
+          },
+          "id": "n3",
+          "name": "update_trust",
+          "type": "tool_call"
+        },
+        {
+          "arguments": {
+            "delta": 0.1
+          },
+          "id": "n4",
+          "name": "update_trust",
+          "type": "tool_call"
+        },
+        {
+          "arguments": {
+            "a": 9007199254740993,
+            "b": 18446744073709551615,
+            "c": 1e+300,
+            "d": -1.5e-07,
+            "e": 10000000000000000000,
+            "f": 1e+20,
+            "g": 0.30000000000000004,
+            "h": -9223372036854775808,
+            "i": 100
+          },
+          "id": "n5",
+          "name": "unknown_numbers",
+          "type": "tool_call"
+        }
+      ],
+      "role": "assistant"
+    },
+    {
+      "content": [
+        {
+          "is_error": false,
+          "result": {
+            "error": "",
+            "ok": true,
+            "result": "ok"
+          },
+          "tool_call_id": "n1",
+          "type": "tool_result"
+        },
+        {
+          "is_error": false,
+          "result": {
+            "error": "",
+            "ok": true,
+            "result": "ok"
+          },
+          "tool_call_id": "n2",
+          "type": "tool_result"
+        },
+        {
+          "is_error": false,
+          "result": {
+            "error": "",
+            "ok": true,
+            "result": "ok"
+          },
+          "tool_call_id": "n3",
+          "type": "tool_result"
+        },
+        {
+          "is_error": true,
+          "result": {
+            "error": "tool handler returned an error"
+          },
+          "tool_call_id": "n4",
+          "type": "tool_result"
+        },
+        {
+          "is_error": true,
+          "result": {
+            "error": "model requested an unknown tool"
+          },
+          "tool_call_id": "n5",
+          "type": "tool_result"
+        }
+      ],
+      "role": "user"
+    },
+    {
+      "content": [
+        {
+          "arguments": {
+            "text": "Caf\u00e9 \u2014 \u4f60\u597d \ud83d\udd6f \"quoted\" back\\slash\nnew\tline \u2028 \u007f /"
+          },
+          "id": "u1",
+          "name": "say",
+          "type": "tool_call"
+        },
+        {
+          "arguments": {
+            "importance": 7,
+            "summary": "na\u00efve \ud83d\udd6f"
+          },
+          "id": "u2",
+          "name": "remember",
+          "type": "tool_call"
+        }
+      ],
+      "role": "assistant"
+    },
+    {
+      "content": [
+        {
+          "is_error": false,
+          "result": {
+            "error": "",
+            "ok": true,
+            "result": "ok"
+          },
+          "tool_call_id": "u1",
+          "type": "tool_result"
+        },
+        {
+          "is_error": false,
+          "result": {
+            "error": "",
+            "ok": true,
+            "result": "ok"
+          },
+          "tool_call_id": "u2",
+          "type": "tool_result"
+        }
+      ],
+      "role": "user"
+    },
+    {
+      "content": [
+        {
+          "arguments": {
+            "item_id": "old_coin"
+          },
+          "id": "r1",
+          "name": "give_item",
+          "type": "tool_call"
+        },
+        {
+          "arguments": {
+            "mood": "angry"
+          },
+          "id": "r2",
+          "name": "update_mood",
+          "type": "tool_call"
+        },
+        {
+          "arguments": {
+            "a": {},
+            "b": [],
+            "z": {
+              "y": [
+                1,
+                [
+                  2,
+                  [
+                    3,
+                    {
+                      "v": false,
+                      "w": true,
+                      "x": null
+                    }
+                  ]
+                ]
+              ]
+            }
+          },
+          "id": "r3",
+          "name": "mystery",
+          "type": "tool_call"
+        },
+        {
+          "arguments": {},
+          "id": "r4",
+          "name": "mystery",
+          "type": "tool_call"
+        },
+        {
+          "arguments": {
+            "flag_id": "gate_seen",
+            "value": false
+          },
+          "id": "r5",
+          "name": "set_flag",
+          "type": "tool_call"
+        },
+        {
+          "arguments": {
+            "item_id": "old_coin"
+          },
+          "id": "r6",
+          "name": "inspect_item",
+          "type": "tool_call"
+        }
+      ],
+      "role": "assistant"
+    },
+    {
+      "content": [
+        {
+          "is_error": false,
+          "result": {
+            "error": "NPC does not hold that item",
+            "ok": false,
+            "result": ""
+          },
+          "tool_call_id": "r1",
+          "type": "tool_result"
+        },
+        {
+          "is_error": true,
+          "result": {
+            "error": "tool handler returned an error"
+          },
+          "tool_call_id": "r2",
+          "type": "tool_result"
+        },
+        {
+          "is_error": true,
+          "result": {
+            "error": "model requested an unknown tool"
+          },
+          "tool_call_id": "r3",
+          "type": "tool_result"
+        },
+        {
+          "is_error": true,
+          "result": {
+            "error": "model requested an unknown tool"
+          },
+          "tool_call_id": "r4",
+          "type": "tool_result"
+        },
+        {
+          "is_error": false,
+          "result": {
+            "error": "",
+            "ok": true,
+            "result": "ok"
+          },
+          "tool_call_id": "r5",
+          "type": "tool_result"
+        },
+        {
+          "is_error": false,
+          "result": {
+            "error": "",
+            "ok": true,
+            "result": "[inspect] Old Coin: A worn coin."
+          },
+          "tool_call_id": "r6",
+          "type": "tool_result"
+        }
+      ],
+      "role": "user"
+    },
+    {
+      "content": [
+        {
+          "text": "Caf\u00e9 final \ud83d\udd6f \u2028 line\nbreak \"q\" \\ /slash",
+          "type": "text"
+        }
+      ],
+      "role": "assistant"
+    },
+    {
+      "content": [
+        {
+          "text": "[Context]\nTime: morning (turn 1)\nYour location: Hall\nMood: neutral\nTrust toward player: 15\nAlso here: no one\nVisible items: Gate Key, Old Coin, Statue\nPlayer carries: nothing\nLocation description: A dusty hall.\n\nMemories:\n- (7) na\u00efve \ud83d\udd6f\n\n[Player]\n{\"player_said\":\"and again\"}",
+          "type": "text"
+        }
+      ],
+      "role": "user"
+    },
+    {
+      "content": [
+        {
+          "text": "Second turn plain.",
+          "type": "text"
+        }
+      ],
+      "role": "assistant"
+    }
+  ],
+  "system_prompt": "You are Keeper, Groundskeeper.\nPersonality: Wary but fair.\nBackstory: Has tended the hall for decades.\nGoals:\n- Protect the grounds\nKnowledge:\n- [fact_gate] The gate was locked after the accident.\nRules:\n- Stay in character.\n- Use tools to act; do not invent facts that are not in your knowledge list.\n- Check each tool result's ok field; when false, use error to choose another action.\n- Only reveal secrets when trust is high enough and the secret is authored.\n- Prefer the say tool for spoken dialogue.",
+  "version": 1
+}

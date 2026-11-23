@@ -21,7 +21,8 @@ struct SavePayload {
     WorldState world;
     GamePhase phase = GamePhase::playing;
     std::optional<std::string> active_npc;
-    // Serialized scry conversations, npc_id -> conversation document.
+    // Serialized scry conversations, npc_id -> conversation document (scry's
+    // version 1 format, which v0.1.0 wrote and v0.8.0 still reads and writes).
     nlohmann::json conversations = nlohmann::json::object();
 };
 
@@ -33,6 +34,7 @@ struct SaveError {
         wrong_cartridge,
         too_large,
         corrupt,
+        occupied,
         io,
     } kind;
     std::string message;
@@ -42,10 +44,12 @@ using SaveResult = std::expected<void, SaveError>;
 
 class SaveSystem {
   public:
+    // Touches no files; the directory is created by the first save.
     SaveSystem(std::filesystem::path directory, const WorldState &canonical_world);
 
     [[nodiscard]] std::filesystem::path path_for(int slot) const;
 
+    // Replaces a save of this cartridge, and refuses to replace any other file.
     [[nodiscard]] SaveResult save(int slot, const WorldState &world, GamePhase phase,
                                   const std::optional<std::string> &active_npc,
                                   const nlohmann::json &conversations = nlohmann::json::object());

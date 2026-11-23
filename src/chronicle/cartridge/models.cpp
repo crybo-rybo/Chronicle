@@ -1,9 +1,14 @@
 #include "chronicle/cartridge/models.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <initializer_list>
+#include <limits>
 #include <stdexcept>
 #include <string_view>
+#include <type_traits>
+
+#include "chronicle/json_text.hpp"
 
 namespace chronicle {
 
@@ -23,16 +28,66 @@ void reject_unknown(const json &j, const std::initializer_list<std::string_view>
     }
 }
 
+// nlohmann turns 1.9 into 1, true into 1, and 4294967297 into 1 when asked for an int.
+int exact_int(const json &value, const std::string_view key) {
+    const auto refuse = [&]() -> int {
+        throw std::invalid_argument(std::string(key) + " must be an integer, not " + value.dump());
+    };
+    if (!value.is_number()) {
+        return refuse();
+    }
+    const double number = value.get<double>();
+    if (number != std::trunc(number) || number < std::numeric_limits<int>::min() ||
+        number > std::numeric_limits<int>::max()) {
+        return refuse();
+    }
+    return static_cast<int>(number);
+}
+
+template <typename T> void read(const json &value, const std::string_view key, T &out) {
+    if constexpr (std::is_same_v<T, int>) {
+        out = exact_int(value, key);
+    } else if constexpr (std::is_same_v<T, double>) {
+        if (!value.is_number()) {
+            throw std::invalid_argument(std::string(key) + " must be a number, not " +
+                                        value.dump());
+        }
+        value.get_to(out);
+    } else {
+        value.get_to(out);
+    }
+}
+
 // Read an optional field, falling back to the member's current (default) value.
 template <typename T> void opt(const json &j, const char *key, T &out) {
     const auto it = j.find(key);
     if (it != j.end() && !it->is_null()) {
-        it->get_to(out);
+        read(*it, key, out);
     }
 }
 
 template <typename T> void req(const json &j, const char *key, T &out) {
-    j.at(key).get_to(out);
+    read(j.at(key), key, out);
+}
+
+// A map of authored entities, whose errors name the entity they are in.
+template <typename T>
+void entities(const json &j, const char *key, const std::string_view kind,
+              std::map<std::string, T> &out) {
+    const auto it = j.find(key);
+    if (it == j.end() || it->is_null()) {
+        return;
+    }
+    if (!it->is_object()) {
+        throw std::invalid_argument(std::string(key) + " must be an object");
+    }
+    for (const auto &[id, value] : it->items()) {
+        try {
+            value.get_to(out[id]);
+        } catch (const std::exception &exc) {
+            throw std::invalid_argument(std::string(kind) + " " + id + ": " + plain_message(exc));
+        }
+    }
 }
 
 } // namespace
@@ -90,16 +145,22 @@ void apply_narration_templates(std::map<std::string, std::string> &dest, const j
         throw std::invalid_argument("config.json: narration templates must be an object");
     }
     const auto known = default_narration_templates();
-    for (const auto &[key, value] : src.items()) {
-        if (!value.is_string()) {
-            throw std::invalid_argument("config.json: narration template '" + key +
-                                        "' must be a string");
+    // Legacy keys first, so that a canonical key beside one wins.
+    for (const bool canonical_pass : {false, true}) {
+        for (const auto &[key, value] : src.items()) {
+            const std::string canonical = canonical_narration_key(key);
+            if (!value.is_string()) {
+                throw std::invalid_argument("config.json: narration template '" + key +
+                                            "' must be a string");
+            }
+            if (!known.contains(canonical)) {
+                throw std::invalid_argument("config.json: unknown narration template '" + key +
+                                            "'");
+            }
+            if ((key == canonical) == canonical_pass) {
+                dest[canonical] = value.get<std::string>();
+            }
         }
-        const std::string canonical = canonical_narration_key(key);
-        if (!known.contains(canonical)) {
-            throw std::invalid_argument("config.json: unknown narration template '" + key + "'");
-        }
-        dest[canonical] = value.get<std::string>();
     }
 }
 
@@ -143,6 +204,16 @@ bool ItemPosition::is_npc(const std::string &npc_id) const {
     return holder == ItemHolder::npc && id == npc_id;
 }
 
+std::string item_text(const ItemData &item) {
+    const auto readable = item.properties.find("readable");
+    const auto written = item.properties.find("text");
+    if (readable == item.properties.end() || readable->second != "true" ||
+        written == item.properties.end() || written->second.empty()) {
+        return item.description;
+    }
+    return item.description + "\nIt reads: " + written->second;
+}
+
 std::vector<std::string> items_at(const WorldState &world, const ItemHolder holder,
                                   const std::string &id) {
     std::vector<std::string> result;
@@ -181,8 +252,9 @@ void from_json(const json &j, ScenarioMetadata &v) {
 }
 
 void from_json(const json &j, ScenarioManifest &v) {
-    reject_unknown(j, {"id", "name", "version", "chronicle_schema_version", "files", "metadata"},
-                   "scenario.json");
+    reject_unknown(
+        j, {"$schema", "id", "name", "version", "chronicle_schema_version", "files", "metadata"},
+        "scenario.json");
     req(j, "id", v.id);
     req(j, "name", v.name);
     req(j, "version", v.version);
@@ -193,7 +265,7 @@ void from_json(const json &j, ScenarioManifest &v) {
 
 void from_json(const json &j, ConfigData &v) {
     reject_unknown(j,
-                   {"temperature", "max_response_tokens", "inference_timeout_ms",
+                   {"$schema", "temperature", "max_response_tokens", "inference_timeout_ms",
                     "turns_per_period", "total_periods", "max_memory_tokens", "max_world_tokens",
                     "max_history_tokens", "verb_aliases", "action_narration_templates",
                     // Legacy keys: ignored (use_tui/use_color) or mapped (mutation_*).
@@ -259,10 +331,11 @@ void from_json(const json &j, ItemData &v) {
 }
 
 void from_json(const json &j, WorldData &v) {
-    reject_unknown(j, {"start_location", "locations", "items"}, "world.json");
+    reject_unknown(j, {"$schema", "start_location", "locations", "items"}, "world.json");
     req(j, "start_location", v.start_location);
-    req(j, "locations", v.locations);
-    opt(j, "items", v.items);
+    (void)j.at("locations");
+    entities(j, "locations", "location", v.locations);
+    entities(j, "items", "item", v.items);
 }
 
 void from_json(const json &j, ToolPolicy &v) {
@@ -351,8 +424,9 @@ void from_json(const json &j, AuthoredNpcData &v) {
 }
 
 void from_json(const json &j, NpcsFile &v) {
-    reject_unknown(j, {"npcs"}, "npcs.json");
-    req(j, "npcs", v.npcs);
+    reject_unknown(j, {"$schema", "npcs"}, "npcs.json");
+    (void)j.at("npcs");
+    entities(j, "npcs", "npc", v.npcs);
 }
 
 void from_json(const json &j, FactData &v) {
@@ -363,8 +437,8 @@ void from_json(const json &j, FactData &v) {
 }
 
 void from_json(const json &j, FactsFile &v) {
-    reject_unknown(j, {"facts"}, "facts.json");
-    opt(j, "facts", v.facts);
+    reject_unknown(j, {"$schema", "facts"}, "facts.json");
+    entities(j, "facts", "fact", v.facts);
 }
 
 void from_json(const json &j, FlagData &v) {
@@ -374,8 +448,8 @@ void from_json(const json &j, FlagData &v) {
 }
 
 void from_json(const json &j, FlagsFile &v) {
-    reject_unknown(j, {"flags"}, "flags.json");
-    opt(j, "flags", v.flags);
+    reject_unknown(j, {"$schema", "flags"}, "flags.json");
+    entities(j, "flags", "flag", v.flags);
 }
 
 void from_json(const json &j, ConditionData &v) {
@@ -387,8 +461,10 @@ void from_json(const json &j, ConditionData &v) {
 void from_json(const json &j, EventActionData &v) {
     reject_unknown(j, {"type", "params"}, "event action");
     req(j, "type", v.type);
-    const auto it = j.find("params");
-    if (it != j.end() && it->is_object()) {
+    if (const auto it = j.find("params"); it != j.end() && !it->is_null()) {
+        if (!it->is_object()) {
+            throw std::invalid_argument("event action " + v.type + ": params must be an object");
+        }
         v.params = *it;
     }
 }
@@ -402,8 +478,8 @@ void from_json(const json &j, EventTriggerData &v) {
 }
 
 void from_json(const json &j, EventsFile &v) {
-    reject_unknown(j, {"events"}, "events.json");
-    opt(j, "events", v.events);
+    reject_unknown(j, {"$schema", "events"}, "events.json");
+    entities(j, "events", "event", v.events);
 }
 
 void from_json(const json &j, PlayerState &v) {

@@ -3,38 +3,73 @@
 Creator-facing catalog of mechanics. Cartridges may use only the vocabularies
 listed here.
 
+## Command Line
+
+`chronicle --help` lists the subcommands and options. A command exits with 0 on
+success, 1 when it failed (an invalid cartridge, a file that cannot be read or
+written), and 2 when it was misused (unknown options, or a `--model` or `--base-url`
+that does not make a usable endpoint). An endpoint that is half configured in the
+environment is reported on standard error and the game is played without a model.
+
+`pack` writes a `.chronicle` or `.zip` archive that `install` accepts. `install`
+takes a directory or such an archive, with the cartridge at the top or in one
+directory, and replaces an installed version in one step.
+
+Whatever cartridges and models write is printed with control characters replaced by
+`?`, so it cannot drive the terminal.
+
 ## Player Commands
 
 | Command | Arguments | Effect |
 | --- | --- | --- |
-| `go` | `<direction>` | Move through an exit |
+| `go` | `<direction or place>` | Move through an exit |
 | `look` | — | Re-render the current location |
 | `examine` | `<item>` | Show item description when accessible |
 | `take` | `<item>` | Pick up a takeable item here |
 | `drop` | `<item>` | Drop a carried item |
-| `use` | `<item> on/with <target>` | Use an item (including unlock targets) |
-| `talk` | `<npc>` | Begin a conversation |
+| `use` | `<item> on/with <direction or place>` | Unlock an exit with a carried item |
+| `talk` | `[to] <npc>` | Begin a conversation |
 | `inventory` | — | List carried items |
 | `save` | `[slot]` | Save to slot 1–99 (default 1) |
 | `load` | `[slot]` | Load from slot 1–99 (default 1) |
 | `help` | — | Show help |
 | `quit` | — | Exit |
 
-In conversation, free text goes to the active NPC. Hard commands still available:
-`look`, `inventory`, `save`, `load`, `help`, `quit`, and exit phrases
-(`bye`, `goodbye`, `leave`, `exit conversation`).
+Words refer to what the player can reach: `take key` means the key in the room,
+not one elsewhere. A full name wins, then an id, then whole words of a name, then
+part of one, and articles do not matter. When two things fit equally well the
+console asks which is meant.
 
-Verb aliases may be defined in `config.json`.
+In conversation, what the player types is said to the active NPC. A line is a
+command only when the whole line is one: `look`, `inventory`, `save [slot]`,
+`load [slot]`, `help`, `quit`, or an exit phrase (`bye`, `goodbye`, `leave`,
+`exit conversation`, with or without a closing `.` or `!`). "Quit lying to me" and
+"look at this" are speech. A command about an exit, an item, or an NPC that is here,
+such as `go east` or `take visitor ledger`, is answered with a reminder to finish the
+conversation first.
 
-## Save Integrity
+Verb aliases may be defined in `config.json`. An alias adds a word for a built-in
+command. One that redefines a built-in command is ignored.
+
+## Saves
+
+Saves are kept in `~/.chronicle/saves/<cartridge id>/`. `--save-dir` or
+`CHRONICLE_SAVE_DIR` names another root. A cartridge that already has saves in
+`./saves`, where earlier versions kept them, stays there. Nothing is created until
+the first save, so a game starts even where it cannot write. Cartridges with one id,
+and versions of one cartridge, share a directory. `save` replaces a save only if this
+cartridge could load it, and otherwise asks for another slot.
 
 Save files are versioned and bound to the exact cartridge id and content
 version. They contain only mutable runtime state; authored facts, NPC identities,
 tool policies, event definitions, and prompts are always reconstructed from the
 validated cartridge. Writes use atomic replacement, reads are size-bounded, and
 the complete world plus all Scry conversation documents are validated before a
-load commits. A failed world or conversation restore leaves the current session
-unchanged.
+load commits. A system prompt found in a save is ignored, so a new Chronicle or an
+edited file never changes what an NPC is told about itself. A failed world or conversation restore leaves the current session
+unchanged. Playing a save without a model keeps its NPC conversations for the next
+session that has one. Saves written on scry v0.1.0 load unchanged: scry v0.8.0 reads and
+writes the same version 1 conversation documents.
 
 ## NPC Tool Palette
 
@@ -53,16 +88,44 @@ unchanged.
 
 Moods: `fearful`, `friendly`, `grieving`, `hostile`, `neutral`, `suspicious`.
 
-Per-NPC `tool_policy` restricts tools and scoped IDs. Only allowed tools are
-exposed to the model at all; each conversation turn is an agentic loop of up
-to 8 tool rounds, and a rejected tool call is returned to the model as an
-explicit structured result it can react to (the player sees no rejection).
-Tool arguments are strictly validated against generated JSON schemas — unknown
-fields, wrong types, and out-of-vocabulary moods are rejected before the gate
-runs. A provider failure rolls back the whole tool turn before deterministic
-stub dialogue is shown.
+Per-NPC `tool_policy` restricts tools and scoped IDs; anything it does not list is
+refused. `say`, `give_item`, `take_item`, and `reveal_knowledge` also need the NPC
+to be where the player is, so an NPC that has moved away cannot use them. Only
+allowed tools are exposed to the model at all, together with the ids each one accepts; each
+conversation turn is an agentic loop of up to 8 tool rounds, and a rejected tool
+call is returned to the model as an explicit structured result it can react to
+(the player sees no rejection). Tool arguments are strictly validated against
+generated JSON schemas — unknown fields, wrong types, and out-of-vocabulary moods
+are rejected before the gate runs, and the model is told the JSON path and the
+reason for each.
 
-## Event Conditions (AND)
+An NPC is heard through `say`, at most three different lines a turn. If it never
+uses `say`, its closing text is heard instead, or failing that, the text it wrote
+beside its tool calls. Speech is shown on one line. What `inspect_item` reads goes
+to the model alone.
+
+A turn that runs out of rounds, or whose last response is empty or broken after
+the NPC spoke or visibly acted, keeps what was done up to there. An empty or broken
+response before that is undone and the model is asked once more. Otherwise a turn
+fails when the provider fails, when a tool handler throws, or when the second try
+is no better. A failed turn rolls back every world write it made before
+deterministic stub dialogue is shown.
+
+Each turn sends the NPC its current situation: time, place, mood, trust, what it
+and the player carry, and its most important memories, newest first. That context
+goes with the turn it describes. History keeps the player's words, the NPC's
+answers, and its tool calls, and always the latest turn.
+
+## Events
+
+After each line the player types, the events whose conditions hold fire in id order.
+An event with `once` true, the default, fires at most once. One with `once` false is
+checked only when the line took a turn of the clock, so looking around or asking for
+help never sets it off. An event an earlier one has undone does not fire, and an
+event an earlier one set up waits for the next line. The first `end_game` ends the
+game, and nothing after it happens.
+
+### Conditions (AND)
 
 | Type | Args |
 | --- | --- |
@@ -74,7 +137,7 @@ stub dialogue is shown.
 | `item_in_player_inv` | item_id |
 | `turn_ge` | turn count |
 
-## Event Actions
+### Actions
 
 | Type | Params |
 | --- | --- |
@@ -83,6 +146,9 @@ stub dialogue is shown.
 | `spawn_item` | `item_id`, `location_id` |
 | `narrate` | `text` |
 | `end_game` | optional `text` |
+
+`spawn_item` does nothing when the item is already there or the player carries it.
+A `hidden` item stays hidden wherever it is put.
 
 ## Time
 

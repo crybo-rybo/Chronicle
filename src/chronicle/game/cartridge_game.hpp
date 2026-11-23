@@ -12,6 +12,7 @@
 
 #include "chronicle/cartridge/models.hpp"
 #include "chronicle/game/npc_tools.hpp"
+#include "chronicle/game/text_utils.hpp"
 #include "chronicle/game/world_actions.hpp"
 #include "chronicle/persist.hpp"
 #include "chronicle/types.hpp"
@@ -87,11 +88,16 @@ class CartridgeGame {
 
   private:
     [[nodiscard]] GameEvents dispatch_playing(const std::string &text);
+    [[nodiscard]] PlayerDispatch dispatch_conversation(const std::string &raw,
+                                                       const std::string &expanded);
     [[nodiscard]] std::string expand_alias(const std::string &text) const;
+    // True when the line is a command about an exit, an item, or an NPC that is here:
+    // not something to say, whether or not it would work.
+    [[nodiscard]] bool names_something_here(const std::string &line) const;
 
     [[nodiscard]] GameEvents look() const;
     [[nodiscard]] GameEvents show_inventory() const;
-    [[nodiscard]] GameEvents go(const std::string &direction);
+    [[nodiscard]] GameEvents go(const std::string &arg);
     [[nodiscard]] GameEvents examine(const std::string &arg) const;
     [[nodiscard]] GameEvents take(const std::string &arg);
     [[nodiscard]] GameEvents drop(const std::string &arg);
@@ -99,9 +105,13 @@ class CartridgeGame {
     [[nodiscard]] GameEvents talk(const std::string &arg);
     [[nodiscard]] GameEvents do_load(int slot);
 
-    [[nodiscard]] std::optional<std::string> resolve_item_ref(const std::string &text) const;
-    [[nodiscard]] std::optional<std::string> resolve_npc_ref(const std::string &text) const;
-    [[nodiscard]] bool item_accessible(const std::string &item_id) const;
+    // The directions of the exits here that the player's words name, by direction or
+    // by the place they lead to.
+    [[nodiscard]] std::vector<std::string> exits_named(const std::string &text) const;
+    [[nodiscard]] std::vector<game_detail::Noun> npcs_here() const;
+    [[nodiscard]] std::vector<std::string> items_lying_here() const;
+    [[nodiscard]] std::vector<std::string> items_carried() const;
+    [[nodiscard]] std::vector<std::string> items_accessible() const;
 
     // Gate internals: empty optional means valid.
     [[nodiscard]] std::optional<std::string>
@@ -111,7 +121,8 @@ class CartridgeGame {
     [[nodiscard]] std::optional<GameEvent>
     narrate(const std::string &key, const std::map<std::string, std::string> &args) const;
 
-    [[nodiscard]] GameEvents evaluate_events();
+    [[nodiscard]] GameEvents evaluate_events(bool turn_passed);
+    [[nodiscard]] bool conditions_met(const EventTriggerData &trigger) const;
     [[nodiscard]] bool condition_met(const ConditionData &cond) const;
     [[nodiscard]] GameEvents apply_event_action(const EventActionData &action);
 

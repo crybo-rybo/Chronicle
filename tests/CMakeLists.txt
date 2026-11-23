@@ -15,6 +15,7 @@ if(CHRONICLE_BUILD_TESTS)
         test_validator.cpp
         test_game.cpp
         test_npc_tools.cpp
+        test_npc_sessions.cpp
         test_events.cpp
         test_persist.cpp
         test_prompt.cpp
@@ -29,7 +30,8 @@ if(CHRONICLE_BUILD_TESTS)
     target_link_options(chronicle_tests PRIVATE ${CHRONICLE_SANITIZER_FLAGS})
     target_compile_definitions(chronicle_tests PRIVATE
         CHRONICLE_REPO_DIR="${PROJECT_SOURCE_DIR}")
-    target_link_libraries(chronicle_tests PRIVATE chronicle_llm GTest::gtest_main)
+    target_link_libraries(chronicle_tests PRIVATE
+        chronicle_llm scry::testing GTest::gtest_main)
     gtest_discover_tests(chronicle_tests)
 endif()
 

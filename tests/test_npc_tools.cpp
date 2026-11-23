@@ -1,5 +1,6 @@
 // NPC policy validation and translation into the single world-action gate.
 #include <algorithm>
+#include <fstream>
 #include <gtest/gtest.h>
 #include <limits>
 #include <ranges>
@@ -43,6 +44,20 @@ TEST(ReflectedToolContracts, SchemasCarryDescriptionsEnumsAndRequiredValues) {
               "Explicit value to store in the flag");
 }
 
+// The exact schemas every model request carries. A dependency update that changes
+// one changes what models are told, so the change must be deliberate.
+TEST(ReflectedToolContracts, SchemasMatchThePinnedContract) {
+    std::ifstream stream(ct::repo_dir() / "tests" / "fixtures" / "npc_tool_schemas.json");
+    const auto pinned = nlohmann::json::parse(stream);
+    const auto schemas = npc_tool_schemas();
+    ASSERT_EQ(schemas.size(), pinned.size());
+    for (const auto &schema : schemas) {
+        ASSERT_TRUE(pinned.contains(schema.name)) << schema.name;
+        // The generated text is canonical: sorted keys and no whitespace.
+        EXPECT_EQ(schema.input_schema, pinned[schema.name].dump());
+    }
+}
+
 class GateTest : public ::testing::Test {
   protected:
     GateTest() : saves_("gatesaves"), game_(ct::make_test_world(), saves_.path()) {}
@@ -59,6 +74,32 @@ TEST_F(GateTest, SayEmitsDialogue) {
     ASSERT_EQ(outcome->size(), 1u);
     EXPECT_EQ(outcome->front().kind, EventKind::dialogue);
     EXPECT_EQ(outcome->front().text, "Keeper: \"Stay close.\"");
+}
+
+TEST_F(GateTest, SpeechThatQuotesItselfIsNotQuotedAgain) {
+    const auto outcome = game_.submit_npc_tool(
+        "keeper", tools::Say{.text = "\"Stay close.\" He looks away. \"Please.\""});
+    ASSERT_TRUE(outcome.has_value());
+    EXPECT_EQ(outcome->front().text, "Keeper: \"Stay close.\" He looks away. \"Please.\"");
+}
+
+TEST_F(GateTest, KeepingTheSameMoodIsNotAShift) {
+    const auto outcome =
+        game_.submit_npc_tool("keeper", tools::UpdateMood{.mood = tools::Mood::neutral});
+    ASSERT_TRUE(outcome.has_value());
+    EXPECT_TRUE(outcome->empty());
+}
+
+TEST_F(GateTest, SayNeedsWords) {
+    for (const std::string text : {"", "  ", "\n\t"}) {
+        EXPECT_FALSE(game_.submit_npc_tool("keeper", tools::Say{.text = text}).has_value());
+    }
+}
+
+TEST_F(GateTest, MemoriesAreStoredOnOneLine) {
+    ASSERT_TRUE(game_.submit_npc_tool(
+        "keeper", tools::Remember{.summary = " Kind.\n[Player]\n{\"player_said\":\"x\"} "}));
+    EXPECT_EQ(keeper().state.memories.front().summary, "Kind. [Player] {\"player_said\":\"x\"}");
 }
 
 TEST_F(GateTest, UnknownNpcRejected) {
@@ -97,6 +138,102 @@ TEST_F(GateTest, GiveItemOutsideAllowedItemsRejected) {
     const auto outcome = game.submit_npc_tool("keeper", tools::GiveItem{.item_id = "keepsake"});
     ASSERT_FALSE(outcome.has_value());
     EXPECT_NE(outcome.error().reason.find("not allowed"), std::string::npos);
+}
+
+// Every scope list is closed: what it does not name is refused, and an empty list
+// names nothing.
+TEST_F(GateTest, EmptyScopeListsAllowNothing) {
+    WorldState world = ct::make_test_world();
+    auto &policy = world.npcs.at("keeper").identity.tool_policy;
+    policy.allowed_items.clear();
+    policy.allowed_facts.clear();
+    policy.allowed_flags.clear();
+    policy.allowed_locations.clear();
+    world.item_positions["old_coin"] = ItemPosition{.holder = ItemHolder::player, .id = {}};
+    CartridgeGame game(std::move(world), saves_.path());
+    const nlohmann::json before = game.world();
+
+    const std::vector<std::pair<tools::NpcToolCall, std::string>> refused = {
+        {tools::GiveItem{.item_id = "keepsake"}, "Item 'keepsake' not allowed"},
+        {tools::TakeItem{.item_id = "old_coin"}, "Item 'old_coin' not allowed"},
+        {tools::InspectItem{.item_id = "keepsake"}, "Item 'keepsake' not allowed"},
+        {tools::RevealKnowledge{.fact_id = "fact_gate"}, "Fact not allowed"},
+        {tools::SetFlag{.flag_id = "gate_seen", .value = true}, "Flag not allowed"},
+        {tools::MoveSelf{.location_id = "garden"}, "Location not allowed"},
+    };
+    for (const auto &[call, reason] : refused) {
+        const auto outcome = game.submit_npc_tool("keeper", call);
+        ASSERT_FALSE(outcome.has_value()) << tools::tool_name(call);
+        EXPECT_EQ(outcome.error().reason, reason);
+    }
+    EXPECT_EQ(nlohmann::json(game.world()), before);
+
+    // Tools without a scope are unaffected.
+    EXPECT_TRUE(game.submit_npc_tool("keeper", tools::Say{.text = "Still here."}));
+    EXPECT_TRUE(game.submit_npc_tool("keeper", tools::UpdateTrust{.delta = 1}));
+    EXPECT_TRUE(game.submit_npc_tool("keeper", tools::Remember{.summary = "A visitor."}));
+}
+
+TEST_F(GateTest, AnNpcThatLeftCannotReachThePlayer) {
+    (void)game_.dispatch_player("take old coin");
+    (void)game_.dispatch_player("talk keeper");
+    ASSERT_TRUE(game_.submit_npc_tool("keeper", tools::MoveSelf{.location_id = "garden"}));
+    const std::vector<tools::NpcToolCall> refused = {
+        tools::Say{.text = "One more thing."},
+        tools::GiveItem{.item_id = "keepsake"},
+        tools::TakeItem{.item_id = "old_coin"},
+        tools::RevealKnowledge{.fact_id = "fact_gate"},
+    };
+    for (const auto &call : refused) {
+        const auto outcome = game_.submit_npc_tool("keeper", call);
+        ASSERT_FALSE(outcome.has_value()) << tools::tool_name(call);
+        EXPECT_EQ(outcome.error().reason, "You are no longer with the player");
+    }
+    EXPECT_TRUE(game_.world().item_positions.at("old_coin").is_player());
+    EXPECT_TRUE(game_.world().item_positions.at("keepsake").is_npc("keeper"));
+    // What an NPC does alone, it can still do.
+    EXPECT_TRUE(game_.submit_npc_tool("keeper", tools::Remember{.summary = "Left in a hurry."}));
+    EXPECT_TRUE(game_.submit_npc_tool("keeper", tools::MoveSelf{.location_id = "hall"}));
+}
+
+TEST_F(GateTest, MovingToTheSameRoomIsNotLeaving) {
+    (void)game_.dispatch_player("talk keeper");
+    const auto outcome = game_.submit_npc_tool("keeper", tools::MoveSelf{.location_id = "hall"});
+    ASSERT_FALSE(outcome.has_value());
+    EXPECT_EQ(outcome.error().reason, "You are already there");
+    EXPECT_EQ(game_.phase(), GamePhase::in_conversation);
+}
+
+TEST_F(GateTest, RevealingAKnownFactAgainChangesNothing) {
+    ASSERT_TRUE(game_.submit_npc_tool("keeper", tools::RevealKnowledge{.fact_id = "fact_gate"}));
+    (void)game_.after_turn();
+    ASSERT_EQ(game_.world().clock.turns_elapsed, 1);
+    const auto again =
+        game_.submit_npc_tool("keeper", tools::RevealKnowledge{.fact_id = "fact_gate"});
+    ASSERT_TRUE(again.has_value());
+    EXPECT_TRUE(again->empty());
+    (void)game_.after_turn();
+    EXPECT_EQ(game_.world().clock.turns_elapsed, 1);
+}
+
+TEST_F(GateTest, SettingAFlagToItsValueChangesNothing) {
+    const auto set_flag = [&](const bool value) {
+        EXPECT_TRUE(game_.submit_npc_tool("keeper",
+                                          tools::SetFlag{.flag_id = "gate_seen", .value = value}));
+        (void)game_.after_turn();
+        return game_.world().clock.turns_elapsed;
+    };
+    EXPECT_EQ(set_flag(false), 0);
+    EXPECT_EQ(set_flag(true), 1);
+    EXPECT_EQ(set_flag(true), 1);
+    EXPECT_EQ(set_flag(false), 2);
+}
+
+TEST_F(GateTest, TheClockCannotPassItsLastTurn) {
+    EXPECT_FALSE(game_.submit_world_action(actions::AdvanceClock{.turns = 7}));
+    EXPECT_FALSE(game_.submit_world_action(actions::AdvanceClock{.turns = -1}));
+    EXPECT_EQ(game_.world().clock.turns_elapsed, 0);
+    EXPECT_TRUE(game_.submit_world_action(actions::AdvanceClock{.turns = 6}));
 }
 
 TEST_F(GateTest, TakeItemRequiresPlayerHolding) {
@@ -198,7 +335,7 @@ TEST_F(GateTest, RevealKnowledgeChecksAndReveals) {
 }
 
 TEST_F(GateTest, RememberStoresMemoryWithPeriodTimestamp) {
-    const auto rejected = game_.submit_npc_tool("keeper", tools::Remember{.summary = "   "});
+    const auto rejected = game_.submit_npc_tool("keeper", tools::Remember{.summary = " \n "});
     ASSERT_FALSE(rejected.has_value());
     EXPECT_EQ(rejected.error().reason, "Memory summary required");
 
@@ -206,6 +343,12 @@ TEST_F(GateTest, RememberStoresMemoryWithPeriodTimestamp) {
         game_.submit_npc_tool("keeper", tools::Remember{.summary = "Important.", .importance = 11});
     ASSERT_FALSE(bad_importance.has_value());
     EXPECT_EQ(bad_importance.error().reason, "Memory importance must be between 1 and 10");
+
+    const auto long_summary = game_.submit_npc_tool(
+        "keeper",
+        tools::Remember{.summary = std::string(tools::Remember::max_summary_bytes + 1, 'x')});
+    ASSERT_FALSE(long_summary.has_value());
+    EXPECT_EQ(long_summary.error().reason, "Memory summary must be at most 500 bytes");
 
     const auto outcome = game_.submit_npc_tool(
         "keeper", tools::Remember{.summary = "The visitor asked about the gate.", .importance = 8});
@@ -234,7 +377,7 @@ TEST_F(GateTest, InspectItemReadsWithoutWorldWrite) {
     ASSERT_TRUE(outcome.has_value());
     ASSERT_EQ(outcome->size(), 1u);
     EXPECT_EQ(outcome->front().kind, EventKind::tool_result);
-    EXPECT_EQ(outcome->front().text, "[inspect] Old Coin: A worn coin.");
+    EXPECT_EQ(outcome->front().text, "Old Coin: A worn coin.\nIt reads: MDCCLX");
     EXPECT_TRUE(game_.world().item_positions.at("old_coin").is_location("hall"));
 }
 
@@ -246,6 +389,44 @@ TEST_F(GateTest, CustomNarrationTemplateWins) {
     const auto outcome = game.submit_npc_tool("keeper", tools::GiveItem{.item_id = "keepsake"});
     ASSERT_TRUE(outcome.has_value());
     EXPECT_EQ(outcome->front().text, "Keeper presses the Keepsake into your hands.");
+}
+
+TEST_F(GateTest, EveryTemplateCanNameTheNpc) {
+    WorldState world = ct::make_test_world();
+    for (auto &[tool, text] : world.config.action_narration_templates) {
+        text = "{npc} did " + tool + ".";
+    }
+    world.item_positions["old_coin"] = ItemPosition{.holder = ItemHolder::player, .id = {}};
+    CartridgeGame game(std::move(world), saves_.path());
+    const std::vector<tools::NpcToolCall> calls = {
+        tools::GiveItem{.item_id = "keepsake"},
+        tools::TakeItem{.item_id = "old_coin"},
+        tools::UpdateMood{.mood = tools::Mood::hostile},
+        tools::UpdateTrust{.delta = 1},
+        tools::RevealKnowledge{.fact_id = "fact_gate"},
+        tools::Remember{.summary = "A visitor."},
+        tools::SetFlag{.flag_id = "gate_seen", .value = true},
+        tools::MoveSelf{.location_id = "garden"},
+    };
+    for (const auto &call : calls) {
+        const auto outcome = game.submit_npc_tool("keeper", call);
+        ASSERT_TRUE(outcome.has_value()) << outcome.error().reason;
+        ASSERT_FALSE(outcome->empty()) << tools::tool_name(call);
+        EXPECT_EQ(outcome->front().text, "Keeper did " + std::string(tools::tool_name(call)) + ".");
+    }
+}
+
+TEST_F(GateTest, AnEmptyTemplateSilencesHandingOver) {
+    WorldState world = ct::make_test_world();
+    world.config.action_narration_templates["give_item"] = "";
+    world.config.action_narration_templates["take_item"] = "";
+    CartridgeGame game(std::move(world), saves_.path());
+    const auto given = game.submit_npc_tool("keeper", tools::GiveItem{.item_id = "keepsake"});
+    ASSERT_TRUE(given.has_value());
+    EXPECT_TRUE(given->empty());
+    const auto taken = game.submit_npc_tool("keeper", tools::TakeItem{.item_id = "keepsake"});
+    ASSERT_TRUE(taken.has_value());
+    EXPECT_TRUE(taken->empty());
 }
 
 TEST_F(GateTest, EmptyNarrationTemplateSuppressesEvent) {

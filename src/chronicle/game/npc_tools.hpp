@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstddef>
 #include <optional>
 #include <ranges>
 #include <string>
@@ -56,6 +57,8 @@ struct RevealKnowledge {
 
 struct Remember {
     static constexpr std::string_view name = "remember";
+    // Every memory is kept for the rest of the game and written to every save.
+    static constexpr std::size_t max_summary_bytes = 500;
     std::string summary;
     int importance = 5;
 };

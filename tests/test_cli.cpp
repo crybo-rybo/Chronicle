@@ -1,7 +1,13 @@
+#include <array>
+#include <cstdlib>
 #include <gtest/gtest.h>
+#include <iostream>
+#include <map>
+#include <sstream>
 
 #include "chronicle/cartridge/validator.hpp"
 #include "chronicle/cli.hpp"
+#include "chronicle/llm/npc_sessions.hpp"
 #include "helpers.hpp"
 
 namespace chronicle {
@@ -35,6 +41,12 @@ TEST(Cli, SubcommandsAndPositionals) {
     EXPECT_EQ(pack.command, "pack");
     EXPECT_EQ(pack.scenario, "s");
     EXPECT_EQ(pack.output, "o.chronicle");
+}
+
+TEST(Cli, SaveDirIsAPlayOption) {
+    EXPECT_EQ(parse_cli({"--save-dir", "d"}).save_dir, "d");
+    EXPECT_FALSE(parse_cli({"run", "minimal", "--save-dir=d"}).error.has_value());
+    EXPECT_TRUE(parse_cli({"--save-dir="}).error.has_value());
 }
 
 TEST(Cli, BoolFlags) {
@@ -78,6 +90,8 @@ TEST(Cli, CommandShapesAndOptionDomainsAreStrict) {
         {"install", "one", "two"},
         {"pack", "--scenario", "s"},
         {"--tiny", "--scenario", "s"},
+        {"list", "--save-dir", "d"},
+        {"validate", "--scenario", "s", "--save-dir", "d"},
     };
     for (const auto &invalid : invalid_commands) {
         EXPECT_TRUE(parse_cli(invalid).error.has_value());
@@ -91,6 +105,248 @@ TEST(Cli, TinyWorldIsValid) {
     EXPECT_TRUE(world.npcs.contains("stranger"));
     const auto &allowed = world.npcs.at("stranger").identity.tool_policy.allowed_tools;
     EXPECT_EQ(allowed, std::vector<std::string>{"say"});
+}
+
+TEST(Cli, EmptyValuesAreErrorsInEitherForm) {
+    for (const std::string flag : {"--scenario", "--model", "--base-url", "--save-dir"}) {
+        EXPECT_EQ(parse_cli({flag, ""}).error, flag + " requires a value");
+        EXPECT_EQ(parse_cli({flag + "="}).error, flag + " requires a value");
+    }
+}
+
+TEST(Cli, AMistypedCommandIsNamed) {
+    EXPECT_EQ(parse_cli({"valdiate", "--scenario", "s"}).error, "Unknown command: valdiate");
+}
+
+// The environment names an endpoint, and nothing else leaks in from the host.
+class EndpointTest : public ::testing::Test {
+  protected:
+    EndpointTest() {
+        for (const auto *name : NAMES) {
+            if (const char *value = std::getenv(name)) {
+                saved_[name] = value;
+            }
+            (void)::unsetenv(name);
+        }
+    }
+    ~EndpointTest() override {
+        for (const auto *name : NAMES) {
+            (void)::unsetenv(name);
+        }
+        for (const auto &[name, value] : saved_) {
+            (void)::setenv(name.c_str(), value.c_str(), 1);
+        }
+    }
+    static std::string problem(const std::optional<std::string> &url,
+                               const std::optional<std::string> &model) {
+        const auto endpoint = resolve_endpoint(url, model, nullptr);
+        return endpoint ? "" : endpoint.error();
+    }
+
+    static constexpr std::array NAMES{"CHRONICLE_BASE_URL", "CHRONICLE_MODEL",
+                                      "CHRONICLE_DIALECT",  "CHRONICLE_API_KEY",
+                                      "OPENAI_API_KEY",     "CHRONICLE_DISABLE_REASONING"};
+    std::map<std::string, std::string> saved_;
+};
+
+TEST_F(EndpointTest, NoneIsNotAProblem) {
+    const auto endpoint = resolve_endpoint(std::nullopt, std::nullopt, nullptr);
+    ASSERT_TRUE(endpoint.has_value());
+    EXPECT_FALSE(endpoint->has_value());
+}
+
+TEST_F(EndpointTest, HalfOfOneIs) {
+    EXPECT_NE(problem(std::nullopt, "m").find("Model 'm' has no endpoint"), std::string::npos);
+    EXPECT_NE(problem("http://localhost:1/v1", std::nullopt).find("has no model"),
+              std::string::npos);
+    (void)::setenv("CHRONICLE_MODEL", "m", 1);
+    EXPECT_NE(problem(std::nullopt, std::nullopt).find("has no endpoint"), std::string::npos);
+    EXPECT_EQ(problem("http://localhost:1/v1", std::nullopt), "");
+}
+
+TEST_F(EndpointTest, AnUnusableOneIsReportedUpFront) {
+    EXPECT_NE(problem("not a url", "m").find("cannot be used"), std::string::npos);
+    (void)::setenv("CHRONICLE_DIALECT", "Anthropic", 1);
+    const auto endpoint = resolve_endpoint("http://localhost:1", "m", nullptr);
+    ASSERT_TRUE(endpoint.has_value()) << endpoint.error();
+    EXPECT_TRUE((*endpoint)->anthropic_dialect);
+    (void)::setenv("CHRONICLE_DIALECT", "antropic", 1);
+    EXPECT_NE(problem("http://localhost:1", "m").find("must be openai or anthropic"),
+              std::string::npos);
+}
+
+TEST_F(EndpointTest, NoCartridgeCanMakeAnAnthropicEndpointUnusable) {
+    (void)::setenv("CHRONICLE_DIALECT", "anthropic", 1);
+    (void)::setenv("CHRONICLE_DISABLE_REASONING", "1", 1);
+    ConfigData config;
+    config.temperature = 2.0;
+    const auto endpoint = resolve_endpoint("http://localhost:1", "m", &config);
+    ASSERT_TRUE(endpoint.has_value()) << endpoint.error();
+    EXPECT_EQ((*endpoint)->temperature, 1.0);
+    EXPECT_FALSE((*endpoint)->disable_reasoning);
+}
+
+TEST_F(EndpointTest, TheEnvironmentSuppliesKeysAndReasoning) {
+    const auto resolved = [] { return **resolve_endpoint("http://localhost:1/v1", "m", nullptr); };
+    EXPECT_FALSE(resolved().disable_reasoning);
+    (void)::setenv("CHRONICLE_DISABLE_REASONING", "1", 1);
+    EXPECT_TRUE(resolved().disable_reasoning);
+    (void)::setenv("OPENAI_API_KEY", "second", 1);
+    EXPECT_EQ(resolved().api_key, "second");
+    (void)::setenv("CHRONICLE_API_KEY", " first ", 1);
+    EXPECT_EQ(resolved().api_key, "first");
+}
+
+TEST_F(EndpointTest, TheCartridgeTunesSamplingOnly) {
+    ConfigData config;
+    config.temperature = 0.25;
+    config.max_response_tokens = 99;
+    config.inference_timeout_ms = 1'234;
+    const auto endpoint = resolve_endpoint("http://localhost:1/v1", "m", &config);
+    ASSERT_TRUE(endpoint.has_value() && endpoint->has_value());
+    EXPECT_EQ((*endpoint)->temperature, 0.25);
+    EXPECT_EQ((*endpoint)->max_tokens, 99);
+    EXPECT_EQ((*endpoint)->timeout_ms, 1'234);
+    EXPECT_EQ((*endpoint)->api_key, "not-needed");
+}
+
+int run(std::vector<std::string> arguments) {
+    arguments.insert(arguments.begin(), "chronicle");
+    std::vector<char *> argv;
+    argv.reserve(arguments.size());
+    for (auto &argument : arguments) {
+        argv.push_back(argument.data());
+    }
+    return run_cli(static_cast<int>(argv.size()), argv.data());
+}
+
+TEST_F(EndpointTest, HalfAnEndpointOnTheCommandLineIsMisuse) {
+    ::testing::internal::CaptureStderr();
+    EXPECT_EQ(run({"--tiny", "--model", "m"}), 2);
+    EXPECT_NE(::testing::internal::GetCapturedStderr().find("has no endpoint"), std::string::npos);
+    EXPECT_EQ(run({"--version"}), 0);
+    ::testing::internal::CaptureStderr();
+    EXPECT_EQ(run({"nonsense"}), 2);
+    EXPECT_EQ(run({"--scenario", "/nonexistent/nowhere"}), 1);
+    (void)::testing::internal::GetCapturedStderr();
+}
+
+TEST(Cli, WhatACartridgeCallsItselfIsPrintedAsOneSafeField) {
+    testing::TempDir home("clihome");
+    testing::TempDir package("clipackage");
+    testing::write_package(package.path(),
+                           {{"scenario", {{"name", "Evil\x1B]52;c;aGk=\x07\nfake\trow"}}}});
+    const char *previous = std::getenv("HOME");
+    const std::string previous_home = previous == nullptr ? "" : previous;
+    (void)::setenv("HOME", home.path().c_str(), 1);
+    ::testing::internal::CaptureStdout();
+    EXPECT_EQ(run({"install", package.path().string()}), 0);
+    EXPECT_EQ(run({"list"}), 0);
+    EXPECT_EQ(run({"inspect", "--scenario", package.path().string()}), 0);
+    const std::string output = ::testing::internal::GetCapturedStdout();
+    (void)::setenv("HOME", previous_home.c_str(), 1);
+
+    EXPECT_EQ(output.find('\x1B'), std::string::npos);
+    EXPECT_EQ(output.find('\x07'), std::string::npos);
+    EXPECT_NE(output.find("diskworld\tEvil?]52;c;aGk=? fake row\tv0.1.0\t"), std::string::npos)
+        << output;
+    EXPECT_NE(output.find("name:    Evil?]52;c;aGk=? fake row\n"), std::string::npos) << output;
+}
+
+// A whole run of the built-in world, as the player types it.
+int play_tiny(const std::string &typed, std::vector<std::string> options = {}) {
+    options.insert(options.begin(), "--tiny");
+    std::istringstream input(typed);
+    auto *previous = std::cin.rdbuf(input.rdbuf());
+    ::testing::internal::CaptureStdout();
+    const int status = run(std::move(options));
+    (void)::testing::internal::GetCapturedStdout();
+    std::cin.rdbuf(previous);
+    std::cin.clear();
+    return status;
+}
+
+TEST_F(EndpointTest, LeftoversInTheEnvironmentDoNotStopPlay) {
+    (void)::setenv("CHRONICLE_MODEL", "m", 1);
+    ::testing::internal::CaptureStderr();
+    EXPECT_EQ(play_tiny("quit\n"), 0);
+    const auto warning = ::testing::internal::GetCapturedStderr();
+    EXPECT_NE(warning.find("Model 'm' has no endpoint"), std::string::npos) << warning;
+    EXPECT_NE(warning.find("Playing without a model."), std::string::npos) << warning;
+}
+
+TEST_F(EndpointTest, SavesGoWhereTheHostSays) {
+    testing::TempDir home("savehome");
+    testing::TempDir named("savenamed");
+    testing::TempDir from_environment("saveenv");
+    const char *previous = std::getenv("HOME");
+    const std::string previous_home = previous == nullptr ? "" : previous;
+    (void)::setenv("HOME", home.path().c_str(), 1);
+    (void)::unsetenv("CHRONICLE_SAVE_DIR");
+    const auto saved = [](const std::filesystem::path &root) {
+        return std::filesystem::exists(root / "tiny" / "slot_1.json");
+    };
+
+    EXPECT_EQ(play_tiny("look\nquit\n"), 0);
+    EXPECT_TRUE(std::filesystem::is_empty(home.path()));
+    EXPECT_EQ(play_tiny("save\nquit\n"), 0);
+    EXPECT_TRUE(saved(home.path() / ".chronicle" / "saves"));
+
+    (void)::setenv("CHRONICLE_SAVE_DIR", from_environment.path().c_str(), 1);
+    EXPECT_EQ(play_tiny("save\nquit\n", {"--save-dir", named.path().string()}), 0);
+    EXPECT_TRUE(saved(named.path()));
+    EXPECT_FALSE(saved(from_environment.path()));
+    EXPECT_EQ(play_tiny("save\nquit\n"), 0);
+    EXPECT_TRUE(saved(from_environment.path()));
+
+    (void)::unsetenv("CHRONICLE_SAVE_DIR");
+    (void)::setenv("HOME", previous_home.c_str(), 1);
+}
+
+// The exit statuses in docs/console-api.md.
+TEST(Cli, ExitStatusesAreAsDocumented) {
+    testing::TempDir good("cligood");
+    testing::write_package(good.path());
+    testing::TempDir bad("clibad");
+    testing::write_package(bad.path(), {{"scenario", {{"chronicle_schema_version", 99}}}});
+    ::testing::internal::CaptureStdout();
+    ::testing::internal::CaptureStderr();
+    EXPECT_EQ(run({"validate", "--scenario", good.path().string()}), 0);
+    EXPECT_EQ(run({"validate", "--scenario", bad.path().string()}), 1);
+    EXPECT_EQ(run({"inspect", "--scenario", good.path().string()}), 0);
+    EXPECT_EQ(run({"--scenario", bad.path().string()}), 1);
+    EXPECT_EQ(run({"install", "/nonexistent/nowhere"}), 1);
+    EXPECT_EQ(run({"run", "not_installed_anywhere"}), 1);
+    EXPECT_EQ(run({"run", "Not Safe"}), 1);
+    EXPECT_EQ(run({"--help"}), 0);
+    EXPECT_EQ(run({"--frobnicate"}), 2);
+    EXPECT_EQ(run({"validate"}), 2);
+    (void)::testing::internal::GetCapturedStdout();
+    (void)::testing::internal::GetCapturedStderr();
+}
+
+TEST(Cli, UntrustedTextIsPrintedSafelyOnEveryPath) {
+    testing::TempDir package("cliunsafe");
+    testing::write_package(package.path(), {{"world",
+                                             {{"start_location", "cell"},
+                                              {"locations",
+                                               {{"cell",
+                                                 {{"name", "Cell"},
+                                                  {"base_description", "Bare."},
+                                                  {"exits", {{"up", "void\x1B[2J\nOK\n"}}}}}}}}}});
+    ::testing::internal::CaptureStdout();
+    ::testing::internal::CaptureStderr();
+    EXPECT_EQ(run({"validate", "--scenario", package.path().string()}), 1);
+    EXPECT_EQ(run({"inspect", "--scenario", package.path().string()}), 1);
+    EXPECT_EQ(run({"--scenario", package.path().string()}), 1);
+    EXPECT_EQ(run({"install", package.path().string()}), 1);
+    EXPECT_EQ(run({"--scenario", "nowhere\x1B[2J"}), 1);
+    EXPECT_EQ(run({"nonsense\x1B[2J"}), 2);
+    for (const auto &output :
+         {::testing::internal::GetCapturedStdout(), ::testing::internal::GetCapturedStderr()}) {
+        EXPECT_EQ(output.find('\x1B'), std::string::npos);
+        EXPECT_EQ(output.find("\nOK\n"), std::string::npos) << output;
+    }
 }
 
 TEST(Cli, InspectReturnsFailureForInvalidCartridge) {

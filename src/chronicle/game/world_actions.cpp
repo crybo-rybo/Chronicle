@@ -1,7 +1,6 @@
 #include "chronicle/game/world_actions.hpp"
 
 #include <algorithm>
-#include <limits>
 #include <ranges>
 
 #include "chronicle/cartridge/validator.hpp"
@@ -120,11 +119,14 @@ ActionOutcome ActionGate::submit(WorldAction action) {
         }
 
         ActionOutcome operator()(const AdvanceClock &advance) const {
+            auto &clock = gate.world_.clock;
+            const auto last_turn =
+                static_cast<long long>(clock.turns_per_period) * clock.total_periods;
             if (advance.turns < 0 ||
-                gate.world_.clock.turns_elapsed > std::numeric_limits<int>::max() - advance.turns) {
+                static_cast<long long>(clock.turns_elapsed) + advance.turns > last_turn) {
                 return reject("Invalid clock advance");
             }
-            gate.world_.clock.turns_elapsed += advance.turns;
+            clock.turns_elapsed += advance.turns;
             gate.significant_ = false;
             return {};
         }
@@ -185,8 +187,8 @@ ActionOutcome ActionGate::submit(WorldAction action) {
             if (!gate.world_.facts.contains(reveal.fact_id)) {
                 return reject("Unknown fact");
             }
-            gate.world_.revealed_facts.insert(reveal.fact_id);
-            gate.significant_ = true;
+            const bool is_new = gate.world_.revealed_facts.insert(reveal.fact_id).second;
+            gate.significant_ = gate.significant_ || is_new;
             return {};
         }
 
@@ -195,6 +197,9 @@ ActionOutcome ActionGate::submit(WorldAction action) {
             if (npc == gate.world_.npcs.end() || !nonblank(add.memory.summary) ||
                 add.memory.importance < 1 || add.memory.importance > 10) {
                 return reject("Invalid NPC memory");
+            }
+            if (npc->second.state.memories.size() >= MAX_NPC_MEMORIES) {
+                return reject("NPC memory is full");
             }
             npc->second.state.memories.push_back(std::move(add.memory));
             return {};
@@ -205,8 +210,9 @@ ActionOutcome ActionGate::submit(WorldAction action) {
                 !gate.world_.flag_meta.contains(set.flag_id)) {
                 return reject("Unknown flag");
             }
-            gate.world_.flags[set.flag_id] = set.value;
-            gate.significant_ = gate.significant_ || set.significant;
+            auto &flag = gate.world_.flags[set.flag_id];
+            gate.significant_ = gate.significant_ || (set.significant && flag != set.value);
+            flag = set.value;
             return {};
         }
 

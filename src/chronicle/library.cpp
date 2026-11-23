@@ -4,7 +4,8 @@
 #include <atomic>
 #include <cctype>
 #include <chrono>
-#include <cstdlib>
+#include <cstdio>
+#include <fcntl.h>
 #include <miniz.h>
 #include <set>
 
@@ -13,6 +14,7 @@
 #endif
 
 #include "chronicle/cartridge/loader.hpp"
+#include "chronicle/paths.hpp"
 
 namespace chronicle {
 
@@ -21,7 +23,8 @@ namespace fs = std::filesystem;
 namespace {
 
 constexpr std::uintmax_t MAX_ARCHIVE_BYTES = 64U * 1024U * 1024U;
-constexpr std::uintmax_t MAX_COMPRESSION_RATIO = 100U;
+// Directories and hidden files included.
+constexpr mz_uint MAX_ARCHIVE_ENTRIES = 16'384;
 
 std::optional<fs::path> executable_path() {
 #ifdef __linux__
@@ -81,7 +84,14 @@ class ScopedDirectory {
 
 class ZipReader {
   public:
+    // Reading the directory of an archive takes memory in proportion to its size, so
+    // the size is checked first.
     explicit ZipReader(const fs::path &archive) {
+        std::error_code ec;
+        const auto archive_size = fs::file_size(archive, ec);
+        if (ec || archive_size > MAX_ARCHIVE_BYTES) {
+            throw LibraryError("Archive exceeds the 64 MiB input limit: " + archive.string());
+        }
         if (!mz_zip_reader_init_file(&zip_, archive.string().c_str(), 0)) {
             throw LibraryError("Cannot open archive: " + archive.string());
         }
@@ -121,6 +131,15 @@ fs::path create_unique_directory(const fs::path &parent, const std::string &pref
     throw LibraryError("Cannot allocate a unique staging directory");
 }
 
+// The path an entry extracts to. Zip tools name a directory with a trailing slash.
+std::string archive_entry_path(const mz_zip_archive_file_stat &stat) {
+    std::string name = stat.m_filename;
+    if (stat.m_is_directory && name.size() > 1 && name.ends_with('/')) {
+        name.pop_back();
+    }
+    return name;
+}
+
 bool safe_archive_entry(const std::string &name) {
     const fs::path entry(name);
     if (name.empty() || name.contains('\\') || entry.is_absolute() || entry.has_root_name() ||
@@ -147,19 +166,31 @@ std::string portable_archive_key(std::string name) {
     return name;
 }
 
-void extract_archive(const fs::path &archive, const fs::path &destination) {
-    std::error_code ec;
-    const auto archive_size = fs::file_size(archive, ec);
-    if (ec || archive_size > MAX_ARCHIVE_BYTES) {
-        throw LibraryError("Archive exceeds the 64 MiB input limit: " + archive.string());
-    }
+// Anything at or under a name that starts with a dot is not part of a package.
+// Finder adds one such file beside every other.
+bool is_hidden_entry(const std::string &name) {
+    return std::ranges::any_of(fs::path(name),
+                               [](const fs::path &part) { return part.string().starts_with('.'); });
+}
 
-    ZipReader reader(archive);
+struct ArchiveEntry {
+    mz_uint index = 0;
+    std::string path;
+    bool is_directory = false;
+};
+
+// What an archive holds of a package, or why it is refused, before anything in it
+// is written. The limits are absolute, so how well an entry compresses does not
+// matter.
+std::vector<ArchiveEntry> checked_entries(ZipReader &reader, const fs::path &archive) {
     const auto count = mz_zip_reader_get_num_files(reader.get());
-    if (count > MAX_PACKAGE_FILES) {
-        throw LibraryError("Archive contains more than 256 entries");
+    if (count > MAX_ARCHIVE_ENTRIES) {
+        throw LibraryError("Archive contains more than " + std::to_string(MAX_ARCHIVE_ENTRIES) +
+                           " entries");
     }
 
+    std::vector<ArchiveEntry> entries;
+    std::size_t files = 0;
     std::uintmax_t total_size = 0;
     std::set<std::string> names;
     for (mz_uint index = 0; index < count; ++index) {
@@ -167,9 +198,17 @@ void extract_archive(const fs::path &archive, const fs::path &destination) {
         if (!mz_zip_reader_file_stat(reader.get(), index, &stat)) {
             throw LibraryError("Cannot read archive entry in " + archive.string());
         }
-        const std::string name = stat.m_filename;
+        // miniz cuts a longer name short without a word.
+        if (mz_zip_reader_get_filename(reader.get(), index, nullptr, 0) >
+            MZ_ZIP_MAX_ARCHIVE_FILENAME_SIZE) {
+            throw LibraryError("Archive entry name is too long: " + std::string(stat.m_filename));
+        }
+        const std::string name = archive_entry_path(stat);
         if (!safe_archive_entry(name)) {
             throw LibraryError("Unsafe archive entry: " + name);
+        }
+        if (is_hidden_entry(name)) {
+            continue;
         }
         if (!names.insert(portable_archive_key(fs::path(name).lexically_normal().generic_string()))
                  .second) {
@@ -178,36 +217,58 @@ void extract_archive(const fs::path &archive, const fs::path &destination) {
         if (stat.m_is_encrypted || !stat.m_is_supported || archive_entry_is_symlink(stat)) {
             throw LibraryError("Unsupported archive entry: " + name);
         }
+        entries.push_back({.index = index, .path = name, .is_directory = stat.m_is_directory != 0});
         if (stat.m_is_directory) {
             continue;
+        }
+        if (++files > MAX_PACKAGE_FILES) {
+            throw LibraryError("Archive contains more than 256 files");
         }
         if (stat.m_uncomp_size > MAX_PACKAGE_FILE_BYTES ||
             total_size > MAX_PACKAGE_TOTAL_BYTES - stat.m_uncomp_size) {
             throw LibraryError("Archive exceeds cartridge extraction limits");
         }
-        if (stat.m_uncomp_size > 0 &&
-            (stat.m_comp_size == 0 ||
-             stat.m_uncomp_size / stat.m_comp_size > MAX_COMPRESSION_RATIO)) {
-            throw LibraryError("Archive entry has an excessive compression ratio: " + name);
-        }
         total_size += stat.m_uncomp_size;
     }
+    return entries;
+}
 
-    for (mz_uint index = 0; index < count; ++index) {
-        mz_zip_archive_file_stat stat{};
-        if (!mz_zip_reader_file_stat(reader.get(), index, &stat)) {
-            throw LibraryError("Cannot read archive entry in " + archive.string());
-        }
-        const fs::path target = destination / fs::path(stat.m_filename).lexically_normal();
-        if (stat.m_is_directory) {
+void extract_archive(const fs::path &archive, const fs::path &destination) {
+    ZipReader reader(archive);
+    for (const auto &entry : checked_entries(reader, archive)) {
+        const fs::path target = destination / fs::path(entry.path).lexically_normal();
+        if (entry.is_directory) {
             fs::create_directories(target);
             continue;
         }
         fs::create_directories(target.parent_path());
-        if (!mz_zip_reader_extract_to_file(reader.get(), index, target.string().c_str(), 0)) {
-            throw LibraryError("Cannot extract archive entry: " + std::string(stat.m_filename));
+        if (!mz_zip_reader_extract_to_file(reader.get(), entry.index, target.string().c_str(), 0)) {
+            throw LibraryError("Cannot extract archive entry: " + entry.path);
         }
     }
+}
+
+// Where the package is in an extracted archive: at the top, or in the one directory
+// that holds a manifest. Archives made on macOS carry a second directory beside it.
+fs::path extracted_package(const fs::path &root) {
+    if (fs::exists(root / "scenario.json")) {
+        return root;
+    }
+    std::vector<fs::path> candidates;
+    for (const auto &entry : fs::directory_iterator(root)) {
+        if (entry.is_directory() && fs::exists(entry.path() / "scenario.json")) {
+            candidates.push_back(entry.path());
+        }
+    }
+    if (candidates.size() != 1) {
+        throw LibraryError("Archive does not contain one cartridge");
+    }
+    return candidates.front();
+}
+
+bool is_archive_name(const fs::path &path) {
+    const std::string extension = portable_archive_key(path.extension().string());
+    return extension == ".zip" || extension == ".chronicle";
 }
 
 void require_valid(const fs::path &package) {
@@ -239,12 +300,29 @@ bool path_is_within(const fs::path &candidate, const fs::path &root) {
     return !relative.empty() && !relative.is_absolute() && *relative.begin() != "..";
 }
 
+// Swap two directories in one step, so no moment exists without a cartridge at the
+// destination. False when the file system cannot.
+bool exchange(const fs::path &left, const fs::path &right) {
+#if defined(__linux__)
+    return ::renameat2(AT_FDCWD, left.c_str(), AT_FDCWD, right.c_str(), RENAME_EXCHANGE) == 0;
+#elif defined(__APPLE__)
+    return ::renamex_np(left.c_str(), right.c_str(), RENAME_SWAP) == 0;
+#else
+    (void)left;
+    (void)right;
+    return false;
+#endif
+}
+
 void commit_replacement(ScopedDirectory &staged, const fs::path &destination) {
+    const bool destination_exists =
+        fs::symlink_status(destination).type() != fs::file_type::not_found;
+    if (destination_exists && exchange(staged.path(), destination)) {
+        return; // The staging directory now holds the old version, and removes it.
+    }
     const fs::path backup =
         staged.path().parent_path() /
         (".backup-" + destination.filename().string() + "-" + staged.path().filename().string());
-    const bool destination_exists =
-        fs::symlink_status(destination).type() != fs::file_type::not_found;
     if (destination_exists) {
         fs::rename(destination, backup);
     }
@@ -271,9 +349,7 @@ void commit_replacement(ScopedDirectory &staged, const fs::path &destination) {
 } // namespace
 
 fs::path default_library_dir() {
-    const char *home = std::getenv("HOME");
-    const fs::path base = home != nullptr ? fs::path(home) : fs::current_path();
-    return base / ".chronicle" / "cartridges";
+    return chronicle_home() / "cartridges";
 }
 
 std::vector<CartridgeInfo> list_cartridges(const std::optional<fs::path> &library_dir) {
@@ -291,10 +367,10 @@ std::vector<CartridgeInfo> list_cartridges(const std::optional<fs::path> &librar
     }
     std::ranges::sort(children);
     for (const auto &path : children) {
-        if (!fs::exists(path / "scenario.json")) {
-            continue;
-        }
         try {
+            if (!fs::exists(path / "scenario.json")) {
+                continue;
+            }
             const auto manifest = load_manifest(path);
             if (!is_safe_cartridge_id(manifest.id) || manifest.id != path.filename()) {
                 continue;
@@ -318,17 +394,10 @@ fs::path install_cartridge(const fs::path &source, const std::optional<fs::path>
 
     std::optional<ScopedDirectory> extraction;
     fs::path package;
-    const bool is_archive =
-        fs::is_regular_file(src) && (src.extension() == ".zip" || src.extension() == ".chronicle");
-    if (is_archive) {
+    if (fs::is_regular_file(src) && is_archive_name(src)) {
         extraction.emplace(create_unique_directory(root, ".extract-"));
         extract_archive(src, extraction->path());
-        std::vector<fs::path> children;
-        for (const auto &entry : fs::directory_iterator(extraction->path())) {
-            children.push_back(entry.path());
-        }
-        package = children.size() == 1 && fs::is_directory(children.front()) ? children.front()
-                                                                             : extraction->path();
+        package = extracted_package(extraction->path());
     } else if (fs::is_directory(src)) {
         package = src;
     } else {
@@ -352,6 +421,9 @@ fs::path install_cartridge(const fs::path &source, const std::optional<fs::path>
 
 fs::path pack_cartridge(const fs::path &package_dir, const fs::path &output) {
     const fs::path src = fs::weakly_canonical(package_dir);
+    if (!is_archive_name(output)) {
+        throw LibraryError("Archive output must end in .chronicle or .zip: " + output.string());
+    }
     const fs::path absolute_output = fs::absolute(output).lexically_normal();
     fs::create_directories(absolute_output.parent_path());
     const fs::path resolved_output =
@@ -385,24 +457,15 @@ fs::path pack_cartridge(const fs::path &package_dir, const fs::path &output) {
         throw LibraryError("Cannot close archive: " + resolved_output.string());
     }
 
-    const fs::path previous = temporary.path() / ".previous";
-    const bool output_exists =
-        fs::symlink_status(resolved_output).type() != fs::file_type::not_found;
-    if (output_exists) {
-        if (fs::is_directory(resolved_output)) {
-            throw LibraryError("Archive output is a directory: " + resolved_output.string());
-        }
-        fs::rename(resolved_output, previous);
+    {
+        // Never hand out an archive that install would turn away.
+        ZipReader reader(temporary_archive);
+        (void)checked_entries(reader, temporary_archive);
     }
-    try {
-        fs::rename(temporary_archive, resolved_output);
-    } catch (...) {
-        if (output_exists) {
-            std::error_code ignored;
-            fs::rename(previous, resolved_output, ignored);
-        }
-        throw;
+    if (fs::is_directory(resolved_output)) {
+        throw LibraryError("Archive output is a directory: " + resolved_output.string());
     }
+    fs::rename(temporary_archive, resolved_output);
     return resolved_output;
 }
 

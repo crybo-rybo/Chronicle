@@ -15,11 +15,11 @@ must always validate and play.
 
 ## Toolchain and commands
 
-**GCC 16+ only** — the reflection component needs `-std=c++26 -freflection`;
+**GCC 16.2+ only** — scry and Scrydantic need `-std=c++26 -freflection`;
 Clang cannot build this project (`.clangd` strips the flag so the LSP can
-still parse). Dependencies (scry v0.1.0, nlohmann/json, miniz, GTest) are
-fetched by CMake at pinned commits or content hashes; libcurl dev headers must
-be installed.
+still parse). Dependencies (scry v0.8.0 with the Scrydantic commit it pins,
+nlohmann/json, miniz, GTest) are fetched by CMake at pinned commits or content
+hashes; libcurl dev headers must be installed.
 
 - `just ci` — formatting + warning-clean build + tests + example and install smoke
 - `just test` — unit tests only (`cmake --preset dev && ctest --preset dev`)
@@ -52,34 +52,44 @@ Three layers (`src/CMakeLists.txt`):
   (`cartridge_game.cpp` — session lifecycle and player commands;
   `npc_tool_gate.cpp` — model authorization and translation;
   `scripted_events.cpp` — event evaluation;
-  `npc_tools.hpp` — the ten tool argument structs), `persist`, `library`
+  `npc_tools.hpp` — the ten tool argument structs), `json_text` (the one parser for
+  untrusted JSON: bounded depth, no repeated keys), `paths`, `persist`, `library`
   (miniz zip pack/install under `~/.chronicle/cartridges`), `prompt`, `render`.
 - **`chronicle_llm`** (compiled with `-freflection`): `llm/npc_sessions.cpp`
   — one scry `Harness` + persistent `Conversation` per talked-to NPC, created
   lazily; registers exactly the NPC's allowed tools via
-  `scry::reflection::add<Args>` with handlers that call the gate. `runtime.cpp`
-  drives the blocking turn loop (`send_and_wait`); `cli.cpp` parses args and
+  `scry::ToolRegistry::add<Args>` with handlers that call the gate. `runtime.cpp`
+  drives the blocking turn loop (`send` + `update`); `cli.cpp` parses args and
   owns subcommands (`run/validate/inspect/list/install/pack`, `--tiny`).
-- Tests: `tests/*.cpp` unit (150+, no network — gate, mechanics, events,
-  persistence, library, prompts, CLI, stub runtime), `tests/integration/`
+- Tests: `tests/*.cpp` unit (280+, no model — gate, mechanics, events,
+  persistence, library, prompts, CLI, stub runtime, and NPC sessions against
+  scry's loopback `testing::ScriptedServer`), `tests/integration/`
   live-Ollama playthroughs that skip cleanly when no server is up.
 
 Key couplings to keep in sync:
 
-- The reflected adapter aggregates and compile-time binding table in
-  `llm/npc_sessions.cpp` are the schema source of truth; they convert into the
+- The reflected adapter aggregates (annotated with `scrydantic::description`) and
+  compile-time binding table in `llm/npc_sessions.cpp` are the schema source of
+  truth, pinned by `tests/fixtures/npc_tool_schemas.json`; they convert into the
   named domain calls in `game/npc_tools.hpp`, which feed the authorization
   gate. A compile-time assertion keeps both catalogs exact. Adding a tool
   touches those files, the gate visitors in `npc_tool_gate.cpp`, and
   `docs/console-api.md`. Editor JSON Schema lives under `schemas/`; adding a
   narrating tool also updates `default_narration_templates()` and
   `schemas/config.schema.json`.
-- The static NPC system prompt (identity/knowledge/rules) is fixed at
-  `Conversation` creation; **dynamic state (time, mood, trust, secret,
+- The static NPC system prompt (identity/knowledge/rules) is fixed when a session
+  is created or restored; **dynamic state (time, mood, trust, secret,
   memories) must go in the per-turn user message** (`prompt.cpp`), never the
   system prompt — conversations persist across turns and into save files.
 - No endpoint → no Harness is ever created; the stub path routes a canned
   `say` through the same gate (invariant 5: mechanics work with no model).
-- A model turn is transactional across Scry history and the world. Provider or
-  harness failure restores the complete runtime checkpoint before deterministic
-  stub dialogue is shown.
+- A model turn is transactional across Scry history and the world. Any failed
+  turn (provider, harness, throwing handler) restores the complete runtime
+  checkpoint before deterministic stub dialogue is shown. A turn that ran out of
+  tool rounds is complete. So is one whose NPC spoke or visibly acted before a
+  response Scry cannot commit: Scry fails it, and `ObservedTurn` commits its rounds.
+  Before that, such a response is undone and asked for once more.
+- A turn's `[Context]` is for that turn. `without_turn_context` drops it from history
+  before the next request and from every save.
+- A loaded conversation keeps its messages and takes its system prompt from the
+  cartridge, so `build_npc_system_prompt` may change without breaking saves.

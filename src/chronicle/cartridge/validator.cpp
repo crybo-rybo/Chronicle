@@ -1,11 +1,14 @@
 #include "chronicle/cartridge/validator.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <charconv>
 #include <set>
 
 #include "chronicle/cartridge/loader.hpp"
 #include "chronicle/game/npc_tools.hpp"
+#include "chronicle/game/player_verbs.hpp"
+#include "chronicle/game/text_utils.hpp"
 
 namespace chronicle {
 
@@ -46,6 +49,67 @@ void require_unique(const std::vector<std::string> &values, const std::string &c
     for (const auto &value : values) {
         if (!seen.insert(value).second) {
             error(issues, context + ": duplicate '" + value + "'");
+        }
+    }
+}
+
+// What play ignores or cannot reach is worth a warning; the cartridge still plays.
+void validate_alias(const std::string &alias, const std::string &expansion,
+                    std::vector<ValidationIssue> &issues) {
+    const std::string prefix = "verb alias '" + alias + "'";
+    const bool one_word = !alias.empty() && std::ranges::none_of(alias, [](const unsigned char ch) {
+        return std::isspace(ch) != 0 || std::isupper(ch) != 0;
+    });
+    if (!one_word) {
+        warning(issues, prefix + ": never matches, because it is not one lowercase word");
+    }
+    if (is_player_verb(alias) || is_exit_phrase(alias)) {
+        warning(issues, prefix + ": is ignored, because it redefines a built-in command");
+    }
+    if (!is_player_verb(game_detail::split_command(expansion).first)) {
+        warning(issues, prefix + ": does not stand for a built-in command: '" + expansion + "'");
+    }
+}
+
+void validate_unlock_targets(const WorldState &world, std::vector<ValidationIssue> &issues) {
+    std::set<std::string> openable; // Every exit's direction and destination.
+    for (const auto &[loc_id, loc] : world.locations) {
+        for (const auto &[direction, dest] : loc.exits) {
+            openable.insert(game_detail::lower(direction));
+            openable.insert(game_detail::lower(dest));
+        }
+    }
+    for (const auto &[item_id, item] : world.items) {
+        if (!item.unlock_target.empty() &&
+            !openable.contains(game_detail::strip(game_detail::lower(item.unlock_target)))) {
+            warning(issues, "item " + item_id + ": unlock_target " + item.unlock_target +
+                                " is neither an exit direction nor where one leads");
+        }
+    }
+}
+
+// An empty scope list allows nothing, so a tool that needs one can only be refused.
+void validate_policy_scopes(const std::string &npc_id, const NpcIdentity &identity,
+                            std::vector<ValidationIssue> &issues) {
+    const auto &policy = identity.tool_policy;
+    const auto require = [&](const std::string_view tool, const std::vector<std::string> &scope,
+                             const std::string &scope_name) {
+        if (scope.empty() && contains(policy.allowed_tools, std::string(tool))) {
+            warning(issues, "npc " + npc_id + ": " + std::string(tool) + " is allowed but " +
+                                scope_name + " is empty, so every call is refused");
+        }
+    };
+    require(tools::GiveItem::name, policy.allowed_items, "allowed_items");
+    require(tools::TakeItem::name, policy.allowed_items, "allowed_items");
+    require(tools::InspectItem::name, policy.allowed_items, "allowed_items");
+    require(tools::RevealKnowledge::name, policy.allowed_facts, "allowed_facts");
+    require(tools::SetFlag::name, policy.allowed_flags, "allowed_flags");
+    require(tools::MoveSelf::name, policy.allowed_locations, "allowed_locations");
+    const std::set<std::string> knowledge(identity.knowledge.begin(), identity.knowledge.end());
+    for (const auto &fact_id : policy.allowed_facts) {
+        if (!knowledge.contains(fact_id)) {
+            warning(issues, "npc " + npc_id + ": allowed_facts lists " + fact_id +
+                                ", which is not in knowledge, so it is never revealed");
         }
     }
 }
@@ -153,6 +217,12 @@ void validate_event_action(const WorldState &world, const std::string &event_id,
 
 } // namespace
 
+std::string ValidationIssue::to_string() const {
+    std::string line = (level == IssueLevel::error ? "[error] " : "[warning] ") + message;
+    std::ranges::replace_if(line, [](const char ch) { return ch == '\n' || ch == '\r'; }, ' ');
+    return line;
+}
+
 bool is_safe_cartridge_id(const std::string &id) {
     const auto is_lower = [](const unsigned char ch) { return ch >= 'a' && ch <= 'z'; };
     const auto is_digit = [](const unsigned char ch) { return ch >= '0' && ch <= '9'; };
@@ -206,6 +276,9 @@ std::vector<ValidationIssue> validate_world(const WorldState &world) {
         config.max_history_tokens < 1 || config.max_history_tokens > 1'000'000) {
         error(issues, "prompt budgets must be between 1 and 1000000");
     }
+    for (const auto &[alias, expansion] : config.verb_aliases) {
+        validate_alias(alias, expansion, issues);
+    }
     const auto maximum_turns = static_cast<long long>(config.turns_per_period) *
                                static_cast<long long>(config.total_periods);
     if (world.clock.turns_elapsed < 0 || world.clock.turns_elapsed > maximum_turns ||
@@ -221,10 +294,37 @@ std::vector<ValidationIssue> validate_world(const WorldState &world) {
         error(issues, "start_location unknown: " + world.player.current_location);
     }
 
+    const auto require_name = [&](const std::string &text, const std::string &thing) {
+        if (!nonblank(text)) {
+            warning(issues, thing + " is blank");
+        }
+    };
+    for (const auto &[item_id, item] : world.items) {
+        require_name(item.name, "item " + item_id + ": name");
+    }
+    for (const auto &[fact_id, fact] : world.facts) {
+        require_name(fact.text, "fact " + fact_id + ": text");
+    }
+    for (const auto &[npc_id, npc] : world.npcs) {
+        require_name(npc.identity.name, "npc " + npc_id + ": name");
+    }
+
     for (const auto &[loc_id, loc] : world.locations) {
+        require_name(loc.name, "location " + loc_id + ": name");
         for (const auto &[direction, dest] : loc.exits) {
             if (!world.locations.contains(dest)) {
                 error(issues, "location " + loc_id + ": exit " + direction + " -> unknown " + dest);
+            }
+        }
+        std::set<std::string> spoken_directions;
+        for (const auto &[direction, dest] : loc.exits) {
+            if (!nonblank(direction)) {
+                warning(issues, "location " + loc_id +
+                                    ": an exit with a blank direction cannot "
+                                    "be named");
+            } else if (!spoken_directions.insert(game_detail::lower(direction)).second) {
+                warning(issues, "location " + loc_id + ": exit directions " + direction +
+                                    " differ only in case, and only one can be named");
             }
         }
         std::set<std::string> locked_directions;
@@ -237,6 +337,7 @@ std::vector<ValidationIssue> validate_world(const WorldState &world) {
         }
     }
 
+    validate_unlock_targets(world, issues);
     for (const auto &[item_id, item] : world.items) {
         if (!world.item_positions.contains(item_id)) {
             warning(issues, "item " + item_id + " is not placed anywhere");
@@ -320,8 +421,10 @@ std::vector<ValidationIssue> validate_world(const WorldState &world) {
                 error(issues, "npc " + npc_id + ": allowed_locations unknown " + loc_id);
             }
         }
-        if (npc.state.memories.size() > 4'096) {
-            error(issues, "npc " + npc_id + ": memory count exceeds 4096");
+        validate_policy_scopes(npc_id, npc.identity, issues);
+        if (npc.state.memories.size() > MAX_NPC_MEMORIES) {
+            error(issues,
+                  "npc " + npc_id + ": memory count exceeds " + std::to_string(MAX_NPC_MEMORIES));
         }
         for (const auto &memory : npc.state.memories) {
             if (!nonblank(memory.summary)) {
@@ -348,8 +451,19 @@ std::vector<ValidationIssue> validate_world(const WorldState &world) {
         for (const auto &cond : event.conditions) {
             validate_condition(world, event_id, cond, issues);
         }
-        for (const auto &action : event.actions) {
+        for (std::size_t index = 0; index < event.actions.size(); ++index) {
+            const auto &action = event.actions[index];
             validate_event_action(world, event_id, action, issues);
+            if (action.type == "end_game" && index + 1 < event.actions.size()) {
+                warning(issues, "event " + event_id + ": nothing happens after end_game");
+            }
+            if (action.type == "spawn_item") {
+                const auto item = world.items.find(param_str(action.params, "item_id"));
+                if (item != world.items.end() && item->second.hidden) {
+                    warning(issues, "event " + event_id + ": " + item->first +
+                                        " is hidden, so the player never sees it appear");
+                }
+            }
         }
     }
 

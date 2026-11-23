@@ -1,3 +1,5 @@
+#include <chrono>
+#include <functional>
 #include <gtest/gtest.h>
 
 #include "chronicle/cartridge/validator.hpp"
@@ -61,6 +63,256 @@ TEST(Validator, ConfigResourceBoundsAreEnforced) {
     EXPECT_TRUE(has_issue_containing(issues, "clock limits"));
 }
 
+TEST(Validator, AliasesThatDoNothingAreWarnedAbout) {
+    const auto warned = [](const std::string &alias, const std::string &expansion,
+                           const std::string &needle) {
+        WorldState world = ct::make_test_world();
+        world.config.verb_aliases[alias] = expansion;
+        const auto issues = validate_world(world);
+        EXPECT_FALSE(has_errors(issues)) << alias; // It plays all the same.
+        return has_issue_containing(issues, needle, IssueLevel::warning);
+    };
+    EXPECT_FALSE(warned("grab", "take", "verb alias"));
+    EXPECT_FALSE(warned("north", "Go north", "verb alias"));
+    for (const std::string word : {"quit", "q", "save", "look", "bye", "leave"}) {
+        EXPECT_TRUE(warned(word, "take", "redefines a built-in")) << word;
+    }
+    for (const std::string word : {"Grab", "pick up", ""}) {
+        EXPECT_TRUE(warned(word, "take", "one lowercase word")) << word;
+    }
+    EXPECT_TRUE(warned("jump", "leap", "does not stand for"));
+    EXPECT_TRUE(warned("jump", "", "does not stand for"));
+}
+
+// One change to a valid world, and the one thing validation must say about it.
+struct BrokenRule {
+    std::string expected;
+    std::function<void(WorldState &)> breakage;
+};
+
+TEST(Validator, EveryRuleIsReportedOnItsOwn) {
+    const auto keeper = [](WorldState &world) -> NpcData & { return world.npcs.at("keeper"); };
+    const auto event = [](EventTriggerData data) {
+        return [data](WorldState &world) { world.events["bad"] = data; };
+    };
+    const auto condition = [&](const std::string &type, std::vector<std::string> args) {
+        return event({.conditions = {{.type = type, .args = std::move(args)}}, .actions = {}});
+    };
+    const auto action = [&](const std::string &type, nlohmann::json params) {
+        return event({.conditions = {}, .actions = {{.type = type, .params = std::move(params)}}});
+    };
+    using json = nlohmann::json;
+    const std::vector<BrokenRule> rules = {
+        {"scenario name", [](WorldState &w) { w.manifest.name = " "; }},
+        {"scenario version", [](WorldState &w) { w.manifest.version = ""; }},
+        {"temperature", [](WorldState &w) { w.config.temperature = -0.1; }},
+        {"temperature", [](WorldState &w) { w.config.temperature = 2.1; }},
+        {"max_response_tokens", [](WorldState &w) { w.config.max_response_tokens = 0; }},
+        {"max_response_tokens", [](WorldState &w) { w.config.max_response_tokens = 16'385; }},
+        {"inference_timeout_ms", [](WorldState &w) { w.config.inference_timeout_ms = 99; }},
+        {"inference_timeout_ms", [](WorldState &w) { w.config.inference_timeout_ms = 600'001; }},
+        {"clock limits",
+         [](WorldState &w) { w.config.turns_per_period = w.clock.turns_per_period = 1'001; }},
+        {"clock limits",
+         [](WorldState &w) { w.config.total_periods = w.clock.total_periods = 1'001; }},
+        {"prompt budgets", [](WorldState &w) { w.config.max_memory_tokens = 0; }},
+        {"prompt budgets", [](WorldState &w) { w.config.max_world_tokens = 1'000'001; }},
+        {"prompt budgets", [](WorldState &w) { w.config.max_history_tokens = 0; }},
+        {"runtime clock", [](WorldState &w) { w.clock.turns_elapsed = 7; }},
+        {"runtime clock", [](WorldState &w) { w.clock.total_periods = 4; }},
+        {"entity-count limits",
+         [](WorldState &w) {
+             for (int index = 0; index < 128; ++index) {
+                 LocationData location;
+                 location.name = "Cell";
+                 w.locations["cell_" + std::to_string(index)] = location;
+             }
+         }},
+        {"unknown location void",
+         [](WorldState &w) {
+             w.item_positions["old_coin"] = {.holder = ItemHolder::location, .id = "void"};
+         }},
+        {"unknown owning npc ghost",
+         [](WorldState &w) {
+             w.item_positions["old_coin"] = {.holder = ItemHolder::npc, .id = "ghost"};
+         }},
+        {"invalid player position",
+         [](WorldState &w) {
+             w.item_positions["old_coin"] = {.holder = ItemHolder::player, .id = "hall"};
+         }},
+        {"locked exit is not a defined direction",
+         [](WorldState &w) { w.locations.at("hall").locked_exits.push_back({.direction = "up"}); }},
+        {"runtime flag set", [](WorldState &w) { w.flags.erase("gate_seen"); }},
+        {"trust values", [&](WorldState &w) { keeper(w).identity.trust_reveal_threshold = -1; }},
+        {"trust values", [&](WorldState &w) { keeper(w).identity.trust_reveal_threshold = 101; }},
+        {"trust values", [&](WorldState &w) { keeper(w).state.trust_toward_player = -1; }},
+        {"identity list", [&](WorldState &w) { keeper(w).identity.goals.assign(65, "A goal"); }},
+        {"duplicate 'say'",
+         [&](WorldState &w) { keeper(w).identity.tool_policy.allowed_tools.push_back("say"); }},
+        {"duplicate 'keepsake'",
+         [&](WorldState &w) {
+             keeper(w).identity.tool_policy.allowed_items.push_back("keepsake");
+         }},
+        {"duplicate 'fact_gate'",
+         [&](WorldState &w) {
+             keeper(w).identity.tool_policy.allowed_facts.push_back("fact_gate");
+         }},
+        {"duplicate 'gate_seen'",
+         [&](WorldState &w) {
+             keeper(w).identity.tool_policy.allowed_flags.push_back("gate_seen");
+         }},
+        {"duplicate 'hall'",
+         [&](WorldState &w) {
+             keeper(w).identity.tool_policy.allowed_locations.push_back("hall");
+         }},
+        {"memory importance",
+         [&](WorldState &w) {
+             MemoryEntry memory;
+             memory.summary = "x";
+             memory.importance = 0;
+             keeper(w).state.memories.push_back(memory);
+         }},
+        {"memory count exceeds",
+         [&](WorldState &w) {
+             MemoryEntry memory;
+             memory.summary = "x";
+             keeper(w).state.memories.assign(MAX_NPC_MEMORIES + 1, memory);
+         }},
+        {"condition/action limits",
+         event({.conditions = std::vector<ConditionData>(
+                    129, ConditionData{.type = "turn_ge", .args = {"1"}}),
+                .actions = {}})},
+        {"condition/action limits",
+         event({.conditions = {},
+                .actions = std::vector<EventActionData>(
+                    129, EventActionData{.type = "narrate", .params = {{"text", "x"}}})})},
+        {"one valid period", condition("clock_is", {"noon"})},
+        {"one valid period", condition("clock_is", {"night", "night"})},
+        {"player_at: bad location", condition("player_at", {})},
+        {"flag_set: bad flag", condition("flag_set", {"gate_seen", "yes"})},
+        {"flag_set: bad flag", condition("flag_set", {"nope", "true"})},
+        {"bad npc/threshold", condition("npc_trust_ge", {"ghost", "1"})},
+        {"bad npc/threshold", condition("npc_trust_ge", {"keeper", "-1"})},
+        {"bad npc/threshold", condition("npc_trust_ge", {"keeper", "1x"})},
+        {"npc_at: bad npc/location", condition("npc_at", {"keeper", "void"})},
+        {"npc_at: bad npc/location", condition("npc_at", {"ghost", "hall"})},
+        {"item_in_player_inv: bad item", condition("item_in_player_inv", {"moon"})},
+        {"expected turn count", condition("turn_ge", {})},
+        {"move_npc: bad npc/location",
+         action("move_npc", {{"npc_id", "keeper"}, {"location_id", "void"}})},
+        {"move_npc: bad npc/location",
+         action("move_npc", {{"npc_id", "keeper"}, {"location_id", "hall"}, {"x", 1}})},
+        {"spawn_item: bad item/location",
+         action("spawn_item", {{"item_id", "moon"}, {"location_id", "hall"}})},
+        {"spawn_item: bad item/location",
+         action("spawn_item", {{"item_id", "old_coin"}, {"location_id", "void"}})},
+        {"narrate: expected text", action("narrate", json::object())},
+        {"optional text must be a string", action("end_game", {{"text", 1}})},
+        {"optional text must be a string", action("end_game", {{"words", "x"}})},
+    };
+    for (const auto &rule : rules) {
+        WorldState world = ct::make_test_world();
+        rule.breakage(world);
+        const auto issues = validate_world(world);
+        EXPECT_TRUE(has_issue_containing(issues, rule.expected)) << rule.expected;
+    }
+}
+
+TEST(Validator, TheBoundsThemselvesAreAllowed) {
+    WorldState world = ct::make_test_world();
+    world.config.temperature = 2.0;
+    world.config.max_response_tokens = 16'384;
+    world.config.inference_timeout_ms = 600'000;
+    world.config.turns_per_period = world.clock.turns_per_period = 1'000;
+    world.config.total_periods = world.clock.total_periods = 1'000;
+    world.config.max_memory_tokens = 1'000'000;
+    world.config.max_world_tokens = 1;
+    world.config.max_history_tokens = 1'000'000;
+    world.clock.turns_elapsed = 1'000'000;
+    auto &keeper = world.npcs.at("keeper");
+    keeper.identity.trust_reveal_threshold = 0;
+    keeper.state.trust_toward_player = 100;
+    keeper.identity.goals.assign(64, "A goal");
+    MemoryEntry memory;
+    memory.summary = "x";
+    memory.importance = 10;
+    keeper.state.memories.assign(MAX_NPC_MEMORIES, memory);
+    EXPECT_TRUE(validate_world(world).empty());
+}
+
+TEST(Validator, EntityCountsAreBoundedExactly) {
+    const auto over_limit = [](const auto &fill) {
+        WorldState world = ct::make_test_world();
+        fill(world);
+        return has_issue_containing(validate_world(world), "entity-count limits");
+    };
+    // The test world has two locations, five items, one NPC, one fact, and one event.
+    const auto locations = [](const int count) {
+        return [count](WorldState &world) {
+            LocationData location;
+            location.name = "Cell";
+            for (int index = 2; index < count; ++index) {
+                world.locations["extra_" + std::to_string(index)] = location;
+            }
+        };
+    };
+    const auto items = [](const int count) {
+        return [count](WorldState &world) {
+            ItemData item;
+            item.name = "Pebble";
+            for (int index = 5; index < count; ++index) {
+                world.items["extra_" + std::to_string(index)] = item;
+            }
+        };
+    };
+    const auto npcs = [](const int count) {
+        return [count](WorldState &world) {
+            for (int index = 1; index < count; ++index) {
+                NpcData npc;
+                npc.identity.id = "extra_" + std::to_string(index);
+                npc.identity.name = "Guest";
+                npc.state.current_location = "hall";
+                world.npcs[npc.identity.id] = npc;
+            }
+        };
+    };
+    const auto facts = [](const int count) {
+        return [count](WorldState &world) {
+            FactData fact;
+            fact.text = "A fact.";
+            for (int index = 1; index < count; ++index) {
+                world.facts["extra_" + std::to_string(index)] = fact;
+            }
+        };
+    };
+    const auto events = [](const int count) {
+        return [count](WorldState &world) {
+            for (int index = 1; index < count; ++index) {
+                world.events["extra_" + std::to_string(index)] = EventTriggerData{};
+            }
+        };
+    };
+    EXPECT_FALSE(over_limit(locations(128)));
+    EXPECT_TRUE(over_limit(locations(129)));
+    EXPECT_FALSE(over_limit(items(512)));
+    EXPECT_TRUE(over_limit(items(513)));
+    EXPECT_FALSE(over_limit(npcs(128)));
+    EXPECT_TRUE(over_limit(npcs(129)));
+    EXPECT_FALSE(over_limit(facts(512)));
+    EXPECT_TRUE(over_limit(facts(513)));
+    EXPECT_FALSE(over_limit(events(512)));
+    EXPECT_TRUE(over_limit(events(513)));
+}
+
+TEST(Validator, CartridgeIdsAreBounded) {
+    EXPECT_TRUE(is_safe_cartridge_id("0"));
+    EXPECT_TRUE(is_safe_cartridge_id(std::string(64, 'a')));
+    EXPECT_FALSE(is_safe_cartridge_id(std::string(65, 'a')));
+    for (const std::string id : {"-a", "_a", "a.b", "a\n", "\xC3\xA9", "aB"}) {
+        EXPECT_FALSE(is_safe_cartridge_id(id)) << id;
+    }
+}
+
 TEST(Validator, UnknownStartLocation) {
     WorldState world = ct::make_test_world();
     world.player.current_location = "nowhere";
@@ -71,6 +323,92 @@ TEST(Validator, ExitToUnknownLocation) {
     WorldState world = ct::make_test_world();
     world.locations.at("hall").exits["west"] = "void";
     EXPECT_TRUE(has_issue_containing(validate_world(world), "exit west -> unknown void"));
+}
+
+TEST(Validator, BlankNamesAreWarnedAbout) {
+    WorldState world = ct::make_test_world();
+    world.locations.at("hall").name = " ";
+    world.items.at("old_coin").name = "";
+    world.npcs.at("keeper").identity.name = "\t";
+    world.facts.at("fact_gate").text = "\n";
+    const auto issues = validate_world(world);
+    EXPECT_FALSE(has_errors(issues));
+    for (const std::string expected :
+         {"location hall: name is blank", "item old_coin: name is blank",
+          "npc keeper: name is blank", "fact fact_gate: text is blank"}) {
+        EXPECT_TRUE(has_issue_containing(issues, expected, IssueLevel::warning)) << expected;
+    }
+}
+
+TEST(Validator, AnIssueIsOneLineWhateverItNames) {
+    WorldState world = ct::make_test_world();
+    world.locations.at("hall").exits["up"] = "void\nOK\r\nready:   true";
+    const auto issues = validate_world(world);
+    ASSERT_FALSE(issues.empty());
+    EXPECT_EQ(issues.front().to_string(),
+              "[error] location hall: exit up -> unknown void OK  ready:   true");
+}
+
+TEST(Validator, ExitsThatCannotBeNamedAreWarnedAbout) {
+    WorldState world = ct::make_test_world();
+    world.locations.at("hall").exits[" "] = "garden";
+    world.locations.at("hall").exits["North"] = "garden";
+    const auto issues = validate_world(world);
+    EXPECT_FALSE(has_errors(issues));
+    EXPECT_TRUE(has_issue_containing(issues, "blank direction", IssueLevel::warning));
+    EXPECT_TRUE(has_issue_containing(issues, "differ only in case", IssueLevel::warning));
+}
+
+// Validation also guards every save and every rollback, so it must stay fast on
+// anything a package may hold.
+TEST(Validator, HugeListsAreValidatedInTime) {
+    WorldState world = ct::make_test_world();
+    for (int index = 0; index < 60'000; ++index) {
+        world.locations.at("hall").exits["way " + std::to_string(index)] = "garden";
+    }
+    for (int index = 0; index < 500; ++index) {
+        ItemData item;
+        item.name = "Key";
+        item.unlock_target = std::string(64, 'k') + std::to_string(index);
+        world.items["key_" + std::to_string(index)] = item;
+    }
+    auto &identity = world.npcs.at("keeper").identity;
+    for (int index = 0; index < 500; ++index) {
+        const auto id = "fact_" + std::to_string(index);
+        world.facts[id].text = "A fact.";
+        identity.knowledge.push_back(id);
+    }
+    identity.tool_policy.allowed_facts.assign(60'000, "fact_499");
+    const auto started = std::chrono::steady_clock::now();
+    EXPECT_TRUE(has_errors(validate_world(world))); // The facts repeat.
+    EXPECT_LT(std::chrono::steady_clock::now() - started, std::chrono::seconds(5));
+}
+
+TEST(Validator, ThingsThatCanNeverHappenAreWarnedAbout) {
+    const auto warns = [](const WorldState &world, const std::string &needle) {
+        const auto issues = validate_world(world);
+        EXPECT_FALSE(has_errors(issues));
+        return has_issue_containing(issues, needle, IssueLevel::warning);
+    };
+    WorldState world = ct::make_test_world();
+    EXPECT_TRUE(validate_world(world).empty());
+    world.items.at("gate_key").unlock_target = "gardn";
+    EXPECT_TRUE(warns(world, "unlock_target gardn"));
+    world.items.at("gate_key").unlock_target = "North";
+    EXPECT_FALSE(warns(world, "unlock_target"));
+
+    world.events["finale"] = EventTriggerData{
+        .conditions = {},
+        .actions = {{.type = "end_game", .params = nlohmann::json::object()},
+                    {.type = "narrate", .params = {{"text", "Too late."}}}},
+    };
+    EXPECT_TRUE(warns(world, "nothing happens after end_game"));
+    world.events["finale"] = EventTriggerData{
+        .conditions = {},
+        .actions = {{.type = "spawn_item",
+                     .params = {{"item_id", "hidden_note"}, {"location_id", "garden"}}}},
+    };
+    EXPECT_TRUE(warns(world, "hidden_note is hidden"));
 }
 
 TEST(Validator, UnplacedItemIsWarning) {
@@ -106,6 +444,35 @@ TEST(Validator, NpcIssues) {
     EXPECT_TRUE(has_issue_containing(issues, "allowed_facts unknown fact_missing"));
     EXPECT_TRUE(has_issue_containing(issues, "allowed_flags unknown flag_missing"));
     EXPECT_TRUE(has_issue_containing(issues, "allowed_locations unknown void"));
+}
+
+TEST(Validator, ToolsWithNothingInScopeAreWarnedAbout) {
+    WorldState world = ct::make_test_world();
+    EXPECT_FALSE(
+        has_issue_containing(validate_world(world), "every call is refused", IssueLevel::warning));
+    auto &identity = world.npcs.at("keeper").identity;
+    identity.tool_policy.allowed_items.clear();
+    identity.tool_policy.allowed_facts.clear();
+    identity.tool_policy.allowed_flags.clear();
+    identity.tool_policy.allowed_locations.clear();
+    auto issues = validate_world(world);
+    EXPECT_FALSE(has_errors(issues));
+    for (const std::string tool :
+         {"give_item is allowed but allowed_items", "take_item", "inspect_item",
+          "reveal_knowledge is allowed but allowed_facts", "set_flag is allowed but allowed_flags",
+          "move_self is allowed but allowed_locations"}) {
+        EXPECT_TRUE(has_issue_containing(issues, tool, IssueLevel::warning)) << tool;
+    }
+
+    // A list nobody uses is not worth a warning.
+    identity.tool_policy.allowed_tools = {"say"};
+    EXPECT_FALSE(
+        has_issue_containing(validate_world(world), "every call is refused", IssueLevel::warning));
+
+    identity.tool_policy.allowed_facts = {"fact_gate"};
+    identity.knowledge.clear();
+    EXPECT_TRUE(has_issue_containing(validate_world(world), "which is not in knowledge",
+                                     IssueLevel::warning));
 }
 
 TEST(Validator, MutableRuntimeStateIsBoundedAndReferentiallyValid) {

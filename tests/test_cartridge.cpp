@@ -1,6 +1,8 @@
 #include <gtest/gtest.h>
+#include <sys/stat.h>
 
 #include "chronicle/cartridge/loader.hpp"
+#include "chronicle/cartridge/validator.hpp"
 #include "helpers.hpp"
 
 namespace chronicle {
@@ -73,15 +75,210 @@ TEST(CartridgeLoad, InvalidJsonThrows) {
     EXPECT_THROW((void)load_package(dir.path()), CartridgeError);
 }
 
-TEST(CartridgeLoad, PathTraversalRejected) {
-    ct::TempDir dir("traversal");
-    ct::write_package(dir.path(), {{"scenario", {{"files", {{"world", "../outside.json"}}}}}});
-    EXPECT_THROW((void)load_package(dir.path()), CartridgeError);
+TEST(CartridgeLoad, DeeplyNestedJsonIsRefusedWithoutOverflow) {
+    for (const std::string key : {"params", "ignored"}) {
+        ct::TempDir dir("deepjson");
+        ct::write_package(dir.path());
+        std::ofstream(dir.path() / "events.json")
+            << R"({"events":{"e":{"actions":[{"type":"narrate",")" << key << R"(":)"
+            << std::string(200'000, '[') << std::string(200'000, ']') << "}]}}}";
+        const auto issues = validate_package(dir.path());
+        ASSERT_EQ(issues.size(), 1u);
+        EXPECT_NE(issues.front().message.find("nested more than 64"), std::string::npos)
+            << issues.front().message;
+    }
 }
 
-TEST(CartridgeLoad, AbsolutePathRejected) {
-    ct::TempDir dir("absolute");
-    ct::write_package(dir.path(), {{"scenario", {{"files", {{"world", "/etc/hostname"}}}}}});
+TEST(CartridgeLoad, RepeatedKeysAreRefused) {
+    ct::TempDir dir("repeatedkeys");
+    ct::write_package(dir.path());
+    std::ofstream(dir.path() / "flags.json")
+        << R"({"flags":{"a":{"default":true},"b":{},"a":{"default":false}}})";
+    const auto issues = validate_package(dir.path());
+    ASSERT_EQ(issues.size(), 1u);
+    EXPECT_NE(issues.front().message.find("repeats the key \"a\""), std::string::npos)
+        << issues.front().message;
+}
+
+TEST(CartridgeLoad, TheSameKeyInDifferentObjectsIsFine) {
+    ct::TempDir dir("samekeys");
+    ct::write_package(dir.path());
+    std::ofstream(dir.path() / "flags.json")
+        << R"({"flags":{"a":{"default":true},"b":{"default":false}}})";
+    EXPECT_TRUE(load_package(dir.path()).flags.at("a"));
+}
+
+TEST(CartridgeLoad, EventParamsMustBeAnObject) {
+    for (const std::string params : {R"("The end.")", "[]", "7"}) {
+        ct::TempDir dir("stringparams");
+        ct::write_package(dir.path());
+        std::ofstream(dir.path() / "events.json")
+            << R"({"events":{"e":{"actions":[{"type":"end_game","params":)" << params << "}]}}}";
+        const auto issues = validate_package(dir.path());
+        ASSERT_EQ(issues.size(), 1u) << params;
+        EXPECT_NE(issues.front().message.find("end_game: params must be an object"),
+                  std::string::npos)
+            << issues.front().message;
+    }
+}
+
+// The one problem validating a package finds, after overwriting one of its files.
+std::string problem_with(const std::string &file, const std::string &text) {
+    ct::TempDir dir("problem");
+    ct::write_package(dir.path());
+    std::ofstream(dir.path() / file) << text;
+    const auto issues = validate_package(dir.path());
+    EXPECT_EQ(issues.size(), 1u);
+    return issues.empty() ? "" : issues.front().message;
+}
+
+TEST(CartridgeLoad, NumbersAreTakenAtTheirWord) {
+    for (const std::string value : {"1.9", "4294967297", "true", "\"1\"", "-2147483649", "1e300"}) {
+        EXPECT_EQ(
+            problem_with("config.json", R"({"turns_per_period":)" + value + "}").substr(0, 53),
+            "config.json: turns_per_period must be an integer, not")
+            << value;
+    }
+    EXPECT_EQ(problem_with("config.json", R"({"temperature":true})"),
+              "config.json: temperature must be a number, not true");
+
+    ct::TempDir dir("wholenumbers");
+    ct::write_package(dir.path());
+    std::ofstream(dir.path() / "config.json") << R"({"turns_per_period":3.0,"temperature":1})";
+    EXPECT_EQ(load_package(dir.path()).config.turns_per_period, 3);
+}
+
+TEST(CartridgeLoad, ConfigMustBeAnObject) {
+    for (const std::string text : {"null", "[]", "7"}) {
+        EXPECT_EQ(problem_with("config.json", text), "config.json: config.json must be an object");
+    }
+}
+
+TEST(CartridgeLoad, ErrorsNameWhatTheyAreAbout) {
+    EXPECT_EQ(problem_with("facts.json", R"({"facts":{"a":{"text":"x"},"b":{}}})"),
+              "facts.json: fact b: key 'text' not found");
+    EXPECT_EQ(problem_with("flags.json", R"({"flags":{"f":{"default":"yes"}}})"),
+              "flags.json: flag f: type must be boolean, but is string");
+    EXPECT_EQ(problem_with("npcs.json", R"({"npcs":{"n":{"identity":{"nam":"x"},"state":{}}}})"),
+              "npcs.json: npc n: npc identity: unknown field 'nam'");
+    EXPECT_EQ(
+        problem_with("world.json", R"({"start_location":"a","locations":{"a":{"name":"A"}}})"),
+        "world.json: location a: key 'base_description' not found");
+    EXPECT_EQ(problem_with("events.json", R"({"events":[]})"),
+              "events.json: events must be an object");
+    EXPECT_NE(problem_with("flags.json", "{\n  nope").find("parse error at line 2"),
+              std::string::npos);
+}
+
+TEST(CartridgeLoad, EveryFileMayNameItsSchema) {
+    ct::TempDir dir("schemakey");
+    ct::write_package(dir.path());
+    for (const std::string file : {"scenario.json", "config.json", "world.json", "npcs.json",
+                                   "facts.json", "flags.json", "events.json"}) {
+        nlohmann::json document;
+        std::ifstream(dir.path() / file) >> document;
+        document["$schema"] = "https://chronicle.dev/schemas/" + file;
+        std::ofstream(dir.path() / file) << document.dump();
+    }
+    EXPECT_TRUE(validate_package(dir.path()).empty());
+}
+
+TEST(CartridgeLoad, HiddenFilesAreNotPartOfAPackage) {
+    ct::TempDir dir("hidden");
+    ct::write_package(dir.path());
+    std::filesystem::create_directories(dir.path() / ".git" / "objects");
+    for (int index = 0; index < 300; ++index) {
+        std::ofstream(dir.path() / ".git" / "objects" / std::to_string(index)) << "x";
+    }
+    std::error_code ec;
+    std::filesystem::create_symlink("/etc", dir.path() / ".link", ec);
+    EXPECT_EQ(inspect_package_tree(dir.path()).files.size(), 7u);
+    EXPECT_TRUE(validate_package(dir.path()).empty());
+
+    std::filesystem::rename(dir.path() / "world.json", dir.path() / ".world.json");
+    ct::write_package(dir.path(), {{"scenario", {{"files", {{"world", ".world.json"}}}}}});
+    const auto issues = validate_package(dir.path());
+    ASSERT_EQ(issues.size(), 1u);
+    EXPECT_NE(issues.front().message.find("must not be hidden"), std::string::npos);
+}
+
+// The files these paths name exist and are valid, so only confinement refuses them.
+TEST(CartridgeLoad, PathsOutsideThePackageAreRefused) {
+    ct::TempDir outside("outside");
+    ct::write_package(outside.path());
+    const auto package = outside.path() / "package";
+    for (const std::string path :
+         {"../world.json", (outside.path() / "world.json").string().c_str(), "a/../../world.json",
+          "./world.json", "..\\world.json", "", "a//../world.json"}) {
+        ct::write_package(package, {{"scenario", {{"files", {{"world", path}}}}}});
+        try {
+            (void)load_package(package);
+            ADD_FAILURE() << "loaded " << path;
+        } catch (const CartridgeError &error) {
+            EXPECT_NE(std::string(error.what()).find("Unsafe package path"), std::string::npos)
+                << path << ": " << error.what();
+        }
+    }
+}
+
+TEST(CartridgeLoad, ADirectoryThatLeadsOutsideIsRefused) {
+    ct::TempDir outside("linkoutside");
+    ct::write_package(outside.path());
+    const auto package = outside.path() / "package";
+    ct::write_package(package, {{"scenario", {{"files", {{"world", "data/world.json"}}}}}});
+    std::error_code ec;
+    std::filesystem::create_directory_symlink(outside.path(), package / "data", ec);
+    if (ec) {
+        GTEST_SKIP() << "symbolic links unavailable: " << ec.message();
+    }
+    EXPECT_THROW((void)load_package(package), CartridgeError);
+}
+
+// The manifest is read on its own, without the look over the whole tree that refuses
+// links, so confinement has to hold there too.
+TEST(CartridgeLoad, AManifestThatLeadsOutsideIsRefused) {
+    ct::TempDir outside("manifestoutside");
+    ct::write_package(outside.path());
+    const auto package = outside.path() / "package";
+    std::filesystem::create_directories(package);
+    std::filesystem::create_symlink(outside.path() / "scenario.json", package / "scenario.json");
+    try {
+        (void)load_manifest(package);
+        ADD_FAILURE() << "read through the link";
+    } catch (const CartridgeError &error) {
+        EXPECT_NE(std::string(error.what()).find("escapes package directory"), std::string::npos)
+            << error.what();
+    }
+}
+
+TEST(CartridgeLoad, PackagesAreBounded) {
+    ct::TempDir many("manyfiles");
+    ct::write_package(many.path());
+    for (std::size_t index = 7; index < MAX_PACKAGE_FILES; ++index) {
+        std::ofstream(many.path() / ("extra_" + std::to_string(index))) << "x";
+    }
+    EXPECT_NO_THROW((void)load_package(many.path()));
+    std::ofstream(many.path() / "one_too_many") << "x";
+    EXPECT_THROW((void)load_package(many.path()), CartridgeError);
+
+    ct::TempDir large("largefiles");
+    ct::write_package(large.path());
+    for (int index = 0; index < 8; ++index) {
+        const auto path = large.path() / ("blob_" + std::to_string(index));
+        std::ofstream(path) << "x";
+        std::filesystem::resize_file(path, MAX_PACKAGE_FILE_BYTES);
+    }
+    EXPECT_THROW((void)load_package(large.path()), CartridgeError); // 32 MiB and seven files.
+    std::filesystem::remove(large.path() / "blob_7");
+    EXPECT_NO_THROW((void)load_package(large.path()));
+    std::filesystem::resize_file(large.path() / "blob_0", MAX_PACKAGE_FILE_BYTES + 1);
+    EXPECT_THROW((void)load_package(large.path()), CartridgeError);
+}
+
+TEST(CartridgeLoad, SpecialFilesAreRefused) {
+    ct::TempDir dir("special");
+    ct::write_package(dir.path());
+    ASSERT_EQ(::mkfifo((dir.path() / "pipe").c_str(), 0600), 0);
     EXPECT_THROW((void)load_package(dir.path()), CartridgeError);
 }
 
@@ -133,6 +330,16 @@ TEST(CartridgeLoad, CanonicalNarrationTemplatesOverlayLegacyKeys) {
                          {"action_narration_templates", {{"give_item", "canonical"}}}}}});
     const WorldState world = load_package(dir.path());
     EXPECT_EQ(world.config.action_narration_templates.at("give_item"), "canonical");
+}
+
+TEST(CartridgeLoad, CanonicalNarrationKeyWinsInOneObjectToo) {
+    ct::TempDir dir("narrationpair");
+    ct::write_package(dir.path(),
+                      {{"config",
+                        {{"action_narration_templates",
+                          {{"give_item", "canonical"}, {"give_item_to_player", "legacy"}}}}}});
+    EXPECT_EQ(load_package(dir.path()).config.action_narration_templates.at("give_item"),
+              "canonical");
 }
 
 TEST(CartridgeLoad, UnknownNarrationTemplateIsRejected) {
