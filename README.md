@@ -18,7 +18,7 @@ internals.
 - CMake ≥ 3.30, libcurl development headers
 - Linux or macOS (macOS via Homebrew GCC 16)
 
-Dependencies (scry v0.8.0 with the Scrydantic commit it pins, nlohmann/json,
+Dependencies (scry v0.9.0 with the Scrydantic commit it pins, nlohmann/json,
 miniz, GoogleTest) are fetched at pinned commits or content hashes by CMake.
 
 ## Build
