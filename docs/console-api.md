@@ -68,7 +68,7 @@ the complete world plus all Scry conversation documents are validated before a
 load commits. A system prompt found in a save is ignored, so a new Chronicle or an
 edited file never changes what an NPC is told about itself. A failed world or conversation restore leaves the current session
 unchanged. Playing a save without a model keeps its NPC conversations for the next
-session that has one. Saves written on scry v0.1.0 load unchanged: scry v0.8.0 reads and
+session that has one. Saves written on scry v0.1.0 load unchanged: scry v0.9.0 reads and
 writes the same version 1 conversation documents.
 
 ## NPC Tool Palette

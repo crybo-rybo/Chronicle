@@ -17,7 +17,7 @@ must always validate and play.
 
 **GCC 16.2+ only** — scry and Scrydantic need `-std=c++26 -freflection`;
 Clang cannot build this project (`.clangd` strips the flag so the LSP can
-still parse). Dependencies (scry v0.8.0 with the Scrydantic commit it pins,
+still parse). Dependencies (scry v0.9.0 with the Scrydantic commit it pins,
 nlohmann/json, miniz, GTest) are fetched by CMake at pinned commits or content
 hashes; libcurl dev headers must be installed.
 

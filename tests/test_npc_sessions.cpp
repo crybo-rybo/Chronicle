@@ -218,7 +218,7 @@ TEST_F(RestrictedSessionTest, DisallowedToolIsNeitherOfferedNorDispatched) {
     EXPECT_EQ(offered_tools(last_request()), (std::vector<std::string>{"say", "remember"}));
     EXPECT_EQ(tool_results(last_request()),
               (std::vector<json>{
-                  {{"error", "unknown tool \"update_trust\"; registered tools: remember, say"}}}));
+                  {{"error", "unknown tool \"update_trust\"; known tools: remember, say"}}}));
     EXPECT_EQ(world_json(), before);
 }
 

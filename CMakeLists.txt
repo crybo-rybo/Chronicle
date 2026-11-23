@@ -69,8 +69,8 @@ endif()
 FetchContent_Declare(
     scry
     GIT_REPOSITORY https://github.com/crybo-rybo/scry.git
-    # v0.8.0, pinned to an immutable commit for reproducible builds.
-    GIT_TAG f7b3d4e89b10304650ed150f664168248521d393
+    # v0.9.0, pinned to an immutable commit for reproducible builds.
+    GIT_TAG 6962c1215f55e43a8fb7a863754de164b1536f23
     EXCLUDE_FROM_ALL
 )
 FetchContent_MakeAvailable(scry)
