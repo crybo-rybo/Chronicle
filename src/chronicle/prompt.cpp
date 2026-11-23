@@ -162,8 +162,12 @@ std::string build_npc_system_prompt(const WorldState &world, const std::string &
     if (may_use(policy, tools::MoveSelf::name)) {
         out << "- Speak before you move away; the player cannot hear you afterwards.\n";
     }
+    if (!policy.allowed_tools.empty()) {
+        out << "- Make only the tool calls this one reply needs, usually one or two.\n";
+    }
     if (may_use(policy, tools::Say::name)) {
-        out << "- Speak with the say tool. Say everything in one call, then end your turn.";
+        out << "- Speak last, with a single call to the say tool, then stop and wait for the "
+               "player.";
     } else {
         out << "- Answer the player in plain text.";
     }

@@ -316,10 +316,12 @@ class ObservedTurn {
 
 // Scry fails a turn whose last response it cannot commit: an empty one, where a
 // model that speaks through the say tool often stops, or one cut off in the middle
-// of a tool call. The rounds before it were answered and still stand. Scry files an
-// HTTP refusal under the same category, and that says nothing about the model.
+// of a tool call. The rounds before it were answered and still stand. Scry files a
+// provider's refusal or failure under the same category, with the provider's word
+// for it, and that says nothing about the model.
 bool is_unusable_response(const scry::Error &error) {
-    return error.category == scry::ErrorCategory::protocol && error.http_status < 400;
+    return error.category == scry::ErrorCategory::protocol && error.http_status < 400 &&
+           error.provider_detail.empty();
 }
 
 // Scry's diagnostic with what the provider said about it, which names the likes of
@@ -475,7 +477,7 @@ NpcSessionManager::Session &NpcSessionManager::get_or_create(const std::string &
                 }
                 if (event.kind == EventKind::dialogue) {
                     ack = SPEECH_ACK;
-                    turn_speech_.push_back(std::get<tools::Say>(call).text);
+                    turn_speech_.push_back(dialogue_line({}, std::get<tools::Say>(call).text));
                 }
                 turn_events_.push_back(std::move(event));
             }
@@ -566,7 +568,8 @@ NpcSessionManager::Session &NpcSessionManager::get_or_create(const std::string &
 }
 
 std::optional<std::string> NpcSessionManager::speech_issue(const std::string &text) const {
-    if (std::ranges::find(turn_speech_, text) != turn_speech_.end()) {
+    // The same once shown is the same to the player.
+    if (std::ranges::find(turn_speech_, dialogue_line({}, text)) != turn_speech_.end()) {
         return "You already said that. End your turn.";
     }
     if (turn_speech_.size() >= MAX_SPEECHES_PER_TURN) {
@@ -580,12 +583,37 @@ ToolOutcome NpcSessionManager::submit_tool(const std::string &npc_id,
     return game_.submit_npc_tool(npc_id, call);
 }
 
-NpcTurnResult NpcSessionManager::run_turn(const std::string &npc_id,
-                                          const std::string &player_text) {
+std::expected<NpcSessionManager::SpokenText, NpcSessionManager::FailedAttempt>
+NpcSessionManager::attempt_turn(Session &session, const std::string &message) {
     turn_events_.clear();
     turn_speech_.clear();
     turn_fault_.reset();
+    try {
+        ObservedTurn observed(message);
+        auto result = run_observed_turn(session.harness, session.conversation, message, observed);
+        SpokenText spoken{.beside_tools = single_line(observed.spoken()), .closing = {}};
+        if (result) {
+            spoken.closing = single_line(result->text);
+            return spoken;
+        }
+        const bool model_at_fault = !turn_fault_ && is_unusable_response(result.error());
+        if (model_at_fault && (!turn_events_.empty() || !spoken.beside_tools.empty())) {
+            // The player has already seen the NPC act or heard it speak. Commit those
+            // rounds, as Scry does when a turn stops at its round limit, so the world
+            // and the history still agree.
+            session.conversation = observed.append_to(session.conversation);
+            return spoken;
+        }
+        return std::unexpected(
+            FailedAttempt{.reason = turn_fault_.value_or(describe(result.error())),
+                          .model_at_fault = model_at_fault});
+    } catch (const std::exception &exc) {
+        return std::unexpected(FailedAttempt{.reason = exc.what(), .model_at_fault = false});
+    }
+}
 
+NpcTurnResult NpcSessionManager::run_turn(const std::string &npc_id,
+                                          const std::string &player_text) {
     Session *session = nullptr;
     std::string message;
     try {
@@ -597,39 +625,18 @@ NpcTurnResult NpcSessionManager::run_turn(const std::string &npc_id,
         return std::unexpected(NpcTurnFailure{.message = exc.what(), .world_rolled_back = true});
     }
 
-    auto checkpoint = game_.checkpoint_runtime();
-    std::optional<std::string> final_text; // Engaged once the history is committed.
-    std::string failure;
-    try {
-        ObservedTurn observed(message);
-        auto result = run_observed_turn(session->harness, session->conversation, std::move(message),
-                                        observed);
-        const auto spoken = single_line(observed.spoken());
-        if (result) {
-            final_text = single_line(result->text);
-        } else if (!turn_fault_ && is_unusable_response(result.error()) &&
-                   (!turn_events_.empty() || !spoken.empty())) {
-            // The player has already seen the NPC act or heard it speak. Commit those
-            // rounds, as Scry does when a turn stops at its round limit, so the world
-            // and the history still agree.
-            session->conversation = observed.append_to(session->conversation);
-            final_text.emplace();
-        } else {
-            failure = turn_fault_.value_or(describe(result.error()));
+    const auto checkpoint = game_.checkpoint_runtime();
+    auto outcome = attempt_turn(*session, message);
+    if (!outcome && outcome.error().model_at_fault) {
+        // A response nobody can use is an accident of sampling, and nothing has come
+        // of it yet, so the model gets one more try.
+        if (game_.restore_runtime(checkpoint)) {
+            outcome = attempt_turn(*session, message);
         }
-        if (final_text && final_text->empty()) {
-            final_text = spoken;
-        }
-    } catch (const std::exception &exc) {
-        failure = exc.what();
     }
-
-    GameEvents events = std::move(turn_events_);
-    turn_events_.clear();
-    if (!final_text) {
-        events.clear();
-        auto restored = game_.restore_runtime(std::move(checkpoint));
-        std::string message_text = std::move(failure);
+    if (!outcome) {
+        auto restored = game_.restore_runtime(checkpoint);
+        std::string message_text = std::move(outcome.error().reason);
         const bool rolled_back = restored.has_value();
         if (!rolled_back) {
             message_text += "; rollback failed: " + restored.error().reason;
@@ -638,9 +645,20 @@ NpcTurnResult NpcSessionManager::run_turn(const std::string &npc_id,
             NpcTurnFailure{.message = std::move(message_text), .world_rolled_back = rolled_back});
     }
 
-    const auto &name = game_.world().npcs.at(npc_id).identity.name;
-    if (!final_text->empty() && turn_speech_.empty()) {
-        events.push_back({EventKind::dialogue, dialogue_line(name, *final_text)});
+    GameEvents events = std::move(turn_events_);
+    turn_events_.clear();
+    const auto &npc = game_.world().npcs.at(npc_id);
+    const auto &name = npc.identity.name;
+    const bool present = npc.state.current_location == game_.world().player.current_location;
+    if (turn_speech_.empty()) {
+        // An NPC that left is not heard any more. What it wrote beside its tool calls
+        // came before they took effect.
+        const auto &text =
+            present && !outcome->closing.empty() ? outcome->closing : outcome->beside_tools;
+        if (!text.empty()) {
+            events.insert(present ? events.end() : events.begin(),
+                          {EventKind::dialogue, dialogue_line(name, text)});
+        }
     }
     if (events.empty()) {
         // Every round went to tools that show the player nothing.
@@ -653,6 +671,7 @@ std::expected<nlohmann::json, std::string> NpcSessionManager::snapshot_conversat
     nlohmann::json snapshot = nlohmann::json::object();
     for (const auto &[npc_id, document] : pending_restore_) {
         snapshot[npc_id] = document;
+        (void)drop_turn_contexts(snapshot[npc_id]);
     }
     for (auto &[npc_id, session] : sessions_) {
         auto doc = session->conversation.to_json();

@@ -88,6 +88,7 @@ Key couplings to keep in sync:
   checkpoint before deterministic stub dialogue is shown. A turn that ran out of
   tool rounds is complete. So is one whose NPC spoke or visibly acted before a
   response Scry cannot commit: Scry fails it, and `ObservedTurn` commits its rounds.
+  Before that, such a response is undone and asked for once more.
 - A turn's `[Context]` is for that turn. `without_turn_context` drops it from history
   before the next request and from every save.
 - A loaded conversation keeps its messages and takes its system prompt from the

@@ -71,7 +71,7 @@ class NpcSessionManager {
     // rolls back every tool-side world write and returns an error so the
     // console can provide deterministic stub dialogue. A turn whose NPC has
     // already spoken or visibly acted is complete, not failed, when the model's
-    // next response is empty or broken.
+    // next response is empty or broken; before that, the model is asked once more.
     [[nodiscard]] NpcTurnResult run_turn(const std::string &npc_id, const std::string &player_text);
 
     // npc_id -> serialized scry conversation document, for save files.
@@ -92,7 +92,23 @@ class NpcSessionManager {
   private:
     struct Session;
 
+    struct FailedAttempt {
+        std::string reason;
+        // The model's own response could not be used; the provider is fine.
+        bool model_at_fault = false;
+    };
+
     Session &get_or_create(const std::string &npc_id);
+    // What an NPC put into words without the say tool.
+    struct SpokenText {
+        std::string beside_tools;
+        std::string closing;
+    };
+    // One request-and-tools run of a turn. Its tool events and speech are left in
+    // turn_events_ and turn_speech_; it returns the NPC's other words, with the
+    // history committed, or why nothing came of it.
+    [[nodiscard]] std::expected<SpokenText, FailedAttempt> attempt_turn(Session &session,
+                                                                        const std::string &message);
     // Why a further line of speech this turn is refused, if it is.
     [[nodiscard]] std::optional<std::string> speech_issue(const std::string &text) const;
 
@@ -103,7 +119,7 @@ class NpcSessionManager {
 
     // Buffered gate output for the in-flight turn (filled by tool handlers).
     GameEvents turn_events_;
-    // What the NPC has said through the say tool this turn.
+    // What the NPC has said through the say tool this turn, as shown.
     std::vector<std::string> turn_speech_;
     // Why a throwing tool handler cancelled the in-flight turn.
     std::optional<std::string> turn_fault_;

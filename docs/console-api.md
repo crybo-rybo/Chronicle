@@ -85,10 +85,11 @@ beside its tool calls. Speech is shown on one line. What `inspect_item` reads go
 to the model alone.
 
 A turn that runs out of rounds, or whose last response is empty or broken after
-the NPC spoke or visibly acted, keeps what was done up to there. Otherwise a turn
-fails when the provider fails, when a tool handler throws, or when the model
-answers with nothing the player could see. A failed turn rolls back every world
-write it made before deterministic stub dialogue is shown.
+the NPC spoke or visibly acted, keeps what was done up to there. An empty or broken
+response before that is undone and the model is asked once more. Otherwise a turn
+fails when the provider fails, when a tool handler throws, or when the second try
+is no better. A failed turn rolls back every world write it made before
+deterministic stub dialogue is shown.
 
 Each turn sends the NPC its current situation: time, place, mood, trust, what it
 and the player carry, and its most important memories, newest first. That context

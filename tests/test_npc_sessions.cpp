@@ -278,6 +278,8 @@ class FailedTurnTest : public NpcSessionTest {
         EXPECT_EQ(last_request().body.find("Farewell."), std::string::npos);
     }
 
+    std::vector<std::string> ids_;
+
     void commit_good_turn(NpcSessionManager &sessions) {
         call({{.id = "g1", .name = "update_trust", .arguments = R"({"delta":5})"}});
         reply("Welcome.");
@@ -293,6 +295,19 @@ TEST_F(FailedTurnTest, ProviderRefusalAfterToolsRollsEverythingBack) {
     mutate_everything();
     refuse(400);
     expect_rolled_back(sessions, "provider rejected the request");
+}
+
+TEST_F(FailedTurnTest, AProviderThatFailsInsideAResponseRollsBack) {
+    NpcSessionManager sessions(game_, endpoint());
+    commit_good_turn(sessions);
+    mutate_everything();
+    server_.enqueue(
+        {.body_chunks = {"data: {\"error\":{\"message\":\"engine died\",\"type\":"
+                         "\"InternalServerError\",\"code\":500}}\n\ndata: [DONE]\n\n"}});
+    const auto requests = server_.requests().size();
+    expect_rolled_back(sessions, "InternalServerError");
+    // Two for the failed turn, with no second try, and one for the recovery.
+    EXPECT_EQ(server_.requests().size(), requests + 3);
 }
 
 TEST_F(FailedTurnTest, DroppedConnectionRollsBackWithoutRepeatingTools) {
@@ -322,19 +337,42 @@ TEST_F(FailedTurnTest, TransientFailureIsRetriedWithoutRepeatingTools) {
     EXPECT_EQ(game_.world().npcs.at("keeper").state.trust_toward_player, 5);
 }
 
-TEST_F(FailedTurnTest, EmptyResponseRollsBack) {
+TEST_F(FailedTurnTest, TwoEmptyResponsesRollBack) {
     NpcSessionManager sessions(game_, endpoint());
     commit_good_turn(sessions);
+    const auto requests = server_.requests().size();
     reply("");
+    reply("");
+    expect_rolled_back(sessions, "no content");
+    EXPECT_EQ(server_.requests().size(), requests + 2 + 1);
+}
+
+TEST_F(FailedTurnTest, EmptyResponsesAfterToolsThatShowNothingRollBack) {
+    NpcSessionManager sessions(game_, endpoint());
+    commit_good_turn(sessions);
+    for (const std::string id : {"c1", "c2"}) {
+        ids_.push_back(id);
+        call({{.id = ids_.back(),
+               .name = "remember",
+               .arguments = R"({"summary":"A silent note."})"}});
+        reply("");
+    }
     expect_rolled_back(sessions, "no content");
 }
 
-TEST_F(FailedTurnTest, EmptyResponseAfterToolsThatShowNothingRollsBack) {
+TEST_F(FailedTurnTest, AnUnusableResponseIsAskedForAgainFromTheStart) {
     NpcSessionManager sessions(game_, endpoint());
     commit_good_turn(sessions);
-    call({{.id = "c1", .name = "remember", .arguments = R"({"summary":"A silent note."})"}});
+    // The first try changed the world without showing it.
+    call({{.id = "c1", .name = "update_trust", .arguments = R"({"delta":50})"}});
     reply("");
-    expect_rolled_back(sessions, "no content");
+    call({{.id = "c2", .name = "update_trust", .arguments = R"({"delta":2})"}});
+    reply("Better.");
+    const auto turn = sessions.run_turn("keeper", "hello");
+    ASSERT_TRUE(turn.has_value()) << turn.error().message;
+    EXPECT_EQ(joined(*turn), "Keeper: \"Better.\"\n");
+    EXPECT_EQ(game_.world().npcs.at("keeper").state.trust_toward_player, 7);
+    EXPECT_EQ(last_request().body.find("\"c1\""), std::string::npos);
 }
 
 TEST_F(FailedTurnTest, SilentProviderTimesOutAndRollsBack) {
@@ -493,13 +531,14 @@ TEST_F(WordlessTurnTest, AResponseCutOffInAToolCallLosesOnlyItself) {
     EXPECT_EQ(last_request().body.find("update_trust\",\"arguments"), std::string::npos);
 }
 
-TEST_F(FailedTurnTest, ACutOffResponseBeforeAnythingHappenedRollsBack) {
+TEST_F(FailedTurnTest, TwoCutOffResponsesBeforeAnythingHappenedRollBack) {
     NpcSessionManager sessions(game_, endpoint());
     commit_good_turn(sessions);
     auto cut_off = st::openai_tool_stream(
         {{.id = "c2", .name = "update_trust", .arguments = R"({"delta":9})"}});
     const std::string finish = "\"finish_reason\":\"tool_calls\"";
     cut_off.replace(cut_off.find(finish), finish.size(), "\"finish_reason\":\"length\"");
+    server_.enqueue({.body_chunks = {cut_off}});
     server_.enqueue({.body_chunks = {cut_off}});
     expect_rolled_back(sessions, "inconsistent");
 }
@@ -580,6 +619,39 @@ TEST_F(SpeechTest, RepeatedLinesAreRefusedAndHeardOnce) {
     const auto next = sessions.run_turn("keeper", "hello?");
     ASSERT_TRUE(next.has_value()) << next.error().message;
     EXPECT_EQ(joined(*next), "Keeper: \"Who goes there?\"\n");
+}
+
+TEST_F(SpeechTest, LinesThatLookTheSameAreTheSame) {
+    NpcSessionManager sessions(game_, endpoint());
+    say("Hello there.");
+    say(" Hello  there. ");
+    say("\"Hello there.\"");
+    reply("");
+    const auto turn = sessions.run_turn("keeper", "hello");
+    ASSERT_TRUE(turn.has_value()) << turn.error().message;
+    EXPECT_EQ(joined(*turn), "Keeper: \"Hello there.\"\n");
+}
+
+TEST_F(SpeechTest, AnNpcThatLeftIsNotHeardAnyMore) {
+    NpcSessionManager sessions(game_, endpoint());
+    call({{.id = "c1", .name = "move_self", .arguments = R"({"location_id":"garden"})"}});
+    say("I am over here now.");
+    reply("I am over here now.");
+    const auto turn = sessions.run_turn("keeper", "hello");
+    ASSERT_TRUE(turn.has_value()) << turn.error().message;
+    EXPECT_EQ(joined(*turn), "Keeper excuses themselves and leaves.\n");
+}
+
+TEST_F(SpeechTest, WordsBesideADepartureComeBeforeIt) {
+    NpcSessionManager sessions(game_, endpoint());
+    server_.enqueue(
+        {.body_chunks = {st::openai_text_tool_stream(
+             "Farewell.",
+             {{.id = "c1", .name = "move_self", .arguments = R"({"location_id":"garden"})"}})}});
+    reply("(gone)");
+    const auto turn = sessions.run_turn("keeper", "hello");
+    ASSERT_TRUE(turn.has_value()) << turn.error().message;
+    EXPECT_EQ(joined(*turn), "Keeper: \"Farewell.\"\nKeeper excuses themselves and leaves.\n");
 }
 
 TEST_F(SpeechTest, AnNpcThatWillNotStopTalkingIsHeardThreeTimes) {
@@ -756,6 +828,49 @@ TEST_F(NpcSessionTest, HistoryTrimmingDropsTheOldestCompleteTurns) {
               build_npc_system_prompt(game.world(), "keeper"));
 }
 
+TEST_F(NpcSessionTest, ManyNpcsKeepTheirConversations) {
+    // More than are kept live at once, so the first ones are set aside.
+    WorldState world = untrimmed_world();
+    for (int index = 0; index < 18; ++index) {
+        auto npc = world.npcs.at("keeper");
+        npc.identity.id = "guest_" + std::to_string(index);
+        npc.identity.name = "Guest " + std::to_string(index);
+        world.npcs[npc.identity.id] = npc;
+    }
+    ct::TempDir saves("manynpcs");
+    CartridgeGame game(std::move(world), saves.path());
+    NpcSessionManager sessions(game, endpoint());
+    for (int index = 0; index < 18; ++index) {
+        const auto id = "guest_" + std::to_string(index);
+        reply("Yes.");
+        ASSERT_TRUE(sessions.run_turn(id, "I am visitor " + std::to_string(index)).has_value());
+    }
+    const auto snapshot = sessions.snapshot_conversations();
+    ASSERT_TRUE(snapshot.has_value()) << snapshot.error();
+    ASSERT_EQ(snapshot->size(), 18U);
+    for (int index = 0; index < 18; ++index) {
+        const auto messages = (*snapshot)["guest_" + std::to_string(index)]["messages"].dump();
+        EXPECT_NE(messages.find("I am visitor " + std::to_string(index) + "\\"), std::string::npos)
+            << messages;
+        EXPECT_EQ(messages.find("[Context]"), std::string::npos);
+    }
+    reply("Visitor 0.");
+    ASSERT_TRUE(sessions.run_turn("guest_0", "Who am I?").has_value());
+    EXPECT_NE(last_request().body.find("I am visitor 0"), std::string::npos);
+}
+
+TEST_F(NpcSessionTest, RememberKeepsItsImportance) {
+    NpcSessionManager sessions(game_, endpoint());
+    call({{.id = "c1", .name = "remember", .arguments = R"({"summary":"A debt.","importance":9})"},
+          {.id = "c2", .name = "remember", .arguments = R"({"summary":"A greeting."})"}});
+    reply("Noted.");
+    ASSERT_TRUE(sessions.run_turn("keeper", "hello").has_value());
+    const auto &memories = game_.world().npcs.at("keeper").state.memories;
+    ASSERT_EQ(memories.size(), 2U);
+    EXPECT_EQ(memories[0].importance, 9);
+    EXPECT_EQ(memories[1].importance, 5);
+}
+
 TEST_F(NpcSessionTest, ConversationSurvivesSnapshotAndRestore) {
     const auto play_first_turn = [&](NpcSessionManager &sessions) {
         call({{.id = "c1", .name = "remember", .arguments = R"({"summary":"Ishmael came."})"},
@@ -820,9 +935,18 @@ TEST_F(LegacySaveTest, ConversationSavedByScry010Loads) {
     NpcSessionManager sessions(game_, endpoint());
     const auto status = sessions.restore_conversations(saved);
     ASSERT_TRUE(status.has_value()) << status.error();
-    // Every message survives, under today's prompt.
+    // Every message survives, under today's prompt. v0.1.0 kept each turn's context;
+    // only the player's words remain of it.
     auto expected = saved;
     expected["keeper"]["system_prompt"] = build_npc_system_prompt(game_.world(), "keeper");
+    for (auto &message : expected["keeper"]["messages"]) {
+        auto &block = message["content"][0];
+        if (message["role"] == "user" && block["type"] == "text") {
+            block["text"] = without_turn_context(block["text"]);
+        }
+    }
+    ASSERT_NE(saved.dump().find("[Context]\\n"), std::string::npos);
+    ASSERT_EQ(expected["keeper"]["messages"].dump().find("[Context]"), std::string::npos);
     EXPECT_EQ(sessions.snapshot_conversations(), expected);
 
     reply("I remember.");
@@ -832,19 +956,12 @@ TEST_F(LegacySaveTest, ConversationSavedByScry010Loads) {
     EXPECT_NE(messages[1]["content"].get<std::string>().find("你好"), std::string::npos);
     const auto after = sessions.snapshot_conversations();
     ASSERT_TRUE(after.has_value()) << after.error();
-    const auto &before_messages = saved["keeper"]["messages"];
+    const auto &before_messages = expected["keeper"]["messages"];
     const auto &after_messages = (*after)["keeper"]["messages"];
     ASSERT_EQ(after_messages.size(), before_messages.size() + 2);
     for (std::size_t index = 0; index < before_messages.size(); ++index) {
-        auto expected_message = before_messages[index];
-        auto &first_block = expected_message["content"][0];
-        if (first_block["type"] == "text") {
-            // v0.1.0 kept each turn's context; only the player's words remain.
-            first_block["text"] = without_turn_context(first_block["text"]);
-        }
-        EXPECT_EQ(after_messages[index], expected_message) << index;
+        EXPECT_EQ(after_messages[index], before_messages[index]) << index;
     }
-    EXPECT_EQ(after_messages.dump().find("[Context]"), std::string::npos);
 }
 
 TEST_F(LegacySaveTest, UnreadableConversationIsRefusedBeforeAnythingChanges) {

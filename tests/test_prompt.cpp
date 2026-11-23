@@ -110,29 +110,24 @@ TEST(Prompt, SecretAppearsOnlyAboveTrustThreshold) {
 TEST(Prompt, MemoriesSortedByImportanceAndBudgeted) {
     WorldState world = ct::make_test_world();
     auto &memories = world.npcs.at("keeper").state.memories;
-    memories.push_back({.timestamp = "",
-                        .type = "observation",
-                        .summary = "minor detail",
-                        .importance = 1,
-                        .related_npc = "",
-                        .related_item = ""});
-    memories.push_back({.timestamp = "",
-                        .type = "observation",
-                        .summary = "crucial secret meeting",
-                        .importance = 9,
-                        .related_npc = "",
-                        .related_item = ""});
-    const std::string message = build_npc_turn_message(world, "keeper", "hi");
-    const auto crucial = message.find("(9) crucial secret meeting");
-    const auto minor = message.find("(1) minor detail");
-    ASSERT_NE(crucial, std::string::npos);
-    ASSERT_NE(minor, std::string::npos);
-    EXPECT_LT(crucial, minor);
+    // The important one is the oldest, so only its importance can put it first.
+    for (const auto &[summary, importance] :
+         {std::pair{"crucial secret meeting", 9}, std::pair{"minor detail", 1},
+          std::pair{"useful hint", 5}}) {
+        MemoryEntry memory;
+        memory.summary = summary;
+        memory.importance = importance;
+        memories.push_back(memory);
+    }
+    EXPECT_NE(build_npc_turn_message(world, "keeper", "hi")
+                  .find("- (9) crucial secret meeting\n- (5) useful hint\n- (1) minor detail\n"),
+              std::string::npos);
 
-    // A tiny budget keeps the important memory and drops the minor one.
-    world.config.max_memory_tokens = 10; // Approx. 40 bytes fits only the first line.
+    // A tiny budget keeps the important memory and drops the others.
+    world.config.max_memory_tokens = 8; // 32 bytes, about one line.
     const std::string tight = build_npc_turn_message(world, "keeper", "hi");
     EXPECT_NE(tight.find("crucial secret meeting"), std::string::npos);
+    EXPECT_EQ(tight.find("useful hint"), std::string::npos);
     EXPECT_EQ(tight.find("minor detail"), std::string::npos);
 }
 
