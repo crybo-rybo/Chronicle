@@ -189,11 +189,21 @@ void validate_event_action(const WorldState &world, const std::string &event_id,
             error(issues, prefix + ": bad npc/location");
         }
     } else if (action.type == "set_flag") {
+        // Each fault has its own message: a v1 cartridge writes the value as "true",
+        // and its author should not be told that a declared flag is unknown.
+        if (!exact_params(action.params, {"flag_id"}, {"value"})) {
+            error(issues, prefix + ": takes only flag_id and value");
+        }
         const auto flag_id = param_str(action.params, "flag_id");
-        const auto value = action.params.find("value");
-        if (!exact_params(action.params, {"flag_id", "value"}) || !known_flag(world, flag_id) ||
-            value == action.params.end() || !value->is_boolean()) {
+        if (!known_flag(world, flag_id)) {
             error(issues, prefix + ": unknown flag " + flag_id);
+        }
+        const auto value =
+            action.params.is_object() ? action.params.find("value") : action.params.end();
+        if (value == action.params.end() || !value->is_boolean()) {
+            const bool quoted = value != action.params.end() && value->is_string();
+            error(issues,
+                  prefix + ": value must be true or false" + (quoted ? ", without quotes" : ""));
         }
     } else if (action.type == "spawn_item") {
         if (!exact_params(action.params, {"item_id", "location_id"}) ||
