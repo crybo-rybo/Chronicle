@@ -563,8 +563,34 @@ TEST(Validator, EventActionParametersAreExactAndTyped) {
                     {.type = "narrate", .params = {{"text", 42}}}},
     };
     const auto issues = validate_world(world);
-    EXPECT_TRUE(has_issue_containing(issues, "action set_flag"));
+    EXPECT_TRUE(has_issue_containing(issues, "action set_flag: takes only flag_id and value"));
     EXPECT_TRUE(has_issue_containing(issues, "action narrate"));
+}
+
+// v1.0.0 cartridges wrote the value as a string. The flag is declared, so the
+// message must name the value and not the flag.
+TEST(Validator, SetFlagWithAQuotedValueNamesTheValue) {
+    WorldState world = ct::make_test_world();
+    world.events["quoted"] = EventTriggerData{
+        .conditions = {},
+        .actions = {{.type = "set_flag", .params = {{"flag_id", "gate_seen"}, {"value", "true"}}}},
+    };
+    const auto issues = validate_world(world);
+    ASSERT_EQ(issues.size(), 1u);
+    EXPECT_EQ(issues.front().message,
+              "event quoted action set_flag: value must be true or false, without quotes");
+}
+
+TEST(Validator, SetFlagWithoutAValueSaysSo) {
+    WorldState world = ct::make_test_world();
+    world.events["no_value"] = EventTriggerData{
+        .conditions = {},
+        .actions = {{.type = "set_flag", .params = {{"flag_id", "gate_seen"}}}},
+    };
+    const auto issues = validate_world(world);
+    ASSERT_EQ(issues.size(), 1u);
+    EXPECT_EQ(issues.front().message,
+              "event no_value action set_flag: value must be true or false");
 }
 
 TEST(Validator, LoadFailureBecomesSingleError) {
