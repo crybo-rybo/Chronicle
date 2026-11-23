@@ -240,6 +240,70 @@ TEST(Validator, TheBoundsThemselvesAreAllowed) {
     EXPECT_TRUE(validate_world(world).empty());
 }
 
+TEST(Validator, EntityCountsAreBoundedExactly) {
+    const auto over_limit = [](const auto &fill) {
+        WorldState world = ct::make_test_world();
+        fill(world);
+        return has_issue_containing(validate_world(world), "entity-count limits");
+    };
+    // The test world has two locations, five items, one NPC, one fact, and one event.
+    const auto locations = [](const int count) {
+        return [count](WorldState &world) {
+            LocationData location;
+            location.name = "Cell";
+            for (int index = 2; index < count; ++index) {
+                world.locations["extra_" + std::to_string(index)] = location;
+            }
+        };
+    };
+    const auto items = [](const int count) {
+        return [count](WorldState &world) {
+            ItemData item;
+            item.name = "Pebble";
+            for (int index = 5; index < count; ++index) {
+                world.items["extra_" + std::to_string(index)] = item;
+            }
+        };
+    };
+    const auto npcs = [](const int count) {
+        return [count](WorldState &world) {
+            for (int index = 1; index < count; ++index) {
+                NpcData npc;
+                npc.identity.id = "extra_" + std::to_string(index);
+                npc.identity.name = "Guest";
+                npc.state.current_location = "hall";
+                world.npcs[npc.identity.id] = npc;
+            }
+        };
+    };
+    const auto facts = [](const int count) {
+        return [count](WorldState &world) {
+            FactData fact;
+            fact.text = "A fact.";
+            for (int index = 1; index < count; ++index) {
+                world.facts["extra_" + std::to_string(index)] = fact;
+            }
+        };
+    };
+    const auto events = [](const int count) {
+        return [count](WorldState &world) {
+            for (int index = 1; index < count; ++index) {
+                world.events["extra_" + std::to_string(index)] = EventTriggerData{};
+            }
+        };
+    };
+    EXPECT_FALSE(over_limit(locations(128)));
+    EXPECT_TRUE(over_limit(locations(129)));
+    EXPECT_FALSE(over_limit(items(512)));
+    EXPECT_TRUE(over_limit(items(513)));
+    EXPECT_FALSE(over_limit(npcs(128)));
+    EXPECT_TRUE(over_limit(npcs(129)));
+    EXPECT_FALSE(over_limit(facts(512)));
+    EXPECT_TRUE(over_limit(facts(513)));
+    EXPECT_FALSE(over_limit(events(512)));
+    EXPECT_TRUE(over_limit(events(513)));
+}
+
 TEST(Validator, CartridgeIdsAreBounded) {
     EXPECT_TRUE(is_safe_cartridge_id("0"));
     EXPECT_TRUE(is_safe_cartridge_id(std::string(64, 'a')));

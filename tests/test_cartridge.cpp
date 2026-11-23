@@ -232,8 +232,23 @@ TEST(CartridgeLoad, ADirectoryThatLeadsOutsideIsRefused) {
         GTEST_SKIP() << "symbolic links unavailable: " << ec.message();
     }
     EXPECT_THROW((void)load_package(package), CartridgeError);
-    // The manifest alone is read without looking over the whole tree.
-    EXPECT_EQ(load_manifest(package).id, "diskworld");
+}
+
+// The manifest is read on its own, without the look over the whole tree that refuses
+// links, so confinement has to hold there too.
+TEST(CartridgeLoad, AManifestThatLeadsOutsideIsRefused) {
+    ct::TempDir outside("manifestoutside");
+    ct::write_package(outside.path());
+    const auto package = outside.path() / "package";
+    std::filesystem::create_directories(package);
+    std::filesystem::create_symlink(outside.path() / "scenario.json", package / "scenario.json");
+    try {
+        (void)load_manifest(package);
+        ADD_FAILURE() << "read through the link";
+    } catch (const CartridgeError &error) {
+        EXPECT_NE(std::string(error.what()).find("escapes package directory"), std::string::npos)
+            << error.what();
+    }
 }
 
 TEST(CartridgeLoad, PackagesAreBounded) {

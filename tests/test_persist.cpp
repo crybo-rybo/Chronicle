@@ -339,6 +339,9 @@ TEST(Persist, ASaveOfAnotherCartridgeIsNotReplaced) {
     std::ofstream(saves.path_for(3)) << "{ damaged";
     EXPECT_EQ(saves.save(3, world, GamePhase::playing, std::nullopt).error().kind,
               SaveError::Kind::occupied);
+    fs::create_symlink("nowhere.json", saves.path_for(4));
+    EXPECT_EQ(saves.save(4, world, GamePhase::playing, std::nullopt).error().kind,
+              SaveError::Kind::occupied);
     EXPECT_TRUE(saves.save(1, world, GamePhase::playing, std::nullopt));
 }
 

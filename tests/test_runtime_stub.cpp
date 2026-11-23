@@ -235,6 +235,20 @@ TEST_F(StubRuntimeTest, SavingWithoutAModelKeepsSavedConversations) {
     EXPECT_EQ(saved->conversations, conversations);
 }
 
+TEST_F(StubRuntimeTest, ConversationsDoNotLeakFromOneSaveIntoAnother) {
+    const nlohmann::json conversations{
+        {"keeper", {{"messages", nlohmann::json::array()}, {"system_prompt", ""}, {"version", 1}}}};
+    SaveSystem store(saves_.path(), game_.world());
+    ASSERT_TRUE(store.save(1, game_.world(), GamePhase::playing, std::nullopt, conversations));
+    ASSERT_TRUE(store.save(2, game_.world(), GamePhase::playing, std::nullopt));
+    (void)runtime_.handle_line("load 1");
+    (void)runtime_.handle_line("load 2");
+    (void)runtime_.handle_line("save 3");
+    const auto saved = store.load(3);
+    ASSERT_TRUE(saved.has_value()) << saved.error().message;
+    EXPECT_TRUE(saved->conversations.empty());
+}
+
 TEST_F(StubRuntimeTest, TheGameOutlivesItsRuntime) {
     {
         ConsoleRuntime shorter(game_, std::nullopt);

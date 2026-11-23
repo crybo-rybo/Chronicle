@@ -1,3 +1,4 @@
+#include <functional>
 #include <gtest/gtest.h>
 #include <iterator>
 #include <miniz.h>
@@ -223,6 +224,164 @@ TEST(Library, UnsafeEntriesAreRefusedBeforeExtraction) {
     }
 }
 
+// Each limit is the reason given, so each is checked before anything is extracted.
+TEST(Library, ArchiveLimitsAreCheckedBeforeExtraction) {
+    ct::TempDir lib("liblimits");
+    ct::TempDir source("limits");
+    const auto refusal = [&](const fs::path &archive) -> std::string {
+        try {
+            (void)install_cartridge(archive, lib.path());
+            return "installed";
+        } catch (const LibraryError &error) {
+            EXPECT_EQ(entry_count(lib.path()), 0u);
+            return error.what();
+        }
+    };
+
+    auto crowded = package_entries("");
+    while (crowded.size() <= MAX_PACKAGE_FILES) {
+        crowded.emplace_back("extra_" + std::to_string(crowded.size()), "x");
+    }
+    write_archive(source.path() / "crowded.zip", crowded);
+    EXPECT_EQ(refusal(source.path() / "crowded.zip"), "Archive contains more than 256 files");
+
+    auto heavy = package_entries("");
+    for (int index = 0; index < 8; ++index) {
+        heavy.emplace_back("blob_" + std::to_string(index),
+                           std::string(MAX_PACKAGE_FILE_BYTES, 'z'));
+    }
+    write_archive(source.path() / "heavy.zip", heavy);
+    EXPECT_EQ(refusal(source.path() / "heavy.zip"), "Archive exceeds cartridge extraction limits");
+
+    std::vector<std::pair<std::string, std::string>> countless;
+    for (int index = 0; index <= 16'384; ++index) {
+        countless.emplace_back(".h" + std::to_string(index), "");
+    }
+    write_archive(source.path() / "countless.zip", countless);
+    EXPECT_EQ(refusal(source.path() / "countless.zip"), "Archive contains more than 16384 entries");
+
+    write_archive_entry(source.path() / "large.zip", "config.json",
+                        std::string(MAX_PACKAGE_FILE_BYTES + 1, 'a'));
+    EXPECT_EQ(refusal(source.path() / "large.zip"), "Archive exceeds cartridge extraction limits");
+
+    std::ofstream(source.path() / "huge.zip") << "x";
+    fs::resize_file(source.path() / "huge.zip", std::uintmax_t{64} * 1024 * 1024 + 1);
+    EXPECT_NE(refusal(source.path() / "huge.zip").find("64 MiB input limit"), std::string::npos);
+}
+
+// The bytes of an archive of a valid package and one more entry, with the central
+// directory record of that entry changed by `change`.
+void write_changed_archive(const fs::path &archive, const std::string &last_entry,
+                           const std::function<void(std::string &, std::size_t)> &change) {
+    auto entries = package_entries("");
+    entries.emplace_back(last_entry, "/etc/passwd");
+    write_archive(archive, entries);
+    std::string bytes;
+    {
+        std::ifstream stream(archive, std::ios::binary);
+        bytes.assign(std::istreambuf_iterator<char>(stream), {});
+    }
+    const auto record = bytes.rfind(std::string("PK\x01\x02", 4));
+    ASSERT_NE(record, std::string::npos);
+    change(bytes, record);
+    std::ofstream(archive, std::ios::binary) << bytes;
+}
+
+void mark_as_link(std::string &bytes, const std::size_t record) {
+    bytes[record + 5] = 3; // Made on Unix.
+    bytes[record + 40] = '\xFF';
+    bytes[record + 41] = '\xA1'; // 0120777 in the high half of the attributes.
+}
+
+TEST(Library, LinksAndEncryptedEntriesInArchivesAreRefused) {
+    ct::TempDir lib("libziplink");
+    ct::TempDir source("ziplink");
+    const auto refusal = [&](const auto &change) -> std::string {
+        write_changed_archive(source.path() / "a.zip", "entry", change);
+        try {
+            (void)install_cartridge(source.path() / "a.zip", lib.path());
+            return "installed";
+        } catch (const LibraryError &error) {
+            EXPECT_EQ(entry_count(lib.path()), 0u);
+            return error.what();
+        }
+    };
+    EXPECT_EQ(refusal(mark_as_link), "Unsupported archive entry: entry");
+    EXPECT_EQ(refusal([](std::string &bytes, const std::size_t record) { bytes[record + 8] |= 1; }),
+              "Unsupported archive entry: entry");
+    EXPECT_EQ(
+        refusal([](std::string &bytes, const std::size_t record) { bytes[record + 10] = 99; }),
+        "Unsupported archive entry: entry"); // No such compression method.
+}
+
+// What is not part of a package is neither counted nor able to refuse it.
+TEST(Library, HiddenEntriesInArchivesAreLeftOut) {
+    ct::TempDir lib("libhidden");
+    ct::TempDir source("hiddenzip");
+    auto entries = package_entries("disk/");
+    for (int index = 0; index < 300; ++index) {
+        entries.emplace_back("disk/.git/objects/" + std::to_string(index), "x");
+        entries.emplace_back("disk/art_" + std::to_string(index) + "/", "");
+    }
+    entries.emplace_back(".hidden/scenario.json", "{}");
+    entries.emplace_back("disk/.blob", std::string(MAX_PACKAGE_FILE_BYTES + 1, 'z'));
+    for (int index = 0; index < 100; ++index) {
+        entries.emplace_back("disk/note_" + std::to_string(index), "x");
+        entries.emplace_back("__MACOSX/disk/._note_" + std::to_string(index), "x");
+    }
+    write_archive(source.path() / "a.zip", entries);
+    const auto dest = install_cartridge(source.path() / "a.zip", lib.path());
+    EXPECT_FALSE(fs::exists(dest / ".git"));
+    EXPECT_FALSE(fs::exists(dest / ".blob"));
+    EXPECT_EQ(inspect_package_tree(dest).files.size(), 107u);
+
+    write_changed_archive(source.path() / "link.zip", ".venv", mark_as_link);
+    EXPECT_NO_THROW((void)install_cartridge(source.path() / "link.zip", lib.path()));
+
+    // Hiding does not get an unsafe name past the check.
+    write_changed_archive(source.path() / "unsafe.zip", ".q/zz/outside",
+                          [](std::string &bytes, std::size_t) {
+                              for (auto at = bytes.find(".q/zz/outside"); at != std::string::npos;
+                                   at = bytes.find(".q/zz/outside")) {
+                                  bytes.replace(at, 13, ".q/../../side");
+                              }
+                          });
+    EXPECT_THROW((void)install_cartridge(source.path() / "unsafe.zip", lib.path()), LibraryError);
+}
+
+TEST(Library, PackRefusesNamesAnArchiveCannotHold) {
+    ct::TempDir pkg("pkglong");
+    ct::TempDir out("outlong");
+    ct::write_package(pkg.path());
+    fs::path deep = pkg.path();
+    for (int index = 0; index < 3; ++index) {
+        deep /= std::string(200, static_cast<char>('a' + index));
+    }
+    fs::create_directories(deep);
+    std::ofstream(deep / "note.txt") << "x";
+    EXPECT_THROW((void)pack_cartridge(pkg.path(), out.path() / "disk.zip"), LibraryError);
+    EXPECT_EQ(entry_count(out.path()), 0u);
+}
+
+TEST(Library, OnlyCartridgesInTheirOwnDirectoryAreListed) {
+    ct::TempDir lib("libmisplaced");
+    ct::TempDir pkg("pkgmisplaced");
+    ct::write_package(pkg.path());
+    (void)install_cartridge(pkg.path(), lib.path());
+    fs::rename(lib.path() / "diskworld", lib.path() / "elsewhere");
+    EXPECT_TRUE(list_cartridges(lib.path()).empty());
+}
+
+TEST(Library, PackNeverReplacesADirectory) {
+    ct::TempDir pkg("pkgdir");
+    ct::TempDir out("outdir");
+    ct::write_package(pkg.path());
+    fs::create_directories(out.path() / "disk.zip");
+    EXPECT_THROW((void)pack_cartridge(pkg.path(), out.path() / "disk.zip"), LibraryError);
+    EXPECT_TRUE(fs::is_directory(out.path() / "disk.zip"));
+    EXPECT_EQ(entry_count(out.path()), 1u);
+}
+
 TEST(Library, EntriesThatCollideOnSomeFileSystemsAreRefused) {
     ct::TempDir lib("libcollide");
     ct::TempDir source("collide");
@@ -284,12 +443,12 @@ TEST(Library, ListSkipsWhatItCannotRead) {
     ct::TempDir pkg("pkglist");
     ct::write_package(pkg.path());
     (void)install_cartridge(pkg.path(), lib.path());
-    fs::create_directories(lib.path() / "locked");
     fs::create_directories(lib.path() / "broken");
     std::ofstream(lib.path() / "broken" / "scenario.json") << "{";
-    fs::permissions(lib.path() / "locked", fs::perms::none);
+    // Even root cannot look through a link that leads to itself.
+    fs::create_directories(lib.path() / "looped");
+    fs::create_symlink("scenario.json", lib.path() / "looped" / "scenario.json");
     const auto items = list_cartridges(lib.path());
-    fs::permissions(lib.path() / "locked", fs::perms::owner_all);
     ASSERT_EQ(items.size(), 1u);
     EXPECT_EQ(items.front().id, "diskworld");
 }

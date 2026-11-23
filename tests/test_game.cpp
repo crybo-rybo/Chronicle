@@ -108,6 +108,15 @@ TEST_F(GameTest, ExamineReadableItem) {
     EXPECT_NE(text.find("It reads: MDCCLX"), std::string::npos);
 }
 
+TEST_F(GameTest, OnlyAReadableItemIsRead) {
+    for (const std::string readable : {"false", ""}) {
+        WorldState world = ct::make_test_world();
+        world.items.at("old_coin").properties = {{"readable", readable}, {"text", "MDCCLX"}};
+        CartridgeGame game(std::move(world), saves_.path());
+        EXPECT_EQ(joined(game.dispatch_player("examine old coin").events), "A worn coin.\n");
+    }
+}
+
 TEST_F(GameTest, ExamineAbsentItem) {
     EXPECT_NE(joined(command("examine moonbeam")).find("don't see that"), std::string::npos);
 }
@@ -275,6 +284,13 @@ TEST_F(NounTest, ArticlesAndCaseDoNotMatter) {
     EXPECT_EQ(command("take the Gate KEY"), "You take the Gate Key.\n");
     EXPECT_EQ(command("drop a gate key"), "You drop the Gate Key.\n");
     EXPECT_EQ(command("take the"), "You don't see that here.\n");
+}
+
+TEST_F(NounTest, AnArticleInANameDoesNotMatterEither) {
+    add_item("book", "The Ledger", "hall");
+    add_item("ledger_stand", "Ledger Stand", "hall");
+    EXPECT_EQ(command("take ledger"), "You take the The Ledger.\n");
+    EXPECT_EQ(command("drop the ledger"), "You drop the The Ledger.\n");
 }
 
 TEST_F(NounTest, AmbiguousWordsAskWhichAndDoNothing) {

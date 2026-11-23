@@ -8,6 +8,7 @@
 #include <scry/testing/streams.hpp>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "chronicle/llm/npc_sessions.hpp"
@@ -715,6 +716,25 @@ TEST_F(SpeechTest, TextBesideToolCallsIsHeardWhenTheTurnEndsWithoutAny) {
     turn = sessions.run_turn("keeper", "And now?");
     ASSERT_TRUE(turn.has_value()) << turn.error().message;
     EXPECT_EQ(joined(*turn), "Keeper: \"Go on.\"\n");
+}
+
+template <std::size_t... Index>
+std::string many_trust_calls(const std::vector<std::string> &ids, std::index_sequence<Index...>) {
+    return st::openai_tool_stream({st::ToolUseBlock{
+        .id = ids[Index], .name = "update_trust", .arguments = R"({"delta":1})"}...});
+}
+
+TEST_F(SpeechTest, OneResponseRunsAtMostThirtyTwoCalls) {
+    NpcSessionManager sessions(game_, endpoint());
+    std::vector<std::string> ids;
+    for (int index = 0; index < 40; ++index) {
+        ids.push_back("many-" + std::to_string(index));
+    }
+    server_.enqueue({.body_chunks = {many_trust_calls(ids, std::make_index_sequence<40>{})}});
+    reply("Enough.");
+    const auto turn = sessions.run_turn("keeper", "hello");
+    ASSERT_TRUE(turn.has_value()) << turn.error().message;
+    EXPECT_EQ(game_.world().npcs.at("keeper").state.trust_toward_player, 32);
 }
 
 TEST_F(SpeechTest, RunningOutOfRoundsKeepsWhatTheToolsDid) {
