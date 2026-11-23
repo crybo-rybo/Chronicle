@@ -61,7 +61,7 @@ Three layers (`src/CMakeLists.txt`):
   `scry::ToolRegistry::add<Args>` with handlers that call the gate. `runtime.cpp`
   drives the blocking turn loop (`send` + `update`); `cli.cpp` parses args and
   owns subcommands (`run/validate/inspect/list/install/pack`, `--tiny`).
-- Tests: `tests/*.cpp` unit (170+, no model — gate, mechanics, events,
+- Tests: `tests/*.cpp` unit (280+, no model — gate, mechanics, events,
   persistence, library, prompts, CLI, stub runtime, and NPC sessions against
   scry's loopback `testing::ScriptedServer`), `tests/integration/`
   live-Ollama playthroughs that skip cleanly when no server is up.

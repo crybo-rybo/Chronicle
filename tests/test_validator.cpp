@@ -84,6 +84,171 @@ TEST(Validator, AliasesThatDoNothingAreWarnedAbout) {
     EXPECT_TRUE(warned("jump", "", "does not stand for"));
 }
 
+// One change to a valid world, and the one thing validation must say about it.
+struct BrokenRule {
+    std::string expected;
+    std::function<void(WorldState &)> breakage;
+};
+
+TEST(Validator, EveryRuleIsReportedOnItsOwn) {
+    const auto keeper = [](WorldState &world) -> NpcData & { return world.npcs.at("keeper"); };
+    const auto event = [](EventTriggerData data) {
+        return [data](WorldState &world) { world.events["bad"] = data; };
+    };
+    const auto condition = [&](const std::string &type, std::vector<std::string> args) {
+        return event({.conditions = {{.type = type, .args = std::move(args)}}, .actions = {}});
+    };
+    const auto action = [&](const std::string &type, nlohmann::json params) {
+        return event({.conditions = {}, .actions = {{.type = type, .params = std::move(params)}}});
+    };
+    using json = nlohmann::json;
+    const std::vector<BrokenRule> rules = {
+        {"scenario name", [](WorldState &w) { w.manifest.name = " "; }},
+        {"scenario version", [](WorldState &w) { w.manifest.version = ""; }},
+        {"temperature", [](WorldState &w) { w.config.temperature = -0.1; }},
+        {"temperature", [](WorldState &w) { w.config.temperature = 2.1; }},
+        {"max_response_tokens", [](WorldState &w) { w.config.max_response_tokens = 0; }},
+        {"max_response_tokens", [](WorldState &w) { w.config.max_response_tokens = 16'385; }},
+        {"inference_timeout_ms", [](WorldState &w) { w.config.inference_timeout_ms = 99; }},
+        {"inference_timeout_ms", [](WorldState &w) { w.config.inference_timeout_ms = 600'001; }},
+        {"clock limits",
+         [](WorldState &w) { w.config.turns_per_period = w.clock.turns_per_period = 1'001; }},
+        {"clock limits",
+         [](WorldState &w) { w.config.total_periods = w.clock.total_periods = 1'001; }},
+        {"prompt budgets", [](WorldState &w) { w.config.max_memory_tokens = 0; }},
+        {"prompt budgets", [](WorldState &w) { w.config.max_world_tokens = 1'000'001; }},
+        {"prompt budgets", [](WorldState &w) { w.config.max_history_tokens = 0; }},
+        {"runtime clock", [](WorldState &w) { w.clock.turns_elapsed = 7; }},
+        {"runtime clock", [](WorldState &w) { w.clock.total_periods = 4; }},
+        {"entity-count limits",
+         [](WorldState &w) {
+             for (int index = 0; index < 128; ++index) {
+                 LocationData location;
+                 location.name = "Cell";
+                 w.locations["cell_" + std::to_string(index)] = location;
+             }
+         }},
+        {"unknown location void",
+         [](WorldState &w) {
+             w.item_positions["old_coin"] = {.holder = ItemHolder::location, .id = "void"};
+         }},
+        {"unknown owning npc ghost",
+         [](WorldState &w) {
+             w.item_positions["old_coin"] = {.holder = ItemHolder::npc, .id = "ghost"};
+         }},
+        {"invalid player position",
+         [](WorldState &w) {
+             w.item_positions["old_coin"] = {.holder = ItemHolder::player, .id = "hall"};
+         }},
+        {"locked exit is not a defined direction",
+         [](WorldState &w) { w.locations.at("hall").locked_exits.push_back({.direction = "up"}); }},
+        {"runtime flag set", [](WorldState &w) { w.flags.erase("gate_seen"); }},
+        {"trust values", [&](WorldState &w) { keeper(w).identity.trust_reveal_threshold = -1; }},
+        {"trust values", [&](WorldState &w) { keeper(w).identity.trust_reveal_threshold = 101; }},
+        {"trust values", [&](WorldState &w) { keeper(w).state.trust_toward_player = -1; }},
+        {"identity list", [&](WorldState &w) { keeper(w).identity.goals.assign(65, "A goal"); }},
+        {"duplicate 'say'",
+         [&](WorldState &w) { keeper(w).identity.tool_policy.allowed_tools.push_back("say"); }},
+        {"duplicate 'keepsake'",
+         [&](WorldState &w) {
+             keeper(w).identity.tool_policy.allowed_items.push_back("keepsake");
+         }},
+        {"duplicate 'fact_gate'",
+         [&](WorldState &w) {
+             keeper(w).identity.tool_policy.allowed_facts.push_back("fact_gate");
+         }},
+        {"duplicate 'gate_seen'",
+         [&](WorldState &w) {
+             keeper(w).identity.tool_policy.allowed_flags.push_back("gate_seen");
+         }},
+        {"duplicate 'hall'",
+         [&](WorldState &w) {
+             keeper(w).identity.tool_policy.allowed_locations.push_back("hall");
+         }},
+        {"memory importance",
+         [&](WorldState &w) {
+             MemoryEntry memory;
+             memory.summary = "x";
+             memory.importance = 0;
+             keeper(w).state.memories.push_back(memory);
+         }},
+        {"memory count exceeds",
+         [&](WorldState &w) {
+             MemoryEntry memory;
+             memory.summary = "x";
+             keeper(w).state.memories.assign(MAX_NPC_MEMORIES + 1, memory);
+         }},
+        {"condition/action limits",
+         event({.conditions = std::vector<ConditionData>(
+                    129, ConditionData{.type = "turn_ge", .args = {"1"}}),
+                .actions = {}})},
+        {"condition/action limits",
+         event({.conditions = {},
+                .actions = std::vector<EventActionData>(
+                    129, EventActionData{.type = "narrate", .params = {{"text", "x"}}})})},
+        {"one valid period", condition("clock_is", {"noon"})},
+        {"one valid period", condition("clock_is", {"night", "night"})},
+        {"player_at: bad location", condition("player_at", {})},
+        {"flag_set: bad flag", condition("flag_set", {"gate_seen", "yes"})},
+        {"flag_set: bad flag", condition("flag_set", {"nope", "true"})},
+        {"bad npc/threshold", condition("npc_trust_ge", {"ghost", "1"})},
+        {"bad npc/threshold", condition("npc_trust_ge", {"keeper", "-1"})},
+        {"bad npc/threshold", condition("npc_trust_ge", {"keeper", "1x"})},
+        {"npc_at: bad npc/location", condition("npc_at", {"keeper", "void"})},
+        {"npc_at: bad npc/location", condition("npc_at", {"ghost", "hall"})},
+        {"item_in_player_inv: bad item", condition("item_in_player_inv", {"moon"})},
+        {"expected turn count", condition("turn_ge", {})},
+        {"move_npc: bad npc/location",
+         action("move_npc", {{"npc_id", "keeper"}, {"location_id", "void"}})},
+        {"move_npc: bad npc/location",
+         action("move_npc", {{"npc_id", "keeper"}, {"location_id", "hall"}, {"x", 1}})},
+        {"spawn_item: bad item/location",
+         action("spawn_item", {{"item_id", "moon"}, {"location_id", "hall"}})},
+        {"spawn_item: bad item/location",
+         action("spawn_item", {{"item_id", "old_coin"}, {"location_id", "void"}})},
+        {"narrate: expected text", action("narrate", json::object())},
+        {"optional text must be a string", action("end_game", {{"text", 1}})},
+        {"optional text must be a string", action("end_game", {{"words", "x"}})},
+    };
+    for (const auto &rule : rules) {
+        WorldState world = ct::make_test_world();
+        rule.breakage(world);
+        const auto issues = validate_world(world);
+        EXPECT_TRUE(has_issue_containing(issues, rule.expected)) << rule.expected;
+    }
+}
+
+TEST(Validator, TheBoundsThemselvesAreAllowed) {
+    WorldState world = ct::make_test_world();
+    world.config.temperature = 2.0;
+    world.config.max_response_tokens = 16'384;
+    world.config.inference_timeout_ms = 600'000;
+    world.config.turns_per_period = world.clock.turns_per_period = 1'000;
+    world.config.total_periods = world.clock.total_periods = 1'000;
+    world.config.max_memory_tokens = 1'000'000;
+    world.config.max_world_tokens = 1;
+    world.config.max_history_tokens = 1'000'000;
+    world.clock.turns_elapsed = 1'000'000;
+    auto &keeper = world.npcs.at("keeper");
+    keeper.identity.trust_reveal_threshold = 0;
+    keeper.state.trust_toward_player = 100;
+    keeper.identity.goals.assign(64, "A goal");
+    MemoryEntry memory;
+    memory.summary = "x";
+    memory.importance = 10;
+    keeper.state.memories.assign(MAX_NPC_MEMORIES, memory);
+    EXPECT_TRUE(validate_world(world).empty());
+}
+
+TEST(Validator, CartridgeIdsAreBounded) {
+    EXPECT_TRUE(is_safe_cartridge_id("0"));
+    EXPECT_TRUE(is_safe_cartridge_id(std::string(64, 'a')));
+    EXPECT_FALSE(is_safe_cartridge_id(std::string(65, 'a')));
+    for (const std::string id : {"-a", "_a", "a.b", "a\n", "\xC3\xA9", "aB"}) {
+        EXPECT_FALSE(is_safe_cartridge_id(id)) << id;
+    }
+}
+
 TEST(Validator, UnknownStartLocation) {
     WorldState world = ct::make_test_world();
     world.player.current_location = "nowhere";

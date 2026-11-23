@@ -135,6 +135,95 @@ TEST_F(GameTest, TalkStartsConversationAndBellowsBlockedCommands) {
     EXPECT_EQ(game_.phase(), GamePhase::playing);
 }
 
+// --- the action gate ----------------------------------------------------------------
+
+TEST_F(GameTest, TheGateRefusesWhatTheWorldDoesNotHold) {
+    using namespace actions;
+    const auto at = [](const ItemHolder holder, const std::string &id) {
+        return ItemPosition{.holder = holder, .id = id};
+    };
+    MemoryEntry blank;
+    blank.summary = " ";
+    MemoryEntry trivial;
+    trivial.summary = "x";
+    trivial.importance = 0;
+    const std::vector<std::pair<WorldAction, std::string>> refused = {
+        {MovePlayer{.direction = "west"}, "Unknown player exit"},
+        {MovePlayer{.direction = "north"}, "Player exit is locked"},
+        {RelocateItem{.item_id = "moon", .destination = at(ItemHolder::player, "")},
+         "Unknown item"},
+        {RelocateItem{.item_id = "old_coin", .destination = at(ItemHolder::location, "void")},
+         "Unknown item destination"},
+        {RelocateItem{.item_id = "old_coin", .destination = at(ItemHolder::npc, "ghost")},
+         "Unknown item recipient"},
+        {RelocateItem{.item_id = "old_coin", .destination = at(ItemHolder::player, "hall")},
+         "Player item position must not carry an id"},
+        {UnlockExit{.location_id = "void", .direction = "north"}, "Unknown exit"},
+        {UnlockExit{.location_id = "hall", .direction = "west"}, "Unknown exit"},
+        {UnlockExit{.location_id = "garden", .direction = "south"}, "Exit is not locked"},
+        {BeginConversation{.npc_id = "ghost"}, "Unknown NPC"},
+        {EndConversation{}, "No conversation is active"},
+        {MarkEventFired{.event_id = "nope"}, "Unknown event"},
+        {MoveNpc{.npc_id = "ghost", .destination = "hall"}, "Unknown NPC destination"},
+        {MoveNpc{.npc_id = "keeper", .destination = "void"}, "Unknown NPC destination"},
+        {UpdateNpcMood{.npc_id = "keeper", .mood = "angry"}, "Invalid NPC mood update"},
+        {UpdateNpcMood{.npc_id = "ghost", .mood = "neutral"}, "Invalid NPC mood update"},
+        {AdjustNpcTrust{.npc_id = "ghost", .delta = 1}, "Unknown NPC"},
+        {RevealFact{.fact_id = "nope"}, "Unknown fact"},
+        {AddMemory{.npc_id = "ghost", .memory = {}}, "Invalid NPC memory"},
+        {AddMemory{.npc_id = "keeper", .memory = blank}, "Invalid NPC memory"},
+        {AddMemory{.npc_id = "keeper", .memory = trivial}, "Invalid NPC memory"},
+        {SetFlag{.flag_id = "nope", .value = true}, "Unknown flag"},
+    };
+    const nlohmann::json before = game_.world();
+    for (const auto &[action, reason] : refused) {
+        const auto outcome = game_.submit_world_action(action);
+        ASSERT_FALSE(outcome.has_value()) << reason;
+        EXPECT_EQ(outcome.error().reason, reason);
+    }
+    EXPECT_EQ(nlohmann::json(game_.world()), before);
+
+    ASSERT_TRUE(game_.submit_world_action(MoveNpc{.npc_id = "keeper", .destination = "garden"}));
+    EXPECT_FALSE(game_.submit_world_action(BeginConversation{.npc_id = "keeper"}));
+}
+
+TEST_F(GameTest, NothingChangesAfterTheGameHasEnded) {
+    ASSERT_TRUE(game_.submit_world_action(actions::EndGame{}));
+    const nlohmann::json before = game_.world();
+    const auto outcome =
+        game_.submit_world_action(actions::SetFlag{.flag_id = "gate_seen", .value = true});
+    ASSERT_FALSE(outcome.has_value());
+    EXPECT_EQ(outcome.error().reason, "The game has ended");
+    EXPECT_EQ(nlohmann::json(game_.world()), before);
+}
+
+TEST_F(GameTest, AnInconsistentRestoreIsRefused) {
+    const auto refused = [&](const std::string &reason, const auto &spoil) {
+        auto checkpoint = game_.checkpoint_runtime();
+        spoil(checkpoint);
+        const auto outcome = game_.restore_runtime(std::move(checkpoint));
+        ASSERT_FALSE(outcome.has_value()) << reason;
+        EXPECT_EQ(outcome.error().reason, reason);
+        EXPECT_EQ(game_.phase(), GamePhase::playing);
+        EXPECT_TRUE(game_.world().npcs.contains("keeper"));
+    };
+    refused("Saved world failed validation",
+            [](RuntimeCheckpoint &c) { c.world.player.current_location = "void"; });
+    refused("Saved conversation state is inconsistent",
+            [](RuntimeCheckpoint &c) { c.phase = GamePhase::in_conversation; });
+    refused("Saved conversation state is inconsistent", [](RuntimeCheckpoint &c) {
+        c.phase = GamePhase::in_conversation;
+        c.active_npc = "ghost";
+    });
+    refused("Saved conversation state is inconsistent", [](RuntimeCheckpoint &c) {
+        c.phase = GamePhase::in_conversation;
+        c.active_npc = "keeper";
+        c.world.npcs.at("keeper").state.current_location = "garden";
+    });
+    refused("Saved active NPC does not match the game phase",
+            [](RuntimeCheckpoint &c) { c.active_npc = "keeper"; });
+}
+
 // --- what the player's words refer to ----------------------------------------------
 
 class NounTest : public ::testing::Test {

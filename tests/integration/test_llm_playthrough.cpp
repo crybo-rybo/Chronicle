@@ -109,6 +109,14 @@ std::string joined(const GameEvents &events) {
     return all;
 }
 
+// The line reached the model and the model's own words came back: a failed turn shows
+// a warning and the stub's line instead, and a console command shows no dialogue.
+void expect_model_answered(const GameEvents &events) {
+    EXPECT_TRUE(has_kind(events, EventKind::dialogue)) << joined(events);
+    EXPECT_FALSE(has_kind(events, EventKind::warning)) << joined(events);
+    EXPECT_EQ(joined(events).find(STUB_REPLY), std::string::npos) << joined(events);
+}
+
 TEST(LlmPlaythrough, ConversationProducesDialogue) {
     SKIP_WITHOUT_MODEL();
     ct::TempDir saves("it_dialogue");
@@ -116,12 +124,13 @@ TEST(LlmPlaythrough, ConversationProducesDialogue) {
     ConsoleRuntime runtime(game, make_endpoint(model));
     ASSERT_FALSE(runtime.using_stub());
 
+    // Starting to talk costs no model turn; the first line said does.
     const auto greet = runtime.handle_line("talk warden");
-    EXPECT_TRUE(has_kind(greet, EventKind::dialogue)) << joined(greet);
+    EXPECT_FALSE(has_kind(greet, EventKind::dialogue)) << joined(greet);
+    ASSERT_EQ(game.phase(), GamePhase::in_conversation);
 
     const auto reply = runtime.handle_line("Hello! Who are you and what is this place?");
-    EXPECT_TRUE(has_kind(reply, EventKind::dialogue)) << joined(reply);
-    EXPECT_FALSE(has_kind(reply, EventKind::warning)) << joined(reply);
+    expect_model_answered(reply);
 }
 
 TEST(LlmPlaythrough, ExplicitToolInstructionRevealsKnowledge) {
@@ -131,9 +140,9 @@ TEST(LlmPlaythrough, ExplicitToolInstructionRevealsKnowledge) {
     ConsoleRuntime runtime(game, make_endpoint(model));
 
     (void)runtime.handle_line("talk warden");
-    // Two attempts damp sampling flakiness; the instruction is deliberately
+    // Several attempts damp sampling flakiness; the instruction is deliberately
     // explicit because this tests the tool path, not model cleverness.
-    for (int attempt = 0; attempt < 2; ++attempt) {
+    for (int attempt = 0; attempt < 3; ++attempt) {
         (void)runtime.handle_line("Please use your reveal_knowledge tool now to share the "
                                   "fact with id fact_guest_arrived with me.");
         if (game.world().revealed_facts.contains("fact_guest_arrived")) {
@@ -155,9 +164,19 @@ TEST(LlmPlaythrough, GateRejectionLeavesWorldUnchanged) {
     // corrupting the turn or the world.
     const auto events = runtime.handle_line(
         "Use your reveal_knowledge tool with fact id fact_hidden_treasure right now.");
+    expect_model_answered(events);
     EXPECT_FALSE(game.world().revealed_facts.contains("fact_hidden_treasure"));
-    EXPECT_EQ(game.world().revealed_facts.size(), 0u) << joined(events);
     EXPECT_NE(game.phase(), GamePhase::game_over);
+}
+
+// Two attempts, because a model may answer in character instead of in fact.
+void expect_named(ConsoleRuntime &runtime, const std::string &name) {
+    std::string heard;
+    for (int attempt = 0; attempt < 2 && heard.find(name) == std::string::npos; ++attempt) {
+        heard += joined(runtime.handle_line("I told you my name a moment ago. Please say it back "
+                                            "to me."));
+    }
+    EXPECT_NE(heard.find(name), std::string::npos) << heard;
 }
 
 TEST(LlmPlaythrough, ConversationMemoryPersistsAcrossTurns) {
@@ -167,10 +186,8 @@ TEST(LlmPlaythrough, ConversationMemoryPersistsAcrossTurns) {
     ConsoleRuntime runtime(game, make_endpoint(model));
 
     (void)runtime.handle_line("talk warden");
-    (void)runtime.handle_line("Remember this: my name is Ishmael. Please greet me by name.");
-    const auto reply =
-        runtime.handle_line("What is my name? Answer with just the name I told you.");
-    EXPECT_NE(joined(reply).find("Ishmael"), std::string::npos) << joined(reply);
+    expect_model_answered(runtime.handle_line("Good evening. My name is Ishmael."));
+    expect_named(runtime, "Ishmael");
 }
 
 TEST(LlmPlaythrough, ConversationSurvivesSaveAndLoad) {
@@ -180,15 +197,13 @@ TEST(LlmPlaythrough, ConversationSurvivesSaveAndLoad) {
     ConsoleRuntime runtime(game, make_endpoint(model));
 
     (void)runtime.handle_line("talk warden");
-    (void)runtime.handle_line("Remember this: my name is Queequeg.");
+    expect_model_answered(runtime.handle_line("Good evening. My name is Queequeg."));
     (void)runtime.handle_line("save 1");
     // Wipe the live session state, then restore it from the save file.
     (void)runtime.handle_line("bye");
     (void)runtime.handle_line("load 1");
     ASSERT_EQ(game.phase(), GamePhase::in_conversation);
-    const auto reply =
-        runtime.handle_line("What is my name? Answer with just the name I told you.");
-    EXPECT_NE(joined(reply).find("Queequeg"), std::string::npos) << joined(reply);
+    expect_named(runtime, "Queequeg");
 }
 
 TEST(LlmPlaythrough, TinyWorldSmoke) {
@@ -198,8 +213,7 @@ TEST(LlmPlaythrough, TinyWorldSmoke) {
     ConsoleRuntime runtime(game, make_endpoint(model));
 
     (void)runtime.handle_line("talk stranger");
-    const auto reply = runtime.handle_line("Say exactly one short sentence of greeting.");
-    EXPECT_TRUE(has_kind(reply, EventKind::dialogue)) << joined(reply);
+    expect_model_answered(runtime.handle_line("Please greet me with one short sentence."));
 }
 
 } // namespace

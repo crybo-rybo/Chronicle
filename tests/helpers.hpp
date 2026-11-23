@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <fstream>
 #include <nlohmann/json.hpp>
+#include <stdexcept>
 #include <string>
 #include <unistd.h>
 
@@ -171,6 +172,14 @@ inline void write_package(const std::filesystem::path &dir, nlohmann::json overr
             npcs = value;
         } else if (key == "config") {
             config = value;
+        } else if (key == "facts") {
+            facts = value;
+        } else if (key == "flags") {
+            flags = value;
+        } else if (key == "events") {
+            events = value;
+        } else {
+            throw std::invalid_argument("write_package has no file for '" + key + "'");
         }
     }
     const auto write = [&dir](const char *name, const json &doc) {

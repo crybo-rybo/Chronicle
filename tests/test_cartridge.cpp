@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <sys/stat.h>
 
 #include "chronicle/cartridge/loader.hpp"
 #include "chronicle/cartridge/validator.hpp"
@@ -201,15 +202,68 @@ TEST(CartridgeLoad, HiddenFilesAreNotPartOfAPackage) {
     EXPECT_NE(issues.front().message.find("must not be hidden"), std::string::npos);
 }
 
-TEST(CartridgeLoad, PathTraversalRejected) {
-    ct::TempDir dir("traversal");
-    ct::write_package(dir.path(), {{"scenario", {{"files", {{"world", "../outside.json"}}}}}});
-    EXPECT_THROW((void)load_package(dir.path()), CartridgeError);
+// The files these paths name exist and are valid, so only confinement refuses them.
+TEST(CartridgeLoad, PathsOutsideThePackageAreRefused) {
+    ct::TempDir outside("outside");
+    ct::write_package(outside.path());
+    const auto package = outside.path() / "package";
+    for (const std::string path :
+         {"../world.json", (outside.path() / "world.json").string().c_str(), "a/../../world.json",
+          "./world.json", "..\\world.json", "", "a//../world.json"}) {
+        ct::write_package(package, {{"scenario", {{"files", {{"world", path}}}}}});
+        try {
+            (void)load_package(package);
+            ADD_FAILURE() << "loaded " << path;
+        } catch (const CartridgeError &error) {
+            EXPECT_NE(std::string(error.what()).find("Unsafe package path"), std::string::npos)
+                << path << ": " << error.what();
+        }
+    }
 }
 
-TEST(CartridgeLoad, AbsolutePathRejected) {
-    ct::TempDir dir("absolute");
-    ct::write_package(dir.path(), {{"scenario", {{"files", {{"world", "/etc/hostname"}}}}}});
+TEST(CartridgeLoad, ADirectoryThatLeadsOutsideIsRefused) {
+    ct::TempDir outside("linkoutside");
+    ct::write_package(outside.path());
+    const auto package = outside.path() / "package";
+    ct::write_package(package, {{"scenario", {{"files", {{"world", "data/world.json"}}}}}});
+    std::error_code ec;
+    std::filesystem::create_directory_symlink(outside.path(), package / "data", ec);
+    if (ec) {
+        GTEST_SKIP() << "symbolic links unavailable: " << ec.message();
+    }
+    EXPECT_THROW((void)load_package(package), CartridgeError);
+    // The manifest alone is read without looking over the whole tree.
+    EXPECT_EQ(load_manifest(package).id, "diskworld");
+}
+
+TEST(CartridgeLoad, PackagesAreBounded) {
+    ct::TempDir many("manyfiles");
+    ct::write_package(many.path());
+    for (std::size_t index = 7; index < MAX_PACKAGE_FILES; ++index) {
+        std::ofstream(many.path() / ("extra_" + std::to_string(index))) << "x";
+    }
+    EXPECT_NO_THROW((void)load_package(many.path()));
+    std::ofstream(many.path() / "one_too_many") << "x";
+    EXPECT_THROW((void)load_package(many.path()), CartridgeError);
+
+    ct::TempDir large("largefiles");
+    ct::write_package(large.path());
+    for (int index = 0; index < 8; ++index) {
+        const auto path = large.path() / ("blob_" + std::to_string(index));
+        std::ofstream(path) << "x";
+        std::filesystem::resize_file(path, MAX_PACKAGE_FILE_BYTES);
+    }
+    EXPECT_THROW((void)load_package(large.path()), CartridgeError); // 32 MiB and seven files.
+    std::filesystem::remove(large.path() / "blob_7");
+    EXPECT_NO_THROW((void)load_package(large.path()));
+    std::filesystem::resize_file(large.path() / "blob_0", MAX_PACKAGE_FILE_BYTES + 1);
+    EXPECT_THROW((void)load_package(large.path()), CartridgeError);
+}
+
+TEST(CartridgeLoad, SpecialFilesAreRefused) {
+    ct::TempDir dir("special");
+    ct::write_package(dir.path());
+    ASSERT_EQ(::mkfifo((dir.path() / "pipe").c_str(), 0600), 0);
     EXPECT_THROW((void)load_package(dir.path()), CartridgeError);
 }
 

@@ -94,22 +94,25 @@ Docs:
 ./build/src/chronicle pack --scenario examples/minimal --output /tmp/minimal.chronicle
 ```
 
-## Testing
+## Development
 
 ```bash
-just ci            # format + warning-clean build + tests + example validation
+just ci            # what a pull request must pass: format, -Werror build, tests, examples
 just test          # unit tests only (no model required)
-just integration   # live Ollama playthrough tests
+just format        # clang-format the sources
+just integration   # live Ollama playthrough tests (optional)
 ```
 
-Without `just`: `ctest --preset dev` and `ctest --preset integration`.
+Without `just`: `cmake --preset ci && cmake --build --preset ci -j && ctest --preset ci`.
+GitHub Actions runs the same suite under ASan and UBSan and smoke-tests an
+installation.
 
-Integration tests are optional; they auto-detect a local Ollama server and
-prefer `qwen3:8b`, then `qwen3.5:9b`, then `lfm2.5:8b`. Override with:
+Every change to the mechanics lands with unit tests in `tests/`. What happens
+between Chronicle and a model is tested there too: `tests/test_npc_sessions.cpp`
+scripts the model with scry's loopback `ScriptedServer`.
 
-```bash
-CHRONICLE_MODEL=qwen3.5:9b just integration
-```
+The live tests find a local Ollama server and prefer `qwen3:8b`, then `qwen3.5:9b`,
+then `lfm2.5:8b`; `CHRONICLE_MODEL` names another.
 
 ## Design in one line
 
